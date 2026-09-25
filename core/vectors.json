@@ -1,0 +1,88 @@
+{
+  "generator": {
+    "seed": 12648430,
+    "n": 64,
+    "entries": [
+      {
+        "tag": 0,
+        "step": 0,
+        "row": 0,
+        "col": 0,
+        "value": 14
+      },
+      {
+        "tag": 1,
+        "step": 2,
+        "row": 7,
+        "col": 13,
+        "value": -7
+      },
+      {
+        "tag": 0,
+        "step": 1,
+        "row": 63,
+        "col": 63,
+        "value": -120
+      },
+      {
+        "tag": 1,
+        "step": 0,
+        "row": 31,
+        "col": 17,
+        "value": 88
+      }
+    ]
+  },
+  "fp_key": "14475766216333368679",
+  "steps": [
+    {
+      "step": 0,
+      "row0_fingerprint": "7576792993452794794",
+      "row7_fingerprint": "17323962741685317839",
+      "leaf_hash": "d74eb1c62c06a8e312a5dc204b312779efbbea6c8ee2c7320fa84e6846f95065",
+      "row7_first8_values": [
+        -18728,
+        8063,
+        44003,
+        45999,
+        -16635,
+        -113449,
+        -4774,
+        23921
+      ]
+    },
+    {
+      "step": 1,
+      "row0_fingerprint": "273032675949218902",
+      "row7_fingerprint": "4705529867407169952",
+      "leaf_hash": "ae0324a7dcff7547cc8da57476695b868ba0eb1b0c63516f021ccf14a2ba957b",
+      "row7_first8_values": [
+        -47424,
+        20906,
+        -13961,
+        57969,
+        -1800,
+        7269,
+        -79305,
+        8336
+      ]
+    },
+    {
+      "step": 2,
+      "row0_fingerprint": "12685970168177232242",
+      "row7_fingerprint": "5529331227516667937",
+      "leaf_hash": "cd735586e51a147791c900fdad18759e9fb3d5245daeb8b320c86d46246f5890",
+      "row7_first8_values": [
+        -3956,
+        32846,
+        30716,
+        -65658,
+        -19437,
+        36035,
+        -16453,
+        9672
+      ]
+    }
+  ],
+  "root": "af3f12ba1ec98fea8f1d568144c554749a1d1b330cdc7599cd9002229d8575b3"
+}
