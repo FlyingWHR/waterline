@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Waterline Control Panel</title>
+<meta name="description" content="Waterline: checks of rented GPUs, their public record on ENS, and approvals of failure reports.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2306111a'/%3E%3Cpath d='M1 10h14' stroke='%235fe3b9' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="#/">Waterline<small>control panel</small></a>
+    <nav class="tabs" aria-label="Main">
+      <a href="#/">Overview</a>
+      <a href="#/gpus">GPUs</a>
+      <a href="#/checks">Checks</a>
+      <a href="#/about">Settings</a>
+    </nav>
+  </div>
+</header>
+<main id="view" class="wrap" tabindex="-1"></main>
+
+<dialog id="world" aria-labelledby="world-title">
+  <div class="dlg">
+    <div class="label world-c">World</div>
+    <h2 id="world-title">Approve with World</h2>
+    <p id="world-what" class="sub"></p>
+    <div id="world-code" class="codebox" hidden>
+      <div class="qr" id="world-qr" aria-hidden="true"></div>
+      <div class="codeinfo">
+        <div class="label">Code</div>
+        <div class="usercode" id="world-usercode"></div>
+        <a id="world-link" target="_blank" rel="noopener">Open in World App</a>
+      </div>
+    </div>
+    <p id="world-status" class="status" role="status" aria-live="polite"></p>
+    <div class="row"><button type="button" class="btn" id="world-close">Close</button></div>
+  </div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
