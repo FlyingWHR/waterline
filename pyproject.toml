@@ -1,0 +1,22 @@
+[project]
+name = "waterline"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.117",
+    "numpy>=2.0",
+    "redis>=5.0",
+    "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
+    "eth-account>=0.13",
+]
+
+[project.optional-dependencies]
+dev = ["uvicorn>=0.30", "pytest>=8"]
+
+# Vercel: FastAPI preset, one function for every route (files under api/ do not become separate functions).
+[tool.vercel]
+entrypoint = "api.app:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

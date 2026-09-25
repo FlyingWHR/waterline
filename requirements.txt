@@ -1,0 +1,7 @@
+# Runtime deps for the API on Vercel (keep in sync with pyproject.toml). Dev: pip install uvicorn pytest
+fastapi>=0.117
+numpy>=2.0
+redis>=5.0
+pyjwt[crypto]>=2.10
+httpx>=0.28
+eth-account>=0.13
