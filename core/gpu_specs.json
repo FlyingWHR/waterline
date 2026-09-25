@@ -1,0 +1,1529 @@
+{
+  "generated": "2026-09-26",
+  "notes": "All tensor figures are dense (no structured sparsity). Where a vendor publishes only sparse figures they were halved and derived_from_sparse=true. Units: int8 in TOPS, others TFLOPS, bw in TB/s, mem in vendor GB (usable memory is a few GB less). For AMD, sms = compute units and cc = ROCm gfx target; tensor_gen is null. GeForce cards (rtx-4090, rtx-5090, rtx-3090): FP8/BF16 figures use FP32 accumulate (what cuBLAS uses); fp8_fp16acc_tflops gives the FP16-accumulate rate. V100 and T4 have no BF16, so fp16_tflops is given. 'unverified' lists fields not confirmed directly from a primary source (derived or third-party). rental_rank ranks GPU families by provider breadth (getdeploying.com, 2026-09-25/26) with Vast.ai inventory and hyperscaler SKUs as tie-breakers; variants of one family share a rank. separate_by keys: sms (timing staircase), mem_gb (allocate and touch), bw_tbs (device memory copy), fp8 (FP8 kernel runs at FP8 speed), int8_ratio (sustained tensor throughput vs reference), h2d_bw (host-to-device copy bandwidth).",
+  "models": [
+    {
+      "id": "h100-sxm",
+      "name": "H100 SXM5 80GB",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 132,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 80,
+      "mem_type": "HBM3",
+      "bw_tbs": 3.35,
+      "dense": {
+        "int8_tops": 1979,
+        "fp8_tflops": 1979,
+        "bf16_tflops": 989.5,
+        "fp32_tflops": 67,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 700,
+      "form": "SXM5",
+      "interconnect": "NVLink 4, 900 GB/s; PCIe Gen5 x16",
+      "rental_rank": 1,
+      "rental_evidence": "getdeploying: H100 (all variants) 57-58 providers, most of any GPU (2026-09-25/26); Vast.ai idle offers 2026-09-26: SXM 170 GPUs, NVL 70, PCIe 54; on RunPod, Lambda, CoreWeave, AWS p5, GCP a3, Azure ND H100 v5; Silicon Data SDH100RT and Ornn OCPI index it",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/h100/",
+        "https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": []
+    },
+    {
+      "id": "h100-pcie",
+      "name": "H100 PCIe 80GB",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 114,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 80,
+      "mem_type": "HBM2e",
+      "bw_tbs": 2.0,
+      "dense": {
+        "int8_tops": 1513,
+        "fp8_tflops": 1513,
+        "bf16_tflops": 756.5,
+        "fp32_tflops": 51,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 350,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen5 x16; optional NVLink bridge 600 GB/s",
+      "rental_rank": 1,
+      "rental_evidence": "getdeploying: H100 (all variants) 57-58 providers, most of any GPU (2026-09-25/26); Vast.ai idle offers 2026-09-26: SXM 170 GPUs, NVL 70, PCIe 54; on RunPod, Lambda, CoreWeave, AWS p5, GCP a3, Azure ND H100 v5; Silicon Data SDH100RT and Ornn OCPI index it",
+      "sources": [
+        "https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/",
+        "https://lenovopress.lenovo.com/lp1732-thinksystem-nvidia-h100-pcie-gen5-gpu",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": []
+    },
+    {
+      "id": "h100-nvl",
+      "name": "H100 NVL 94GB",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 132,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 94,
+      "mem_type": "HBM3",
+      "bw_tbs": 3.9,
+      "dense": {
+        "int8_tops": 1670.5,
+        "fp8_tflops": 1670.5,
+        "bf16_tflops": 835.5,
+        "fp32_tflops": 60,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 400,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen5 x16; NVLink bridge 600 GB/s (pairs)",
+      "rental_rank": 1,
+      "rental_evidence": "getdeploying: H100 (all variants) 57-58 providers, most of any GPU (2026-09-25/26); Vast.ai idle offers 2026-09-26: SXM 170 GPUs, NVL 70, PCIe 54; on RunPod, Lambda, CoreWeave, AWS p5, GCP a3, Azure ND H100 v5; Silicon Data SDH100RT and Ornn OCPI index it",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/h100/",
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/h100/PB-11773-001_v01.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms"
+      ],
+      "note": "SM count not printed in NVIDIA docs; 132 is derived: official FP32 60 TFLOPS = 132 SMs x 256 FLOP/clk x 1.785 GHz boost (product brief PB-11773). 114 SMs would give 52 TFLOPS. Peak bandwidth 3,938 GB/s, 6,016-bit bus (product brief)."
+    },
+    {
+      "id": "h200-sxm",
+      "name": "H200 SXM 141GB",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 132,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 141,
+      "mem_type": "HBM3e",
+      "bw_tbs": 4.8,
+      "dense": {
+        "int8_tops": 1979,
+        "fp8_tflops": 1979,
+        "bf16_tflops": 989.5,
+        "fp32_tflops": 67,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 700,
+      "form": "SXM5",
+      "interconnect": "NVLink 4, 900 GB/s; PCIe Gen5 x16",
+      "rental_rank": 3,
+      "rental_evidence": "getdeploying: 51 providers; Vast.ai: H200 148 GPUs + H200 NVL 139 GPUs idle; AWS p5e/p5en, GCP a3-ultra, Azure ND H200 v5; Silicon Data + Ornn index it",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/h200/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms"
+      ],
+      "note": "NVIDIA does not print the H200 SM count; 132 follows from compute figures identical to H100 SXM."
+    },
+    {
+      "id": "h200-nvl",
+      "name": "H200 NVL 141GB",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 132,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 141,
+      "mem_type": "HBM3e",
+      "bw_tbs": 4.8,
+      "dense": {
+        "int8_tops": 1670.5,
+        "fp8_tflops": 1670.5,
+        "bf16_tflops": 835.5,
+        "fp32_tflops": 60,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 600,
+      "form": "PCIe",
+      "interconnect": "2- or 4-way NVLink bridge 900 GB/s per GPU; PCIe Gen5 x16",
+      "rental_rank": 3,
+      "rental_evidence": "getdeploying: 51 providers; Vast.ai: H200 148 GPUs + H200 NVL 139 GPUs idle; AWS p5e/p5en, GCP a3-ultra, Azure ND H200 v5; Silicon Data + Ornn index it",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/h200/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms"
+      ],
+      "note": "SM count derived as for H100 NVL (same FP32 60 TFLOPS)."
+    },
+    {
+      "id": "gh200",
+      "name": "GH200 Grace Hopper (96GB HBM3)",
+      "vendor": "NVIDIA",
+      "arch": "Hopper",
+      "die": "GH100",
+      "cc": "9.0",
+      "sms": 132,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 96,
+      "mem_type": "HBM3",
+      "bw_tbs": 4.0,
+      "dense": {
+        "int8_tops": 1979,
+        "fp8_tflops": 1979,
+        "bf16_tflops": 989.5,
+        "fp32_tflops": 67,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 1000,
+      "form": "Superchip module",
+      "interconnect": "NVLink-C2C 900 GB/s to Grace CPU; NVLink 4",
+      "rental_rank": 23,
+      "rental_evidence": "getdeploying: 5 providers (e.g. Lambda); niche",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/grace-hopper-superchip/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms",
+        "bw_tbs",
+        "dense",
+        "tdp_w"
+      ],
+      "note": "144 GB HBM3e variant (~4.9 TB/s) also exists. Compute assumed equal to H100 SXM; tdp_w is the whole CPU+GPU module (450-1000 W configurable). Host CPU is aarch64 Grace."
+    },
+    {
+      "id": "b200",
+      "name": "B200 (HGX, 180GB)",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell",
+      "die": "GB100 x2",
+      "cc": "10.0",
+      "sms": 148,
+      "full_die_sms": 160,
+      "tensor_gen": 5,
+      "mem_gb": 180,
+      "mem_type": "HBM3e",
+      "bw_tbs": 8.0,
+      "dense": {
+        "int8_tops": 4500,
+        "fp8_tflops": 4500,
+        "bf16_tflops": 2250,
+        "fp32_tflops": 75,
+        "fp4_tflops": 9000
+      },
+      "fp8": true,
+      "tdp_w": 1000,
+      "form": "SXM",
+      "interconnect": "NVLink 5, 1.8 TB/s; PCIe Gen5",
+      "rental_rank": 5,
+      "rental_evidence": "getdeploying: 39 providers; Vast.ai 157 GPUs idle; RunPod, AWS p6-b200, GCP a4; Silicon Data SDB200RT, Ornn OCPI",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/hgx/",
+        "https://www.nvidia.com/en-us/data-center/dgx-b200/",
+        "https://developer.nvidia.com/blog/boost-gpu-memory-performance-with-no-code-changes-using-nvidia-cuda-mps/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "tdp_w"
+      ],
+      "note": "Two dies, one CUDA device: 148 SMs (NVIDIA MPS blog); MLOPart can split it into two 70-SM devices. Per-GPU figures = HGX B200 8-GPU totals / 8, sparse halved. Memory 1,440 GB / 8 = 180 GB visible."
+    },
+    {
+      "id": "b300",
+      "name": "B300 (HGX, Blackwell Ultra)",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell Ultra",
+      "die": "2 dies (name unpublished)",
+      "cc": "10.3",
+      "sms": 148,
+      "full_die_sms": 160,
+      "tensor_gen": 5,
+      "mem_gb": 270,
+      "mem_type": "HBM3e",
+      "bw_tbs": 8.0,
+      "dense": {
+        "int8_tops": 188,
+        "fp8_tflops": 4500,
+        "bf16_tflops": 2250,
+        "fp32_tflops": 75,
+        "fp4_tflops": 13500
+      },
+      "fp8": true,
+      "tdp_w": 1100,
+      "form": "SXM",
+      "interconnect": "NVLink 5, 1.8 TB/s; PCIe Gen6",
+      "rental_rank": 7,
+      "rental_evidence": "getdeploying: 33 providers; Vast.ai 125 GPUs idle; RunPod, AWS p6-b300; Silicon Data index",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/hgx/",
+        "https://developer.nvidia.com/blog/inside-nvidia-blackwell-ultra-the-chip-powering-the-ai-factory-era/",
+        "https://developer.nvidia.com/blog/boost-gpu-memory-performance-with-no-code-changes-using-nvidia-cuda-mps/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms",
+        "mem_gb",
+        "dense.int8_tops",
+        "tdp_w"
+      ],
+      "note": "INT8 tensor throughput cut sharply on Blackwell Ultra (HGX page: INT8 3 POPS for 8 GPUs vs 72 POPS on HGX B200); 188 = 3000/8/2 assuming the figure is sparse. SM count: NVIDIA's MPS blog says 148 SMs 'on DGX B200 and B300'; third-party sources claim 160 (full die). Memory: 288 GB physical, HGX total 2.1 TB (about 262-270 GB visible per GPU)."
+    },
+    {
+      "id": "gb200",
+      "name": "GB200 (Grace Blackwell, per GPU)",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell",
+      "die": "GB100 x2",
+      "cc": "10.0",
+      "sms": 148,
+      "full_die_sms": 160,
+      "tensor_gen": 5,
+      "mem_gb": 186,
+      "mem_type": "HBM3e",
+      "bw_tbs": 8.0,
+      "dense": {
+        "int8_tops": 5000,
+        "fp8_tflops": 5000,
+        "bf16_tflops": 2500,
+        "fp32_tflops": 80,
+        "fp4_tflops": 10000
+      },
+      "fp8": true,
+      "tdp_w": 1200,
+      "form": "Superchip (NVL72 rack)",
+      "interconnect": "NVLink 5, 1.8 TB/s; NVLink-C2C 900 GB/s to Grace",
+      "rental_rank": 19,
+      "rental_evidence": "getdeploying: 9 providers, mostly contract/rack reservations ($10.50-16/hr); Azure ND GB200 v6, GCP a4x, AWS p6e-gb200",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/gb200-nvl72/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms",
+        "tdp_w"
+      ],
+      "note": "Per-GPU = Superchip figures / 2 (372 GB, 16 TB/s). SM count assumed equal to B200 (148); NVIDIA does not print it. Host CPU is aarch64 Grace."
+    },
+    {
+      "id": "gb300",
+      "name": "GB300 (Grace Blackwell Ultra, per GPU)",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell Ultra",
+      "die": "2 dies (name unpublished)",
+      "cc": "10.3",
+      "sms": 148,
+      "full_die_sms": 160,
+      "tensor_gen": 5,
+      "mem_gb": 279,
+      "mem_type": "HBM3e",
+      "bw_tbs": 8.0,
+      "dense": {
+        "int8_tops": 167,
+        "fp8_tflops": 5000,
+        "bf16_tflops": 2500,
+        "fp32_tflops": 83.3,
+        "fp4_tflops": 15000
+      },
+      "fp8": true,
+      "tdp_w": 1400,
+      "form": "Superchip (NVL72 rack)",
+      "interconnect": "NVLink 5, 1.8 TB/s; NVLink-C2C 900 GB/s to Grace",
+      "rental_rank": 22,
+      "rental_evidence": "getdeploying: 7 providers, mostly on request (Oracle $18/hr, CoreWeave, Together, Nebius, AWS reserved)",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/gb300-nvl72/",
+        "https://developer.nvidia.com/blog/inside-nvidia-blackwell-ultra-the-chip-powering-the-ai-factory-era/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "sms",
+        "mem_gb"
+      ],
+      "note": "Per-GPU = NVL72 totals / 72 (tensor figures sparse, halved). NVIDIA says 'up to 160 SMs'; enabled count per SKU not published."
+    },
+    {
+      "id": "a100-sxm-80",
+      "name": "A100 SXM4 80GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA100",
+      "cc": "8.0",
+      "sms": 108,
+      "full_die_sms": 128,
+      "tensor_gen": 3,
+      "mem_gb": 80,
+      "mem_type": "HBM2e",
+      "bw_tbs": 2.039,
+      "dense": {
+        "int8_tops": 624,
+        "fp8_tflops": null,
+        "bf16_tflops": 312,
+        "fp32_tflops": 19.5,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 400,
+      "form": "SXM4",
+      "interconnect": "NVLink 3, 600 GB/s; PCIe Gen4",
+      "rental_rank": 4,
+      "rental_evidence": "getdeploying: A100 (40/80 combined) 48 providers; Vast.ai: A100 PCIe 173 + SXM4 166 GPUs idle; AWS p4d/p4de, GCP a2, Azure NC A100 v4; Silicon Data SDA100RT",
+      "sources": [
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf",
+        "https://www.nvidia.com/en-us/data-center/a100/",
+        "https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "a100-sxm-40",
+      "name": "A100 SXM4 40GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA100",
+      "cc": "8.0",
+      "sms": 108,
+      "full_die_sms": 128,
+      "tensor_gen": 3,
+      "mem_gb": 40,
+      "mem_type": "HBM2",
+      "bw_tbs": 1.555,
+      "dense": {
+        "int8_tops": 624,
+        "fp8_tflops": null,
+        "bf16_tflops": 312,
+        "fp32_tflops": 19.5,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 400,
+      "form": "SXM4",
+      "interconnect": "NVLink 3, 600 GB/s; PCIe Gen4",
+      "rental_rank": 4,
+      "rental_evidence": "getdeploying: A100 (40/80 combined) 48 providers; Vast.ai: A100 PCIe 173 + SXM4 166 GPUs idle; AWS p4d/p4de, GCP a2, Azure NC A100 v4; Silicon Data SDA100RT",
+      "sources": [
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf",
+        "https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "a100-pcie-80",
+      "name": "A100 PCIe 80GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA100",
+      "cc": "8.0",
+      "sms": 108,
+      "full_die_sms": 128,
+      "tensor_gen": 3,
+      "mem_gb": 80,
+      "mem_type": "HBM2e",
+      "bw_tbs": 1.935,
+      "dense": {
+        "int8_tops": 624,
+        "fp8_tflops": null,
+        "bf16_tflops": 312,
+        "fp32_tflops": 19.5,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen4 x16; NVLink bridge 600 GB/s (pairs)",
+      "rental_rank": 4,
+      "rental_evidence": "getdeploying: A100 (40/80 combined) 48 providers; Vast.ai: A100 PCIe 173 + SXM4 166 GPUs idle; AWS p4d/p4de, GCP a2, Azure NC A100 v4; Silicon Data SDA100RT",
+      "sources": [
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf",
+        "https://www.nvidia.com/en-us/data-center/a100/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "a100-pcie-40",
+      "name": "A100 PCIe 40GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA100",
+      "cc": "8.0",
+      "sms": 108,
+      "full_die_sms": 128,
+      "tensor_gen": 3,
+      "mem_gb": 40,
+      "mem_type": "HBM2",
+      "bw_tbs": 1.555,
+      "dense": {
+        "int8_tops": 624,
+        "fp8_tflops": null,
+        "bf16_tflops": 312,
+        "fp32_tflops": 19.5,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 250,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen4 x16; NVLink bridge 600 GB/s (pairs)",
+      "rental_rank": 4,
+      "rental_evidence": "getdeploying: A100 (40/80 combined) 48 providers; Vast.ai: A100 PCIe 173 + SXM4 166 GPUs idle; AWS p4d/p4de, GCP a2, Azure NC A100 v4; Silicon Data SDA100RT",
+      "sources": [
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "l40s",
+      "name": "L40S 48GB",
+      "vendor": "NVIDIA",
+      "arch": "Ada Lovelace",
+      "die": "AD102",
+      "cc": "8.9",
+      "sms": 142,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 48,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.864,
+      "dense": {
+        "int8_tops": 733,
+        "fp8_tflops": 733,
+        "bf16_tflops": 362.05,
+        "fp32_tflops": 91.6,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 350,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen4 x16 (no NVLink)",
+      "rental_rank": 6,
+      "rental_evidence": "getdeploying: 38 providers; Vast.ai 198 GPUs idle; AWS g6e, RunPod, CoreWeave",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/l40s/",
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [],
+      "note": "142 SMs = 18,176 CUDA cores / 128."
+    },
+    {
+      "id": "l40",
+      "name": "L40 48GB",
+      "vendor": "NVIDIA",
+      "arch": "Ada Lovelace",
+      "die": "AD102",
+      "cc": "8.9",
+      "sms": 142,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 48,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.864,
+      "dense": {
+        "int8_tops": 362,
+        "fp8_tflops": 362,
+        "bf16_tflops": 181,
+        "fp32_tflops": 90.5,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 300,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen4 x16 (no NVLink)",
+      "rental_rank": 14,
+      "rental_evidence": "getdeploying: 13 providers; Vast.ai 10 GPUs idle; RunPod, Hyperstack, CoreWeave",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/l40/",
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [],
+      "note": "Official NVIDIA tensor figures are half the L40S's at the same SM count (Ada whitepaper Appendix C)."
+    },
+    {
+      "id": "l4",
+      "name": "L4 24GB",
+      "vendor": "NVIDIA",
+      "arch": "Ada Lovelace",
+      "die": "AD104",
+      "cc": "8.9",
+      "sms": 58,
+      "full_die_sms": 60,
+      "tensor_gen": 4,
+      "mem_gb": 24,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.3,
+      "dense": {
+        "int8_tops": 242,
+        "fp8_tflops": 242,
+        "bf16_tflops": 121,
+        "fp32_tflops": 30.3,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 72,
+      "form": "PCIe (1-slot LP)",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 10,
+      "rental_evidence": "getdeploying: 21 providers; Vast.ai 60 GPUs idle; AWS g6, GCP g2 (high-volume hyperscaler inference SKU)",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/l4/",
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "rtx-6000-ada",
+      "name": "RTX 6000 Ada Generation 48GB",
+      "vendor": "NVIDIA",
+      "arch": "Ada Lovelace",
+      "die": "AD102",
+      "cc": "8.9",
+      "sms": 142,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 48,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.96,
+      "dense": {
+        "int8_tops": 728.5,
+        "fp8_tflops": 728.5,
+        "bf16_tflops": 364.2,
+        "fp32_tflops": 91.1,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 300,
+      "form": "PCIe (workstation)",
+      "interconnect": "PCIe Gen4 x16 (no NVLink)",
+      "rental_rank": 13,
+      "rental_evidence": "getdeploying: 14 providers; Vast.ai 135 GPUs idle; RunPod",
+      "sources": [
+        "https://www.nvidia.com/en-us/products/workstations/rtx-6000/",
+        "https://lenovopress.lenovo.com/lp1940-thinksystem-nvidia-rtx-6000-ada-48gb-pcie-active-gpu",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops",
+        "dense.bf16_tflops"
+      ],
+      "note": "NVIDIA publishes only '1,457 AI TOPS' (FP8, sparse). INT8 assumed equal to FP8, BF16 assumed FP8/2 (the Ada pro-card ratio)."
+    },
+    {
+      "id": "rtx-pro-6000-ws",
+      "name": "RTX PRO 6000 Blackwell Workstation 96GB",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell",
+      "die": "GB202",
+      "cc": "12.0",
+      "sms": 188,
+      "full_die_sms": 192,
+      "tensor_gen": 5,
+      "mem_gb": 96,
+      "mem_type": "GDDR7 ECC",
+      "bw_tbs": 1.792,
+      "dense": {
+        "int8_tops": 1000,
+        "fp8_tflops": 1000,
+        "bf16_tflops": 500,
+        "fp32_tflops": 125,
+        "fp4_tflops": 2000
+      },
+      "fp8": true,
+      "tdp_w": 600,
+      "form": "PCIe (workstation)",
+      "interconnect": "PCIe Gen5 x16",
+      "rental_rank": 2,
+      "rental_evidence": "getdeploying: RTX PRO 6000 54 providers (2nd most); Vast.ai: 'RTX PRO 6000 S' 142 + 'WS' 104 GPUs idle; RunPod (incl. MIG slices)",
+      "sources": [
+        "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000/",
+        "https://www.nvidia.com/en-us/data-center/rtx-pro-6000-blackwell-server-edition/",
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops",
+        "dense.fp8_tflops",
+        "dense.bf16_tflops"
+      ],
+      "note": "188 SMs = 24,064 CUDA cores / 128. NVIDIA gives only '4000 AI TOPS' (FP4, sparse) and 125 TFLOPS FP32; FP8/BF16/INT8 are derived by halving each step. A 300 W Max-Q variant with the same SMs and bandwidth also exists."
+    },
+    {
+      "id": "rtx-pro-6000-server",
+      "name": "RTX PRO 6000 Blackwell Server Edition 96GB",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell",
+      "die": "GB202",
+      "cc": "12.0",
+      "sms": 188,
+      "full_die_sms": 192,
+      "tensor_gen": 5,
+      "mem_gb": 96,
+      "mem_type": "GDDR7 ECC",
+      "bw_tbs": 1.597,
+      "dense": {
+        "int8_tops": 1000,
+        "fp8_tflops": 1000,
+        "bf16_tflops": 500,
+        "fp32_tflops": 120,
+        "fp4_tflops": 2000
+      },
+      "fp8": true,
+      "tdp_w": 600,
+      "form": "PCIe (passive, server)",
+      "interconnect": "PCIe Gen5 x16",
+      "rental_rank": 2,
+      "rental_evidence": "getdeploying: RTX PRO 6000 54 providers (2nd most); Vast.ai: 'RTX PRO 6000 S' 142 + 'WS' 104 GPUs idle; RunPod (incl. MIG slices)",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/rtx-pro-6000-blackwell-server-edition/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops"
+      ],
+      "note": "NVIDIA server page: FP4 4 PF, FP8 2 PF, FP16/BF16 1 PF (treated as sparse, halved); INT8 not listed, assumed equal to FP8. Bandwidth is 1,597 GB/s, lower than the Workstation card's 1,792 GB/s."
+    },
+    {
+      "id": "rtx-5090",
+      "name": "GeForce RTX 5090 32GB",
+      "vendor": "NVIDIA",
+      "arch": "Blackwell",
+      "die": "GB202",
+      "cc": "12.0",
+      "sms": 170,
+      "full_die_sms": 192,
+      "tensor_gen": 5,
+      "mem_gb": 32,
+      "mem_type": "GDDR7",
+      "bw_tbs": 1.792,
+      "dense": {
+        "int8_tops": 838,
+        "fp8_tflops": 419,
+        "bf16_tflops": 209.5,
+        "fp32_tflops": 104.8,
+        "fp4_tflops": 1676,
+        "fp8_fp16acc_tflops": 838
+      },
+      "fp8": true,
+      "tdp_w": 575,
+      "form": "PCIe (consumer)",
+      "interconnect": "PCIe Gen5 x16",
+      "rental_rank": 8,
+      "rental_evidence": "getdeploying: 23 providers; Vast.ai 91 GPUs idle; RunPod; Ornn OCPI indexes it",
+      "sources": [
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [],
+      "note": "Whitepaper gives dense/sparse pairs directly. GeForce: FP8/BF16 with FP32 accumulate run at half the FP16-accumulate rate; INT8 dense 838 TOPS is not halved."
+    },
+    {
+      "id": "rtx-4090",
+      "name": "GeForce RTX 4090 24GB",
+      "vendor": "NVIDIA",
+      "arch": "Ada Lovelace",
+      "die": "AD102",
+      "cc": "8.9",
+      "sms": 128,
+      "full_die_sms": 144,
+      "tensor_gen": 4,
+      "mem_gb": 24,
+      "mem_type": "GDDR6X",
+      "bw_tbs": 1.008,
+      "dense": {
+        "int8_tops": 660.6,
+        "fp8_tflops": 330.3,
+        "bf16_tflops": 165.2,
+        "fp32_tflops": 82.6,
+        "fp4_tflops": null,
+        "fp8_fp16acc_tflops": 660.6
+      },
+      "fp8": true,
+      "tdp_w": 450,
+      "form": "PCIe (consumer)",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 9,
+      "rental_evidence": "getdeploying: 21 providers; Vast.ai 195 GPUs idle (one of the largest pools); RunPod",
+      "sources": [
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [],
+      "note": "Dense INT8 660.6 TOPS (1,321.2 is the sparse figure). FP8 is 330.3 with FP32 accumulate (whitepaper v2.02 correction) and 660.6 with FP16 accumulate."
+    },
+    {
+      "id": "rtx-3090",
+      "name": "GeForce RTX 3090 24GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 82,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 24,
+      "mem_type": "GDDR6X",
+      "bw_tbs": 0.936,
+      "dense": {
+        "int8_tops": 284.7,
+        "fp8_tflops": null,
+        "bf16_tflops": 71.2,
+        "fp32_tflops": 35.6,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 350,
+      "form": "PCIe (consumer)",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 20,
+      "rental_evidence": "getdeploying: 9 providers (undercounts P2P); Vast.ai 108 GPUs idle; RunPod",
+      "sources": [
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ]
+    },
+    {
+      "id": "rtx-a6000",
+      "name": "RTX A6000 48GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 84,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 48,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.768,
+      "dense": {
+        "int8_tops": 309.7,
+        "fp8_tflops": null,
+        "bf16_tflops": 154.8,
+        "fp32_tflops": 38.7,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "PCIe (workstation)",
+      "interconnect": "PCIe Gen4 x16; NVLink bridge 112.5 GB/s",
+      "rental_rank": 11,
+      "rental_evidence": "getdeploying: 20 providers; Vast.ai 159 GPUs idle; RunPod",
+      "sources": [
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/design-visualization/quadro-product-literature/proviz-print-nvidia-rtx-a6000-datasheet-us-nvidia-1454980-r9-web%20(1).pdf",
+        "https://pnypartners.com/wp-content/uploads/NVIDIA-RTX-Positioning-Chart.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops"
+      ],
+      "note": "84 SMs = 10,752 cores / 128. Datasheet 'Tensor performance 309.7 TFLOPS' is sparse FP16; BF16 dense = /2; INT8 dense assumed 2x BF16 (Ampere ratio)."
+    },
+    {
+      "id": "rtx-a5000",
+      "name": "RTX A5000 24GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 64,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 24,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.768,
+      "dense": {
+        "int8_tops": 222.2,
+        "fp8_tflops": null,
+        "bf16_tflops": 111.1,
+        "fp32_tflops": 27.8,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 230,
+      "form": "PCIe (workstation)",
+      "interconnect": "PCIe Gen4 x16; NVLink bridge",
+      "rental_rank": 26,
+      "rental_evidence": "getdeploying: 2 providers (undercounted); Vast.ai 145 GPUs idle; RunPod",
+      "sources": [
+        "https://pnypartners.com/wp-content/uploads/NVIDIA-RTX-Positioning-Chart.pdf",
+        "https://www.nvidia.com/en-us/products/workstations/rtx-a5000/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops"
+      ],
+      "note": "64 SMs = 8,192 cores / 128."
+    },
+    {
+      "id": "rtx-a4000",
+      "name": "RTX A4000 16GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA104",
+      "cc": "8.6",
+      "sms": 48,
+      "full_die_sms": 48,
+      "tensor_gen": 3,
+      "mem_gb": 16,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.448,
+      "dense": {
+        "int8_tops": 153.4,
+        "fp8_tflops": null,
+        "bf16_tflops": 76.7,
+        "fp32_tflops": 19.2,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 140,
+      "form": "PCIe (1-slot workstation)",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 15,
+      "rental_evidence": "getdeploying: 13 providers; Vast.ai 177 GPUs idle",
+      "sources": [
+        "https://pnypartners.com/wp-content/uploads/NVIDIA-RTX-Positioning-Chart.pdf",
+        "https://www.nvidia.com/en-us/products/workstations/rtx-a4000/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": true,
+      "unverified": [
+        "dense.int8_tops",
+        "full_die_sms"
+      ],
+      "note": "48 SMs = 6,144 cores / 128."
+    },
+    {
+      "id": "a40",
+      "name": "A40 48GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 84,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 48,
+      "mem_type": "GDDR6 ECC",
+      "bw_tbs": 0.696,
+      "dense": {
+        "int8_tops": 299.3,
+        "fp8_tflops": null,
+        "bf16_tflops": 149.7,
+        "fp32_tflops": 37.4,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "PCIe (passive)",
+      "interconnect": "PCIe Gen4 x16; NVLink bridge 112.5 GB/s",
+      "rental_rank": 21,
+      "rental_evidence": "getdeploying: 8 providers; Vast.ai 29 GPUs idle; RunPod",
+      "sources": [
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": []
+    },
+    {
+      "id": "a10",
+      "name": "A10 24GB",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 72,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 24,
+      "mem_type": "GDDR6",
+      "bw_tbs": 0.6,
+      "dense": {
+        "int8_tops": 250,
+        "fp8_tflops": null,
+        "bf16_tflops": 125,
+        "fp32_tflops": 31.2,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 150,
+      "form": "PCIe (1-slot)",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 18,
+      "rental_evidence": "getdeploying: 9 providers; Vast.ai 20 GPUs idle; Azure NV A10 v5, Oracle, Lambda",
+      "sources": [
+        "https://www.nvidia.com/en-us/data-center/products/a10-gpu/",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [],
+      "note": "72 SMs = 72 RT cores (1 per SM)."
+    },
+    {
+      "id": "a10g",
+      "name": "A10G 24GB (AWS)",
+      "vendor": "NVIDIA",
+      "arch": "Ampere",
+      "die": "GA102",
+      "cc": "8.6",
+      "sms": 80,
+      "full_die_sms": 84,
+      "tensor_gen": 3,
+      "mem_gb": 24,
+      "mem_type": "GDDR6",
+      "bw_tbs": 0.6,
+      "dense": {
+        "int8_tops": 140,
+        "fp8_tflops": null,
+        "bf16_tflops": 70,
+        "fp32_tflops": 35,
+        "fp4_tflops": null
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen4 x16",
+      "rental_rank": 18,
+      "rental_evidence": "getdeploying: 2 providers; effectively AWS-only (EC2 g5), but high volume there",
+      "sources": [
+        "https://d1.awsstatic.com/product-marketing/ec2/NVIDIA_AWS_A10G_DataSheet_FINAL_02_17_2022.pdf"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "cc"
+      ],
+      "note": "AWS-only variant. 80 SMs = 80 RT cores (datasheet). Tensor throughput is well below A10 despite more SMs. Not listed on NVIDIA's CUDA GPU page; 8.6 follows from the GA102 die."
+    },
+    {
+      "id": "t4",
+      "name": "T4 16GB",
+      "vendor": "NVIDIA",
+      "arch": "Turing",
+      "die": "TU104",
+      "cc": "7.5",
+      "sms": 40,
+      "full_die_sms": 48,
+      "tensor_gen": 2,
+      "mem_gb": 16,
+      "mem_type": "GDDR6",
+      "bw_tbs": 0.32,
+      "dense": {
+        "int8_tops": 130,
+        "fp8_tflops": null,
+        "bf16_tflops": null,
+        "fp32_tflops": 8.1,
+        "fp4_tflops": null,
+        "fp16_tflops": 65
+      },
+      "fp8": false,
+      "tdp_w": 70,
+      "form": "PCIe (1-slot LP)",
+      "interconnect": "PCIe Gen3 x16",
+      "rental_rank": 17,
+      "rental_evidence": "getdeploying: 11 providers; Vast.ai 34 GPUs idle; AWS g4dn, GCP, Azure (legacy but still high-volume hyperscaler SKU)",
+      "sources": [
+        "https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf",
+        "https://developer.nvidia.com/cuda-gpus"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ],
+      "note": "No BF16 or FP8. Turing has no sparsity feature, so figures are already dense."
+    },
+    {
+      "id": "v100-sxm2",
+      "name": "V100 SXM2 16/32GB",
+      "vendor": "NVIDIA",
+      "arch": "Volta",
+      "die": "GV100",
+      "cc": "7.0",
+      "sms": 80,
+      "full_die_sms": 84,
+      "tensor_gen": 1,
+      "mem_gb": 32,
+      "mem_type": "HBM2",
+      "bw_tbs": 0.9,
+      "dense": {
+        "int8_tops": null,
+        "fp8_tflops": null,
+        "bf16_tflops": null,
+        "fp32_tflops": 15.7,
+        "fp4_tflops": null,
+        "fp16_tflops": 125
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "SXM2",
+      "interconnect": "NVLink 2, 300 GB/s",
+      "rental_rank": 12,
+      "rental_evidence": "getdeploying: V100 20 providers; Vast.ai 203 GPUs idle (largest idle pool, cheap); AWS p3 (legacy)",
+      "sources": [
+        "https://images.nvidia.com/content/technologies/volta/pdf/volta-v100-datasheet-update-us-1165301-r5.pdf"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "cc",
+        "full_die_sms"
+      ],
+      "note": "No INT8/BF16/FP8 tensor support (first-gen tensor cores are FP16 only; INT8 only via DP4A). A 16 GB variant exists."
+    },
+    {
+      "id": "v100-pcie",
+      "name": "V100 PCIe 16/32GB",
+      "vendor": "NVIDIA",
+      "arch": "Volta",
+      "die": "GV100",
+      "cc": "7.0",
+      "sms": 80,
+      "full_die_sms": 84,
+      "tensor_gen": 1,
+      "mem_gb": 32,
+      "mem_type": "HBM2",
+      "bw_tbs": 0.9,
+      "dense": {
+        "int8_tops": null,
+        "fp8_tflops": null,
+        "bf16_tflops": null,
+        "fp32_tflops": 14,
+        "fp4_tflops": null,
+        "fp16_tflops": 112
+      },
+      "fp8": false,
+      "tdp_w": 250,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen3 x16",
+      "rental_rank": 12,
+      "rental_evidence": "see v100-sxm2 (getdeploying does not split variants)",
+      "sources": [
+        "https://images.nvidia.com/content/technologies/volta/pdf/volta-v100-datasheet-update-us-1165301-r5.pdf"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "cc",
+        "full_die_sms"
+      ],
+      "note": "A 16 GB variant exists."
+    },
+    {
+      "id": "mi300x",
+      "name": "AMD Instinct MI300X 192GB",
+      "vendor": "AMD",
+      "arch": "CDNA 3",
+      "die": "MI300 (8 XCD)",
+      "cc": "gfx942",
+      "sms": 304,
+      "full_die_sms": 320,
+      "tensor_gen": null,
+      "mem_gb": 192,
+      "mem_type": "HBM3",
+      "bw_tbs": 5.3,
+      "dense": {
+        "int8_tops": 2614.9,
+        "fp8_tflops": 2614.9,
+        "bf16_tflops": 1307.4,
+        "fp32_tflops": 163.4,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 750,
+      "form": "OAM",
+      "interconnect": "Infinity Fabric: 8 links x 128 GB/s; PCIe Gen5 x16",
+      "rental_rank": 16,
+      "rental_evidence": "getdeploying: 11 providers; absent from Vast.ai and RunPod; Azure ND MI300X v5; AIMultiple: 7% of listings show confirmed stock",
+      "sources": [
+        "https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html",
+        "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf",
+        "https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ],
+      "note": "sms = compute units (CUs). cc holds the ROCm gfx target. Full die 320 CUs (8 XCD x 40, 38 enabled each) per CDNA 3 whitepaper."
+    },
+    {
+      "id": "mi325x",
+      "name": "AMD Instinct MI325X 256GB",
+      "vendor": "AMD",
+      "arch": "CDNA 3",
+      "die": "MI300 (8 XCD)",
+      "cc": "gfx942",
+      "sms": 304,
+      "full_die_sms": 320,
+      "tensor_gen": null,
+      "mem_gb": 256,
+      "mem_type": "HBM3e",
+      "bw_tbs": 6.0,
+      "dense": {
+        "int8_tops": 2614.9,
+        "fp8_tflops": 2614.9,
+        "bf16_tflops": 1307.4,
+        "fp32_tflops": 163.4,
+        "fp4_tflops": null
+      },
+      "fp8": true,
+      "tdp_w": 1000,
+      "form": "OAM",
+      "interconnect": "Infinity Fabric: 8 links x 128 GB/s; PCIe Gen5 x16",
+      "rental_rank": 24,
+      "rental_evidence": "getdeploying: 5 providers (AMD-focused clouds)",
+      "sources": [
+        "https://www.amd.com/en/products/accelerators/instinct/mi300/mi325x.html",
+        "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf",
+        "https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "full_die_sms"
+      ],
+      "note": "sms = CUs. Same compute as MI300X; more and faster memory."
+    },
+    {
+      "id": "mi355x",
+      "name": "AMD Instinct MI355X 288GB",
+      "vendor": "AMD",
+      "arch": "CDNA 4",
+      "die": "MI350 (8 XCD)",
+      "cc": "gfx950",
+      "sms": 256,
+      "full_die_sms": 288,
+      "tensor_gen": null,
+      "mem_gb": 288,
+      "mem_type": "HBM3e",
+      "bw_tbs": 8.0,
+      "dense": {
+        "int8_tops": 5000,
+        "fp8_tflops": 5000,
+        "bf16_tflops": 2500,
+        "fp32_tflops": 157.3,
+        "fp4_tflops": 10100
+      },
+      "fp8": true,
+      "tdp_w": 1400,
+      "form": "OAM",
+      "interconnect": "Infinity Fabric: 7 links x 153 GB/s; PCIe Gen5 x16",
+      "rental_rank": 25,
+      "rental_evidence": "getdeploying: 5 providers; rated in SemiAnalysis ClusterMAX 3.0",
+      "sources": [
+        "https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html",
+        "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-4-architecture-whitepaper.pdf",
+        "https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [],
+      "note": "sms = CUs. Each XCD has 36 CUs, 32 active (CDNA 4 whitepaper)."
+    }
+  ],
+  "confusable_pairs": [
+    {
+      "a": "h100-sxm",
+      "b": "h200-sxm",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "Same 132 SMs and compute. 80 vs 141 GB: allocate >80 GB. 3.35 vs 4.8 TB/s (1.43x)."
+    },
+    {
+      "a": "h100-sxm",
+      "b": "h100-nvl",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs",
+        "int8_ratio"
+      ],
+      "note": "Both 132 SMs. 80 vs 94 GB, 3.35 vs 3.9 TB/s; NVL tensor peak is 0.84x (lower clocks, 400 W)."
+    },
+    {
+      "a": "h100-sxm",
+      "b": "gh200",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs",
+        "h2d_bw"
+      ],
+      "note": "Both 132 SMs. 80 vs 96 GB; host-to-device copy over NVLink-C2C (~900 GB/s peak) vs PCIe Gen5 (~64 GB/s) is a large, cheap gap."
+    },
+    {
+      "a": "h200-sxm",
+      "b": "h200-nvl",
+      "separate_by": [
+        "int8_ratio"
+      ],
+      "note": "HARD: same SMs, same 141 GB, same 4.8 TB/s. Only sustained tensor throughput (NVL 0.84x) and power (600 vs 700 W) differ. Needs a stable-clock INT8/BF16 run and a wide tolerance."
+    },
+    {
+      "a": "h200-sxm",
+      "b": "gh200",
+      "separate_by": [
+        "mem_gb",
+        "h2d_bw"
+      ],
+      "note": "144 GB GH200 variant vs 141 GB H200 is too close to call by memory; use host-to-device bandwidth (C2C) and CPU arch."
+    },
+    {
+      "a": "h100-nvl",
+      "b": "h200-nvl",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "Same SMs and compute; 94 vs 141 GB, 3.9 vs 4.8 TB/s."
+    },
+    {
+      "a": "h100-pcie",
+      "b": "h100-nvl",
+      "separate_by": [
+        "sms",
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "114 vs 132 SMs (staircase), 80 vs 94 GB, 2.0 vs 3.9 TB/s. Easy."
+    },
+    {
+      "a": "h100-pcie",
+      "b": "a100-pcie-80",
+      "separate_by": [
+        "fp8",
+        "sms",
+        "bw_tbs"
+      ],
+      "note": "FP8 yes/no is the cheapest decisive test. SM staircase 114 vs 108 is only 5.5% apart; bandwidth 2.0 vs 1.935 is too close."
+    },
+    {
+      "a": "h100-sxm",
+      "b": "a100-sxm-80",
+      "separate_by": [
+        "sms",
+        "fp8",
+        "bw_tbs",
+        "int8_ratio"
+      ],
+      "note": "Waterline's demo pair. 132 vs 108 SMs; FP8 yes/no; 3.35 vs 2.04 TB/s; INT8 about 3.2x."
+    },
+    {
+      "a": "a100-sxm-80",
+      "b": "a100-pcie-80",
+      "separate_by": [
+        "bw_tbs"
+      ],
+      "note": "HARD: same 108 SMs, 80 GB, compute. 2.039 vs 1.935 TB/s (5%) and 400 vs 300 W under sustained load. NVLink P2P bandwidth separates them only on multi-GPU rentals."
+    },
+    {
+      "a": "a100-sxm-40",
+      "b": "a100-pcie-40",
+      "separate_by": [],
+      "note": "HARDEST: same SMs, memory, identical 1.555 TB/s. Only the power limit (400 vs 250 W) shows, as throttling under long sustained load; or NVLink P2P on multi-GPU. Treat as one class."
+    },
+    {
+      "a": "a100-sxm-40",
+      "b": "a100-sxm-80",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "40 vs 80 GB; 1.555 vs 2.039 TB/s."
+    },
+    {
+      "a": "a100-pcie-40",
+      "b": "a100-pcie-80",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "40 vs 80 GB; 1.555 vs 1.935 TB/s."
+    },
+    {
+      "a": "l40s",
+      "b": "l40",
+      "separate_by": [
+        "int8_ratio"
+      ],
+      "note": "Same 142 SMs, 48 GB, 864 GB/s. Official FP8/INT8 peak differs 2x (733 vs 362)."
+    },
+    {
+      "a": "l40s",
+      "b": "rtx-6000-ada",
+      "separate_by": [
+        "bw_tbs"
+      ],
+      "note": "HARD: same 142 SMs, 48 GB, near-equal FP8/INT8 (733 vs 728.5). Only bandwidth differs, 0.864 vs 0.960 TB/s (11%), plus power (350 vs 300 W)."
+    },
+    {
+      "a": "l40",
+      "b": "rtx-6000-ada",
+      "separate_by": [
+        "bw_tbs",
+        "int8_ratio"
+      ],
+      "note": "142 SMs both; 0.864 vs 0.960 TB/s and INT8 about 2x."
+    },
+    {
+      "a": "rtx-4090",
+      "b": "rtx-6000-ada",
+      "separate_by": [
+        "sms",
+        "mem_gb"
+      ],
+      "note": "128 vs 142 SMs; 24 vs 48 GB."
+    },
+    {
+      "a": "rtx-a6000",
+      "b": "a40",
+      "separate_by": [
+        "bw_tbs"
+      ],
+      "note": "HARD: same GA102 84 SMs, 48 GB. 0.768 vs 0.696 TB/s (10%); tensor peak within 4%."
+    },
+    {
+      "a": "rtx-a6000",
+      "b": "rtx-3090",
+      "separate_by": [
+        "mem_gb",
+        "sms"
+      ],
+      "note": "84 vs 82 SMs is too close for the staircase; 48 vs 24 GB is decisive."
+    },
+    {
+      "a": "a10",
+      "b": "a10g",
+      "separate_by": [
+        "sms",
+        "int8_ratio"
+      ],
+      "note": "72 vs 80 SMs; A10G tensor peak much lower (INT8 140 vs 250 TOPS) despite more SMs."
+    },
+    {
+      "a": "b200",
+      "b": "b300",
+      "separate_by": [
+        "mem_gb",
+        "int8_ratio"
+      ],
+      "note": "Both 148 SMs (per NVIDIA) and 8 TB/s. 180 vs ~270 GB; INT8 dense 4,500 vs ~188 TOPS (about 24x). The INT8 probe is decisive."
+    },
+    {
+      "a": "b200",
+      "b": "gb200",
+      "separate_by": [
+        "h2d_bw",
+        "int8_ratio"
+      ],
+      "note": "148 SMs, 8 TB/s both; 180 vs 186 GB is too small to trust. NVLink-C2C host link and aarch64 host separate them; tensor peak 1.11x."
+    },
+    {
+      "a": "b300",
+      "b": "gb300",
+      "separate_by": [
+        "h2d_bw"
+      ],
+      "note": "Same logic as B200/GB200: C2C host link and aarch64 host; memory ~270 vs ~279 GB is too close."
+    },
+    {
+      "a": "rtx-pro-6000-ws",
+      "b": "rtx-pro-6000-server",
+      "separate_by": [
+        "bw_tbs"
+      ],
+      "note": "Same 188 SMs, 96 GB. 1.792 vs 1.597 TB/s (11%). The 300 W Max-Q variant matches WS bandwidth and differs only in sustained throughput."
+    },
+    {
+      "a": "rtx-5090",
+      "b": "rtx-pro-6000-ws",
+      "separate_by": [
+        "sms",
+        "mem_gb"
+      ],
+      "note": "170 vs 188 SMs; 32 vs 96 GB; same 1.792 TB/s."
+    },
+    {
+      "a": "mi300x",
+      "b": "mi325x",
+      "separate_by": [
+        "mem_gb",
+        "bw_tbs"
+      ],
+      "note": "Same 304 CUs and compute; 192 vs 256 GB; 5.3 vs 6.0 TB/s."
+    },
+    {
+      "a": "v100-sxm2",
+      "b": "v100-pcie",
+      "separate_by": [
+        "int8_ratio"
+      ],
+      "note": "HARD: same 80 SMs, 900 GB/s. FP16 tensor 125 vs 112 (1.12x); power 300 vs 250 W. 16 vs 32 GB variants split by allocation. (No INT8 tensor: use FP16.)"
+    },
+    {
+      "a": "l4",
+      "b": "t4",
+      "separate_by": [
+        "sms",
+        "fp8"
+      ],
+      "note": "58 vs 40 SMs; FP8 yes/no."
+    }
+  ]
+}
