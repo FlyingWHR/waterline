@@ -1,0 +1,15 @@
+# pre-event reference work: never part of the submission
+files/
+.venv/
+.env
+.env.*
+node_modules/
+contracts/out/
+contracts/cache/
+__pycache__/
+.DS_Store
+.playwright-mcp/
+contracts/broadcast/
+!.env.example
+result.json
+**/result.json

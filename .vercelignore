@@ -1,0 +1,8 @@
+files/
+tests/
+contracts/
+prover/
+agent/
+docs/
+.venv/
+.playwright-mcp/
