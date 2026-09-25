@@ -1,0 +1,9 @@
+{
+  "source": "ensdomains/contracts-v2 tag sepolia-deployment-2026-09-15 (deployments/sepolia/addresses.md)",
+  "chainId": 11155111,
+  "ETHRegistrar": "0xabe76f6c8dfced81aa5a2bb8034202a7136b94ca",
+  "ETHRegistry": "0x657ea849311d3d5823348dded7c2aaafb3ede09e",
+  "MockUSDC": "0x16f95d91dba7da3aca778ec053df0ff6c6a8aa8e",
+  "UniversalResolver": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+  "label": "waterline"
+}

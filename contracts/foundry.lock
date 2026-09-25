@@ -1,0 +1,14 @@
+{
+  "lib/contracts-v2": {
+    "tag": {
+      "name": "sepolia-deployment-2026-09-15",
+      "rev": "f2f0a05e6c1711134b73204a1e37f8e6c1aea6ab"
+    }
+  },
+  "lib/forge-std": {
+    "tag": {
+      "name": "v1.16.2",
+      "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
+    }
+  }
+}
