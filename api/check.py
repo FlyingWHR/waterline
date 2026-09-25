@@ -9,6 +9,23 @@ from core.challenge import Params, leaf_hash, merkle_root, row_fingerprint, veri
 SAMPLES = 8
 SPOT_COLS = 64
 CLASS_NAMES = {1: "H100 SXM", 2: "H100 PCIe", 3: "A100"}
+# Dense INT8 tensor-core TOPS per class (NVIDIA H100 and A100 datasheets list INT8 "with sparsity";
+# dense is half: H100 SXM 3,958 -> 1,979; H100 PCIe 3,026 -> 1,513; A100 1,248 -> 624).
+SPEC_TOPS = {1: 1979, 2: 1513, 3: 624}
+
+
+def class_name(cls: int) -> str:
+    return CLASS_NAMES.get(cls, "an unknown chip")
+
+
+def throughput(n: int, steps: int, elapsed_s: float, claimed: int) -> dict:
+    """The work the check asked for (2 n^3 INT8 ops per step) over the time the API measured."""
+    ops = 2 * n**3 * steps
+    eff = ops / elapsed_s / 1e12 if elapsed_s > 0 else None
+    spec = SPEC_TOPS.get(claimed)
+    sig = lambda x: float(f"{x:.4g}")  # noqa: E731  (CPU runs are tiny numbers; keep 4 significant digits)
+    return {"ops_total": ops, "effective_tops": None if eff is None else sig(eff), "spec_tops": spec,
+            "pct_of_spec": None if eff is None or not spec else sig(100 * eff / spec)}
 _rng = secrets.SystemRandom()
 
 
@@ -49,30 +66,30 @@ def grade(p: Params, root: str, samples, fingerprints: dict, leaf_hashes: dict, 
     leaves = [leaf_hashes.get(str(s), "") for s in range(p.steps)]
     try:
         if merkle_root(leaves) != root:
-            reasons.append("The leaf hashes do not rebuild the committed root.")
+            reasons.append("The step hashes do not rebuild the locked-in answer.")
     except ValueError:
-        reasons.append("Leaf hashes are missing or not hex.")
+        reasons.append("Step hashes are missing or not hex.")
 
     good_fps = {}  # step -> fingerprints that hash to the committed leaf
     for s in sorted({s for s, _, _ in samples}):
         try:
             fps = _u64s(fingerprints.get(str(s), []))
         except (ValueError, TypeError):
-            reasons.append(f"Step {s}: fingerprints are not uint64 values.")
+            reasons.append(f"Step {s}: the row fingerprints are not 64-bit numbers.")
             continue
         if len(fps) != p.n or leaf_hash(fps) != leaves[s]:
-            reasons.append(f"Step {s}: fingerprints do not match the committed leaf hash.")
+            reasons.append(f"Step {s}: the row fingerprints do not match the locked-in answer.")
         else:
             good_fps[s] = fps
 
     for s, r, cols in samples:
         vals = rows.get(f"{s}:{r}")
         if not isinstance(vals, list) or len(vals) != p.n or any(not -(1 << 63) <= int(v) < 1 << 63 for v in vals):
-            reasons.append(f"Row {s}:{r} is missing or has the wrong length.")
+            reasons.append(f"Row {r} of step {s} is missing or has the wrong length.")
             continue
         if s not in good_fps or row_fingerprint(vals, p.fp_key) != int(good_fps[s][r]):
-            reasons.append(f"Row {s}:{r} does not match its fingerprint.")
+            reasons.append(f"Row {r} of step {s} does not match its fingerprint.")
         if not verify_row_entries(p, s, r, vals, cols):
-            reasons.append(f"Row {s}:{r} has wrong entries at the spot-checked columns.")
+            reasons.append(f"Row {r} of step {s} has wrong entries where the API re-checked it.")
     return reasons
 

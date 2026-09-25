@@ -21,7 +21,7 @@ def post(path, body=None):
 
 
 def run_check(uuid="GPU-1", claimed=1, probes=H100, n=64, steps=4, lazy=False, patch_row=False, slow=0.0,
-              monkeypatch=None):
+              monkeypatch=None, health=None, raw=False):
     st = post("/api/check/start", {"cloud": "cloud-b", "uuid": uuid, "claimed_class": claimed, "n": n, "steps": steps})
     assert st.status_code == 200, st.text
     s = st.json()
@@ -46,7 +46,9 @@ def run_check(uuid="GPU-1", claimed=1, probes=H100, n=64, steps=4, lazy=False, p
         "session_id": s["session_id"],
         "fingerprints": {str(st_): [str(int(x)) for x in fps[st_]] for st_ in {st_ for st_, _ in samples}},
         "leaf_hashes": {str(i): h for i, h in enumerate(leaves)},
-        "rows": rows})
+        "rows": rows, **({"health": health} if health is not None else {})})
+    if raw:
+        return rv
     assert rv.status_code == 200, rv.text
     return rv.json()
 
@@ -74,12 +76,37 @@ def test_single_patched_row_fails():
 
 def test_missed_deadline_fails(monkeypatch):
     r = run_check(slow=6.0, monkeypatch=monkeypatch)
-    assert r["verdict"] == "fail" and "deadline" in r["reasons"][0]
+    assert r["verdict"] == "fail" and r["reasons"][0].startswith("Answer locked in after 6.")
+    assert r["reasons"][0].endswith("; the deadline was 5.0 s.")
 
 
 def test_class_mismatch_fails():
     r = run_check(claimed=1, probes=A100)  # an A100 sold as H100 SXM
-    assert r["verdict"] == "fail" and r["measured_class"] == 3 and len(r["reasons"]) == 1
+    assert r["verdict"] == "fail" and r["measured_class"] == 3
+    assert r["reasons"] == ["Measured as A100 (108 SMs, no FP8), listed as H100 SXM."]
+
+
+def test_throughput_against_listed_class():
+    r = client.get(f"/api/reports/{run_check()['report_id']}").json()
+    assert r["ops_total"] == 2 * 64**3 * 4 and r["spec_tops"] == 1979
+    assert r["effective_tops"] == pytest.approx(r["ops_total"] / r["elapsed_s"] / 1e12, rel=1e-3)
+    assert r["pct_of_spec"] == pytest.approx(100 * r["effective_tops"] / 1979, rel=1e-3)
+    a = client.get(f"/api/reports/{run_check(uuid='GPU-T', claimed=3, probes=A100)['report_id']}").json()
+    assert a["spec_tops"] == 624 and a["verdict"] == "pass"
+
+
+def test_health_is_stored_but_never_decides():
+    hr = {"source": "simulated", "grade": "trust me", "burn": {"tflops": {"mean": 1.0}}, "memory": {"x": 99}}
+    r = run_check(uuid="GPU-H", health=hr)
+    assert r["verdict"] == "pass"  # a scary health report does not change the verdict
+    d = client.get(f"/api/reports/{r['report_id']}").json()
+    assert d["health"] == hr | {"grade": "reported by the machine"}  # the API stamps the grade
+    assert client.get(f"/api/reports/{run_check(uuid='GPU-H0')['report_id']}").json()["health"] is None
+
+
+def test_oversized_health_rejected():
+    r = run_check(uuid="GPU-HB", health={"blob": "x" * 300_000}, raw=True)
+    assert r.status_code == 413 and "KB" in r.json()["error"]
 
 
 def test_commit_only_once():

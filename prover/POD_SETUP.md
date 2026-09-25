@@ -6,7 +6,7 @@ The agent copies `core/` and `prover/` to `~/waterline` over scp. On a fresh pod
 nvidia-smi                                  # driver present, note the CUDA version (12.x)
 python3 --version                           # 3.10+
 python3 -m pip install -U pip
-python3 -m pip install numpy cupy-cuda12x
+python3 -m pip install numpy cupy-cuda12x nvidia-ml-py   # nvidia-ml-py: health report (optional)
 python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 # most PyTorch pod images already ship torch with CUDA; check before reinstalling:
 python3 -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"

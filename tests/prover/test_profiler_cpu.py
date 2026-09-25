@@ -17,6 +17,11 @@ def test_cpu_round_trip_passes(api, tmp_path, capsys):
     assert stair == local["staircase"] and stair["133"] > 1.5 * stair["132"]
     reveal = [b for p, b in api.calls if p == "/api/check/reveal"][0]
     assert len(reveal["leaf_hashes"]) == 3 and len(reveal["rows"]) >= 1
+    commit = [b for p, b in api.calls if p == "/api/check/commit"][0]
+    assert "health" not in commit and "health" not in commit["probes"]  # health goes with the reveal only
+    hr = reveal["health"]
+    assert hr["source"] == "simulated" and hr["grade"] == "reported by the machine" and local["health"] == hr
+    assert len(hr["burn"]["per_second"]) == 10 and hr["burn"]["tflops"]["min"] <= hr["burn"]["tflops"]["mean"]
 
 
 def test_a100_listed_as_h100_fails(api):

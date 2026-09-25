@@ -163,6 +163,10 @@ class Gpu:
         return {"sms": sms or 0, "fp8": has_fp8(), "clock_ghz": round(clock_ghz(), 3),
                 "bw_tbs": round(copy_bw_tbs(), 3), "fingerprint": fp}, stair
 
+    def health(self, burn_seconds):
+        from prover.health import collect
+        return collect(burn_seconds)
+
     @staticmethod
     def _mat(p, tag, step):
         out = cp.empty((p.n, p.n), dtype=cp.int8)

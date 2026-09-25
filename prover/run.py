@@ -7,6 +7,8 @@ Probes run first (they are not part of the timed work). Then: start -> compute e
 (root + probes) -> reveal the rows the API picked. Prints the API's final JSON on stdout; progress goes to
 stderr. Writes result.json (probes, staircase timings in ms, API result) for the agent and the web chart.
 The staircase (blocks -> ms) also goes to the API as probes.staircase, for the web chart.
+After commit (the deadline clock has stopped) it collects a health report (prover/health.py: NVML, a sustained
+burn, DCGM; CPU mode: simulated) and sends it with the reveal. The API stores it; it never affects the verdict.
 """
 import argparse
 import hashlib
@@ -17,6 +19,7 @@ import urllib.error
 import urllib.request
 
 from core.challenge import Params, fingerprint_rows, leaf_hash, merkle_root, product
+from prover import health
 
 
 class ApiError(Exception):
@@ -58,6 +61,9 @@ class Cpu:
         return {"sms": self.sms, "fp8": FP8_BY_SMS.get(self.sms, False), "clock_ghz": 1.98, "bw_tbs": 3.35,
                 "fingerprint": "0x" + hashlib.sha256(f"cpu-{self.sms}".encode()).hexdigest()}, stair
 
+    def health(self, burn_seconds):
+        return health.simulated(self.sms, burn_seconds)
+
     def fingerprints(self, p):
         return [fingerprint_rows(product(p, s), p.fp_key) for s in range(p.steps)]
 
@@ -69,7 +75,7 @@ class Cpu:
         return out
 
 
-def profile(api, cloud, claimed, backend, n=None, steps=None):
+def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10):
     """Full check against the API. Returns (api_result, local_result)."""
     log("probing hardware ...")
     probes, stair = backend.probes()
@@ -99,15 +105,21 @@ def profile(api, cloud, claimed, backend, n=None, steps=None):
     samples = [(int(x[0]), int(x[1])) for x in cm["samples"]]
     log(f"committed; API saw {cm['elapsed_s']}s; revealing {len(samples)} rows")
 
+    log(f"health report: {burn_seconds}s burn ...")
+    try:
+        hr = backend.health(burn_seconds)
+    except Exception as e:  # advisory: never let it break the check
+        hr = {"grade": health.GRADE, "source": "error", "notes": [f"{type(e).__name__}: {str(e)[:200]}"]}
     rv = post(api, "/api/check/reveal", {
         "session_id": st["session_id"],
         "fingerprints": {str(s): [str(int(v)) for v in fps[s]] for s in sorted({s for s, _ in samples})},
         "leaf_hashes": {str(i): h for i, h in enumerate(leaves)},
         "rows": backend.rows(p, samples),
+        "health": hr,
     })
     local = {"uuid": backend.uuid, "cloud": cloud, "claimed_class": claimed, "n": p.n, "steps": p.steps,
              "compute_s": round(compute_s, 4), "elapsed_s": cm["elapsed_s"], "probes": probes,
-             "staircase": stair_ms, "result": rv}
+             "staircase": stair_ms, "health": hr, "result": rv}
     return rv, local
 
 
@@ -121,6 +133,7 @@ def main(argv=None):
     ap.add_argument("--uuid", help="CPU mode: fake GPU UUID")
     ap.add_argument("--n", type=int)
     ap.add_argument("--steps", type=int)
+    ap.add_argument("--burn-seconds", type=int, default=10, help="health report: sustained burn length (0 skips it)")
     ap.add_argument("--out", default="result.json")
     a = ap.parse_args(argv)
 
@@ -130,7 +143,7 @@ def main(argv=None):
         from prover.gpu import Gpu  # lazy: CuPy/torch only exist on the pod
         backend, n, steps = Gpu(), a.n, a.steps
     try:
-        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps)
+        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds)
     except ApiError as e:
         log(f"error: {e}")
         return 2

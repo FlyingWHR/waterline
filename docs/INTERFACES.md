@@ -31,11 +31,15 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   in  `{ "session_id", "root", "probes": { "sms": int, "fp8": bool, "clock_ghz": float, "bw_tbs": float, "fingerprint": "0x…32 bytes" } }`
   out `{ "elapsed_s", "samples": [[step,row], …] }`  (8 samples, drawn from secrets AFTER the root arrives)
 `POST /api/check/reveal`
-  in  `{ "session_id", "fingerprints": {"<step>": [uint64 as strings…]}, "leaf_hashes": {"<step>": hex}, "rows": {"<step>:<row>": [int…]} }`
+  in  `{ "session_id", "fingerprints": {"<step>": [uint64 as strings…]}, "leaf_hashes": {"<step>": hex}, "rows": {"<step>:<row>": [int…]}, "health"?: {…} }`
+  `health` is optional, advisory, at most 256 KB of JSON (else 413). Stored with the report, stamped
+  `"grade": "reported by the machine"`, never graded: it can't change the verdict.
   out `{ "report_id", "verdict": "pass"|"fail", "measured_class": int, "reasons": [str], "gpu_name", "node", "published": bool, "tx": str|null }`
   Checks: deadline, leaf hashes, root recomputed from leaf hashes, row fingerprints, 64 spot entries per row
   (columns from secret randomness), class from probes (sms 132 + fp8 -> 1, sms 114 + fp8 -> 2, sms 108 & !fp8 -> 3).
   Verdict fail if any check fails OR measured class != claimed class.
+  Reasons are plain sentences with class names, e.g. "Measured as A100 (108 SMs, no FP8), listed as H100 SXM.",
+  "Answer locked in after 9.6 s; the deadline was 5.0 s."
   A **pass is published immediately** (Marks.record). A fail is stored as pending, `published: false`.
 `POST /api/world/login/start` -> `{ "device_id", "user_code", "verification_uri_complete", "expires_in" }`
 `POST /api/world/login/poll` in `{ "device_id" }` -> `{ "status": "pending"|"approved"|"denied"|"expired", "agent_token"? }`
@@ -69,6 +73,15 @@ Class shown on the name is the last measured class.
 `python -m prover.run --api <url> --cloud cloud-b --claimed 1 [--cpu] [--n N --steps S]`
 Reads the GPU UUID (nvidia-smi / torch), calls start, computes all steps (GPU: CuPy + torch._int_mm; `--cpu`: core/),
 sends commit with probes, then reveal with the requested rows; prints the API's JSON result.
+`--burn-seconds S` (default 10, 0 skips the burn). After commit it builds the health report (prover/health.py)
+and sends it with the reveal; CPU mode sends a report marked `"source": "simulated"`.
+Health report: `{ grade, source: "nvml"|"torch"|"simulated"|"error", device: {name, uuid, driver, cuda, vbios,
+memory_gib, mig, pcie: {gen, width, max_gen, max_width}, nvlink: {up, down}|null, ecc: {enabled, pending (mode after next reboot)}},
+memory: {ecc_errors: {volatile|aggregate: {corrected, uncorrected}}, retired_pages: {single_bit, double_bit, pending},
+remapped_rows: {corrected, uncorrected, pending, failure}}, burn: {seconds, n, dtype, tflops: {mean, std, min, max},
+per_second: [TFLOPS], reasons_seen: [str], max_temp_c, max_power_w, power_limit_w, min_sm_mhz, max_sm_mhz, mem_mhz,
+util_gpu, pcie_gen, pcie_width}, dcgm: {available, passed?, tests?: [{name, result}], note?}, notes?: [str] }`.
+Any NVML value the driver doesn't offer is null.
 Probes: SM-count staircase (spin kernel, one block per SM via large dynamic shared memory), FP8 capability
 (torch._scaled_mm on float8_e4m3fn), measured clock, copy bandwidth, per-SM timing fingerprint
 (sha256 of quantised per-SM cycle ratios, 32 bytes). CPU mode reports fixed test probes.
@@ -90,7 +103,11 @@ New read endpoints (JSON):
 - `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, world: {mode: "live"|"mock", issuer}, multibaas: {configured: bool, url}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
   (`universal_resolver` from `ENS_UNIVERSAL_RESOLVER`, else `contracts/ens.sepolia.json` when present; `rpc` = `PUBLIC_SEPOLIA_RPC`, default publicnode; `SEPOLIA_RPC` is never shown because it may carry a key.)
 - `GET /api/reports?limit=50` -> `[{ report_id, created_at, gpu_name, node, cloud, claimed_class, measured_class, verdict, published, tx, status_text }]` newest first (API keeps an index of recent report ids in the store).
-- `GET /api/reports/{id}` -> full report: the above + `probes`, `staircase` (map of blocks -> ms, if sent), `elapsed_s`, `deadline_s`, `samples`, `reasons`, `n`, `steps`.
+- `GET /api/reports/{id}` -> full report: the above + `probes`, `staircase` (map of blocks -> ms, if sent), `elapsed_s`, `deadline_s`, `samples`, `reasons`, `n`, `steps`, `health` (or null), and throughput against the listed class:
+  `ops_total = 2 * n^3 * steps` (INT8 ops asked for), `effective_tops = ops_total / elapsed_s / 1e12`,
+  `spec_tops` = NVIDIA dense INT8 rating of the CLAIMED class (H100 SXM 1979, H100 PCIe 1513, A100 624),
+  `pct_of_spec = 100 * effective_tops / spec_tops` (4 significant digits). elapsed_s includes generation,
+  hashing and network time, so this is a lower bound on the chip's real throughput.
 - `GET /api/gpus` -> `{ source: "multibaas"|"local", error: str|null, gpus: [{ node, gpu_name?, cls, cores, passes, fails, humans, status, last_at }] }`. Source: MultiBaas event query when `MB_URL`+`MB_API_KEY` are set (server-side, admin key never leaves the API); otherwise, or if MultiBaas fails (`error` set), built from the API's own published reports. `gpu_name` is filled from the API's reports when known.
 Commit `probes` may include optional `staircase: {"64": ms, ...}` which the API stores with the report. The profiler always sends it (CPU mode: synthetic, step at the simulated SM count).
 Report `status_text`: "Published." / "Publishing failed." / "Waiting for a human approval. Nothing is published yet." / "Recorded on Marks.".

@@ -6,6 +6,7 @@ import os
 import secrets
 import time
 from pathlib import Path
+from typing import Any
 
 import jwt
 from eth_utils import keccak
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 from core.challenge import Params
 
 from . import chain, world
-from .check import classify, draw_samples, gpu_label, grade
+from .check import class_name, classify, draw_samples, gpu_label, grade, throughput
 from .store import store
 
 log = logging.getLogger("waterline.api")
@@ -29,6 +30,7 @@ VOTE_TTL = 365 * 24 * 3600
 FRESH_S = 120
 PASS, FAIL = 1, 2
 INDEX, INDEX_MAX = "reports:index", 500
+HEALTH_MAX = 256 * 1024  # bytes of JSON; the health report is advisory, so it is kept small
 
 app = FastAPI(title="Waterline API")
 
@@ -90,6 +92,7 @@ class RevealIn(BaseModel):
     fingerprints: dict[str, list[str]]
     leaf_hashes: dict[str, str]
     rows: dict[str, list[int]]
+    health: dict[str, Any] | None = None  # advisory, reported by the machine; stored, never graded
 
 
 @app.post("/api/check/start")
@@ -121,17 +124,21 @@ def check_reveal(body: RevealIn):
     s = _get(f"sess:{body.session_id}", "session")
     if "root" not in s:
         raise HTTPException(409, "Commit before revealing.")
+    if body.health is not None and len(json.dumps(body.health)) > HEALTH_MAX:
+        raise HTTPException(413, f"The health report is larger than {HEALTH_MAX // 1024} KB.")
     if not store.add(f"reveal:{body.session_id}", 1, SESSION_TTL):
         raise HTTPException(409, "This session was already revealed.")
 
     p = Params(s["seed"], s["n"], s["steps"])
     reasons = []
     if s["elapsed_s"] > s["deadline_s"]:
-        reasons.append(f"Missed the deadline: {s['elapsed_s']} s > {s['deadline_s']} s.")
+        reasons.append(f"Answer locked in after {s['elapsed_s']:.1f} s; the deadline was {s['deadline_s']:.1f} s.")
     reasons += grade(p, s["root"], s["samples"], body.fingerprints, body.leaf_hashes, body.rows)
     measured = classify(s["probes"])
     if measured != s["claimed_class"]:
-        reasons.append(f"Measured class {measured} does not match claimed class {s['claimed_class']}.")
+        pr = s["probes"]
+        reasons.append(f"Measured as {class_name(measured)} ({pr['sms']} SMs, {'FP8' if pr['fp8'] else 'no FP8'}), "
+                       f"listed as {class_name(s['claimed_class'])}.")
 
     rid = secrets.token_hex(16)
     name = f"{gpu_label(s['uuid'])}.{s['cloud']}.waterline.eth"
@@ -143,7 +150,8 @@ def check_reveal(body: RevealIn):
            "status_text": "Waiting for a human approval. Nothing is published yet.",
            "probes": s["probes"], "staircase": s.get("staircase"), "elapsed_s": s["elapsed_s"],
            "deadline_s": s["deadline_s"], "samples": [[st, r] for st, r, _ in s["samples"]], "n": s["n"],
-           "steps": s["steps"]}
+           "steps": s["steps"], **throughput(s["n"], s["steps"], s["elapsed_s"], s["claimed_class"]),
+           "health": body.health and body.health | {"grade": "reported by the machine"}}
     if not reasons:
         try:
             rep["tx"] = chain.record(node, PASS, measured, rep["cores"], bytes.fromhex(rep["fingerprint"][2:]),

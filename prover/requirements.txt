@@ -2,3 +2,4 @@ numpy>=1.26
 # GPU path only (rented pod, CUDA 12); see POD_SETUP.md
 # cupy-cuda12x>=13
 # torch>=2.4
+# nvidia-ml-py>=12   # health report (import pynvml); optional, the check runs without it

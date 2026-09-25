@@ -104,6 +104,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas, h("div", { className: "kicker" }, "Ethereum Sepolia · ENS · World · MultiBaas"),
       h("h1", {}, "Waterline"),
       h("p", { className: "lede" }, "What every rented GPU really is, checked by the people who rent it. The record lives on the GPU's ENS name, which the host can't edit.")),
+    section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     section("System", null, h("div", { className: "tiles" },
       tile("api", "API", "Online", hl.store === "redis" ? "Store: Redis" : "Store: memory (this process only)"),
       tile("chain", "Chain", c.mode === "live" ? "Live" : "Dry run", `Sepolia · chain ${c.chain_id}`,
@@ -123,37 +124,74 @@ async function overview() {
   ];
 }
 
-// Wireframe terrain with a flat waterline: heights below zero are clipped to the water. Stops when off screen.
+// "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.
+function flowDiagram() {
+  const node = (layer, name, what) => h("div", { className: "node c-" + layer }, h("b", {}, name), h("small", {}, what));
+  const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
+  const att = (layer, name, what) => h("div", { className: "att c-" + layer }, h("b", {}, name), h("small", {}, what));
+  return h("div", { className: "panel" },
+    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name. World approves failures at the API; MultiBaas indexes Marks' history." },
+      h("div", { className: "stage" }, node("people", "Agent", "renter's laptop")),
+      wire("starts over SSH"),
+      h("div", { className: "stage" }, node("pod", "Profiler", "in the rented pod")),
+      wire("seed ⇄ answer", true),
+      h("div", { className: "stage" }, node("api", "Waterline API", "times it, re-checks it"), att("world", "World", "approves failures")),
+      wire("records", true),
+      h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history")),
+      wire("resolves", true),
+      h("div", { className: "stage" }, node("ens", "ENS name", "gpu-….waterline.eth"))),
+    h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "partner attached to a step")),
+    h("p", { className: "sub" }, "Your agent starts the profiler inside your pod. The API gives it a fresh puzzle and a deadline, then re-checks a random slice of the answer. A pass goes straight to Marks and shows on the GPU's ENS name; a failure waits for a person to approve it with World. MultiBaas indexes every report so agents can skip bad GPUs."));
+}
+
+// Perspective wireframe: rows recede to a horizon, amplitude and opacity grow toward the viewer, one mint
+// contour is the waterline. ~30 fps; one still frame (redrawn on resize) with reduced motion. Stops off screen.
 function terrain(canvas) {
   const ctx = canvas.getContext("2d");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let t = 0, last = -Infinity;
-  const frame = (now) => {
-    if (!canvas.isConnected) return;
-    if (!still) requestAnimationFrame(frame);
-    if (now - last < 33) return; // ~30 fps is plenty
-    last = now;
+  const ROWS = 44, COLS = 240, FAR = 0.2, WATER = 29, t0 = performance.now();
+  const lift = (x, z) => 15 * Math.sin(x * 0.009 + z * 0.05) + 9 * Math.sin(x * 0.021 - z * 0.31) + 11 * Math.cos(z * 0.47 + x * 0.0037) + 13 * Math.sin((x + z * 38) * 0.0052);
+  let last = -Infinity;
+  const draw = (now) => {
     const w = canvas.clientWidth, H = canvas.clientHeight, dpr = Math.min(devicePixelRatio || 1, 2);
-    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(H * dpr); }
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(H * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(H * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, H);
-    const rows = 16, cols = 64;
-    for (let r = 0; r < rows; r++) {
-      const z = r / (rows - 1), base = H * (0.12 + 0.86 * z ** 1.5);
-      ctx.beginPath();
-      for (let c = 0; c < cols; c++) {
-        const u = c / (cols - 1);
-        const f = Math.sin(u * 9 + r * 0.5 + t) * Math.cos(u * 4 - r * 0.3 + t * 0.6) + 0.45 * Math.sin(u * 17 + r * 0.9 - t);
-        const x = w / 2 + (u - 0.5) * w * (0.7 + 0.8 * z), y = base - Math.max(0, f) * (6 + 34 * z);
-        c ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    const t = still ? 0 : (now - t0) / 1000, horizon = H * 0.06, span = w / FAR, grid = [];
+    for (let r = 0; r < ROWS; r++) {
+      const p = r / (ROWS - 1), s = FAR + (1 - FAR) * p, y0 = horizon + (H - horizon) * p ** 1.8, pts = new Float32Array(COLS * 2);
+      for (let c = 0; c < COLS; c++) {
+        const wx = (c / (COLS - 1) - 0.5) * span;
+        pts[2 * c] = w / 2 + wx * s;
+        pts[2 * c + 1] = y0 - lift(wx, r - t * 1.6) * s * 1.15;
       }
-      ctx.strokeStyle = `rgba(95,227,185,${0.06 + 0.3 * z})`;
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
+      grid.push(pts);
     }
-    t += 0.01;
+    const line = (get, n) => { ctx.beginPath(); for (let i = 0; i < n; i++) { const [x, y] = get(i); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); };
+    ctx.lineWidth = 0.7; // receding lines toward the vanishing point, faint
+    for (let c = 0; c < COLS; c += 10) {
+      ctx.strokeStyle = "rgba(126,196,210,.07)";
+      line((r) => [grid[r][2 * c], grid[r][2 * c + 1]], ROWS);
+    }
+    grid.forEach((pts, r) => {
+      const p = r / (ROWS - 1), water = r === WATER;
+      ctx.strokeStyle = water ? "rgba(95,227,185,.95)" : `rgba(126,196,210,${(0.05 + 0.4 * p).toFixed(3)})`;
+      ctx.lineWidth = water ? 1.5 : 0.8;
+      line((c) => [pts[2 * c], pts[2 * c + 1]], COLS);
+    });
   };
-  requestAnimationFrame(frame);
+  const frame = (now) => {
+    if (!canvas.isConnected) return;
+    requestAnimationFrame(frame);
+    if (now - last < 33) return; // ~30 fps is plenty
+    last = now;
+    draw(now);
+  };
+  if (still) {
+    draw(0);
+    const ro = new ResizeObserver(() => (canvas.isConnected ? draw(0) : ro.disconnect()));
+    ro.observe(canvas);
+  } else requestAnimationFrame(frame);
 }
 
 // ---- GPUs --------------------------------------------------------------------------------------------------
@@ -232,39 +270,155 @@ async function checks() {
   ];
 }
 
+// Numbers: 3 significant digits with an SI prefix ("8.8 T"), or plain with separators.
+const si = (x, d = 3) => { const u = ["", " K", " M", " G", " T", " P"]; let i = 0; while (x >= 1000 && i < u.length - 1) { x /= 1000; i++; } return `${+x.toPrecision(d)}${u[i]}`; };
+const num = (x) => (x == null ? "—" : x >= 100 ? Math.round(x).toLocaleString() : x >= 1 ? x.toFixed(1) : String(+x.toPrecision(2)));
+const gauge = (label, value, pct, tone, aria) =>
+  h("div", { className: "gauge" }, h("div", { className: "gauge-hd" }, h("span", { className: "label" }, label), h("b", { className: tone || "" }, value)),
+    h("div", { className: "bar " + (tone === "st-fail" ? "over" : ""), role: "img", "aria-label": aria }, h("i", { style: `width:${Math.max(0.5, Math.min(100, pct || 0))}%` })));
+
 async function checkDetail(id) {
   const r = await api(`/api/reports/${encodeURIComponent(id)}`);
   const p = r.probes || {};
   const kv = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
-  const [form, out, run] = ensLookup(r.gpu_name);
+  const [form, out] = ensLookup(r.gpu_name);
   const over = r.elapsed_s > r.deadline_s;
-  const pct = r.deadline_s ? Math.min(100, (r.elapsed_s / r.deadline_s) * 100) : 0;
+  const spec = (k, v) => h("div", {}, h("b", {}, v), h("span", {}, k));
+  const listed = cls(r.claimed_class);
+  const pct = r.pct_of_spec;
   return [
     head("Check " + short(r.report_id), r.gpu_name || "Unknown GPU",
       h("div", { className: "verdict " + (r.verdict === "pass" ? "st-pass" : "st-fail") }, r.verdict),
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
       needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve with World")) : null),
+    h("section", { className: "test" },
+      h("p", { className: "principle" }, "The test: do work only the claimed chip can finish in time, then re-check a random slice of it."),
+      h("div", { className: "specline" },
+        spec("Matrix", r.n ? `${r.n.toLocaleString()} × ${r.n.toLocaleString()} INT8` : "—"),
+        spec("Steps", String(r.steps ?? "—")),
+        spec("Total operations", r.n ? `${si(2 * r.n ** 3, 2)} ops × ${r.steps}` : "—"),
+        spec("Time / deadline", h("span", {}, h("span", { className: over ? "st-fail" : "st-pass" }, `${r.elapsed_s ?? "—"} s`), ` / ${r.deadline_s ?? "—"} s`)),
+        spec("Effective", r.effective_tops == null ? "—" : `${num(r.effective_tops)} TOPS`),
+        spec("Rows re-checked", `${r.samples?.length ?? 0} × 64 entries`)),
+      h("div", { className: "gauges" },
+        gauge("Time used of the deadline", `${r.elapsed_s ?? "—"} s of ${r.deadline_s ?? "—"} s`, r.deadline_s ? (r.elapsed_s / r.deadline_s) * 100 : 0,
+          over ? "st-fail" : "st-pass", `${r.elapsed_s} of ${r.deadline_s} seconds`),
+        r.spec_tops ? gauge(`Of the ${listed}'s rating (${r.spec_tops.toLocaleString()} TOPS dense INT8)`, pct == null ? "—" : `${num(pct)}%`, pct, "",
+          `${num(r.effective_tops)} TOPS is ${num(pct)} percent of ${r.spec_tops} TOPS`) : null),
+      h("p", { className: "sub small" }, "Effective TOPS counts the whole round trip (generating, hashing, network), so it reads below the chip's peak.")),
     h("div", { className: "detail" },
       h("div", { className: "block" }, h("div", { className: "label" }, "Why"),
         r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "Every check passed: the work was done in time and the hardware matches the listing."),
-        kv(["Listed as", cls(r.claimed_class)], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)])),
+        kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)])),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
         kv(["Cores (SMs)", String(p.sms ?? "—")], ["FP8 maths", p.fp8 == null ? "—" : p.fp8 ? "yes (Hopper)" : "no"],
           ["Clock", p.clock_ghz ? `${p.clock_ghz} GHz` : "—"], ["Copy bandwidth", p.bw_tbs ? `${p.bw_tbs} TB/s` : "—"],
           ["Per-core fingerprint", h("span", { title: p.fingerprint }, short(p.fingerprint))])),
-      h("div", { className: "block" }, h("div", { className: "label" }, "Timing"),
-        h("p", {}, h("b", { className: over ? "st-fail" : "st-pass" }, `${r.elapsed_s ?? "—"} s`), h("span", { className: "sub" }, ` of a ${r.deadline_s ?? "—"} s deadline`)),
-        h("div", { className: "bar" + (over ? " over" : ""), role: "img", "aria-label": `${r.elapsed_s} of ${r.deadline_s} seconds` }, h("i", { style: `width:${pct}%` })),
-        kv(["Matrix size n", String(r.n ?? "—")], ["Steps", String(r.steps ?? "—")]),
-        h("div", { className: "label" }, "Rows checked (step, row)"),
-        r.samples?.length ? h("ul", { className: "samples" }, r.samples.map(([s, row]) => h("li", {}, `${s}, ${row}`))) : h("p", { className: "sub" }, "—"))),
+      h("div", { className: "block" }, h("div", { className: "label" }, "Rows re-checked (step, row)"),
+        r.samples?.length ? h("ul", { className: "samples" }, r.samples.map(([st, row]) => h("li", {}, `${st}, ${row}`))) : h("p", { className: "sub" }, "—"),
+        h("p", { className: "sub small" }, "Picked with the API's secret randomness only after the answer was locked in; 64 entries of each row are recomputed on the API's CPU."))),
     section("Core-count staircase", r.staircase ? `step at ${p.sms} blocks` : null,
       h("p", { className: "sub" }, "One busy block per core. Once there are more blocks than cores, the extra ones wait and the time jumps. Heat can slow a GPU down, but it can't move this step."),
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
+    healthSection(r.health),
     section("On chain", null,
       kv(["Published", r.published ? "yes" : "no"], ["Transaction", txLink(r.tx, r.published)], ["ENS node", h("span", { className: "mono", title: r.node }, short(r.node))], ["GPU name", r.gpu_name]),
       h("div", { className: "label" }, "Live ENS record"), form, out),
   ];
+}
+
+// ---- health report (advisory) -------------------------------------------------------------------------------
+const RED_REASONS = ["HW slowdown", "HW thermal", "HW power brake"], AMBER_REASONS = ["SW thermal", "power cap"];
+
+// Plain-words problems, worst first: [level, text], level "bad" | "warn".
+function healthFlags(hr) {
+  const f = [], d = hr.device || {}, m = hr.memory || {}, b = hr.burn || {}, pc = d.pcie || {};
+  const add = (level, text) => f.push([level, text]);
+  if (pc.gen && pc.max_gen && pc.width && pc.max_width && (pc.gen < pc.max_gen || pc.width < pc.max_width))
+    add("warn", `PCIe running at Gen${pc.gen} x${pc.width}; the card supports Gen${pc.max_gen} x${pc.max_width}.`);
+  if (d.nvlink?.down) add("warn", `${d.nvlink.down} of ${d.nvlink.up + d.nvlink.down} NVLink links are down.`);
+  if (d.mig === "enabled") add("warn", "MIG is on: the card is split into slices, so you may have only part of it.");
+  if (d.ecc && !d.ecc.enabled) add("bad", "ECC is off: memory errors can go unnoticed.");
+  if (d.ecc && d.ecc.pending !== d.ecc.enabled) add("warn", "The ECC setting changes at the next reboot.");
+  const e = m.ecc_errors || {};
+  const unc = Math.max(e.volatile?.uncorrected || 0, e.aggregate?.uncorrected || 0);
+  if (unc) add("bad", `${unc} uncorrectable memory error${unc > 1 ? "s" : ""} on record.`);
+  else if (e.aggregate?.corrected) add("warn", `${e.aggregate.corrected} corrected memory error${e.aggregate.corrected > 1 ? "s" : ""} over the card's life.`);
+  const rr = m.remapped_rows;
+  if (rr?.failure) add("bad", "Memory row remapping has failed: the card needs service.");
+  else if (rr?.pending) add("warn", "Remapped memory rows are waiting for a GPU reset.");
+  const rp = m.retired_pages;
+  if (rp?.double_bit) add("bad", `${rp.double_bit} memory page${rp.double_bit > 1 ? "s" : ""} retired after double-bit errors.`);
+  if (rp?.pending) add("warn", "Retired memory pages are waiting for a GPU reset.");
+  const seen = b.reasons_seen || [], hw = seen.filter((x) => RED_REASONS.includes(x)), sw = seen.filter((x) => AMBER_REASONS.includes(x));
+  if (hw.length) add("bad", `The hardware slowed itself down during the burn (${hw.join(", ")}).`);
+  if (sw.length) add("warn", `Clocks were held back during the burn by: ${sw.join(", ")}.`);
+  const t = b.tflops, ps = b.per_second || [];
+  if (t && t.mean && t.std / t.mean > 0.05) add("warn", `Throughput swung by ±${Math.round((100 * t.std) / t.mean)}% during the burn.`);
+  if (ps.length > 3 && ps.at(-1) < 0.9 * ps[0]) add("warn", `Throughput sagged from ${num(ps[0])} to ${num(ps.at(-1))} TFLOPS during the burn.`);
+  if (hr.dcgm?.passed === false) add("bad", `NVIDIA's DCGM diagnostic failed: ${hr.dcgm.tests.filter((x) => x.result === "fail").map((x) => x.name).join(", ") || "see its output"}.`);
+  (hr.notes || []).forEach((n) => add("warn", `The profiler noted: ${n}.`));
+  return f.sort((a, b2) => (a[0] === b2[0] ? 0 : a[0] === "bad" ? -1 : 1));
+}
+
+function sparkline(ys) {
+  if (!ys?.length) return null;
+  const W = 240, H = 48, lo = Math.min(...ys), hi = Math.max(...ys), pad = (hi - lo) * 0.2 || 1;
+  const X = (i) => (ys.length > 1 ? (i / (ys.length - 1)) * (W - 4) + 2 : W / 2), Y = (v) => H - 4 - ((v - lo + pad) / (hi - lo + 2 * pad)) * (H - 8);
+  const mean = ys.reduce((a, v) => a + v, 0) / ys.length;
+  const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, class: "spark", role: "img", "aria-label": `TFLOPS each second: ${ys.map(num).join(", ")}` });
+  svg.append(S("line", { x1: 0, x2: W, y1: Y(mean), y2: Y(mean), class: "mean" }),
+    S("polyline", { points: ys.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" "), class: "curve" }),
+    ...ys.map((v, i) => S("circle", { cx: X(i), cy: Y(v), r: 1.8 })));
+  return svg;
+}
+
+function healthSection(hr) {
+  const note = "Reported by the machine · advisory, not part of the verdict";
+  const wrap = (...kids) => h("section", { className: "advisory", "aria-labelledby": "health-h" },
+    h("div", { className: "sechead" }, h("h3", { id: "health-h" }, "Health report"), h("span", { className: "count warnc" }, note)), ...kids);
+  if (!hr) return wrap(h("p", { className: "empty" }, "The profiler did not send a health report for this check."));
+  const d = hr.device || {}, m = hr.memory || {}, b = hr.burn || {}, t = b.tflops, e = m.ecc_errors || {};
+  const kv = (...pairs) => h("dl", { className: "kv" }, pairs.filter(Boolean).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
+  const blk = (label, ...kids) => h("div", { className: "block" }, h("div", { className: "label" }, label), ...kids);
+  const val = (x, unit = "") => (x == null ? "—" : `${x}${unit}`);
+  const tone = (bad, warn) => (bad ? "st-fail" : warn ? "st-suspect" : "st-pass");
+  const errs = (x) => (x ? h("span", { className: tone(x.uncorrected, x.corrected) }, `${val(x.corrected)} corrected · ${val(x.uncorrected)} uncorrected`) : "—");
+  const pc = d.pcie || {}, down = pc.gen && pc.max_gen && (pc.gen < pc.max_gen || pc.width < pc.max_width);
+  const chips = (b.reasons_seen || []).map((x) => h("span", { className: "pill " + (RED_REASONS.includes(x) ? "st-fail" : AMBER_REASONS.includes(x) ? "st-suspect" : "st-unknown") }, x));
+  const flags = healthFlags(hr);
+  return wrap(
+    h("p", { className: "sub" }, "Standard profiling any renter would run: a sustained matmul burn, NVIDIA's own counters (NVML) and, when installed, the DCGM diagnostic. The host's machine reports these numbers, so they inform you but never decide a pass or fail.",
+      hr.source === "simulated" ? h("span", {}, " ", pill("simulated · CPU test run", "suspect")) : null),
+    h("ul", { className: "flags" }, flags.length ? flags.map(([lv, x]) => h("li", { className: lv === "bad" ? "st-fail" : "st-suspect" }, x))
+      : h("li", { className: "st-pass" }, "Nothing unusual reported.")),
+    h("div", { className: "detail" },
+      blk("Sustained throughput",
+        t ? h("p", { className: "big" }, `${num(t.mean)} ± ${num(t.std)}`, h("small", {}, " TFLOPS")) : h("p", { className: "sub" }, "No burn was run."),
+        t ? h("p", { className: "sub small" }, `min ${num(t.min)} · max ${num(t.max)} · BF16 ${b.n}×${b.n} matmul for ${b.seconds} s`) : null,
+        sparkline(b.per_second)),
+      blk("Clocks, heat and power",
+        h("div", { className: "chips" }, chips.length ? chips : h("span", { className: "pill st-pass" }, "no throttling seen")),
+        kv(["Max temperature", val(b.max_temp_c, " °C")], ["Power", b.max_power_w == null ? "—" : `${num(b.max_power_w)} W of ${val(b.power_limit_w, " W")} limit`],
+          ["SM clock", b.min_sm_mhz == null ? "—" : `${b.min_sm_mhz} MHz lowest · ${val(b.max_sm_mhz, " MHz")} max`],
+          ["Memory clock", val(b.mem_mhz, " MHz")], ["Utilisation", val(b.util_gpu, "%")])),
+      blk("Memory",
+        kv(["ECC", d.ecc ? h("span", { className: tone(!d.ecc.enabled, d.ecc.pending !== d.ecc.enabled) }, d.ecc.enabled ? "on" : "off") : "—"],
+          ["Errors since boot", errs(e.volatile)], ["Errors, lifetime", errs(e.aggregate)],
+          ["Remapped rows", m.remapped_rows ? h("span", { className: tone(m.remapped_rows.failure, m.remapped_rows.pending) },
+            `${m.remapped_rows.corrected + m.remapped_rows.uncorrected}${m.remapped_rows.pending ? " · reset pending" : ""}${m.remapped_rows.failure ? " · FAILED" : ""}`) : "—"],
+          ["Retired pages", m.retired_pages ? `${m.retired_pages.single_bit + m.retired_pages.double_bit}${m.retired_pages.pending ? " · reset pending" : ""}` : "—"])),
+      blk("Links and slicing",
+        kv(["PCIe", pc.gen ? h("span", { className: down ? "st-suspect" : "" }, `Gen${pc.gen} x${pc.width ?? "?"}`, h("span", { className: "sub" }, ` of Gen${pc.max_gen ?? "?"} x${pc.max_width ?? "?"}`)) : "—"],
+          ["NVLink", d.nvlink ? h("span", { className: d.nvlink.down ? "st-suspect" : "" }, `${d.nvlink.up} up · ${d.nvlink.down} down`) : "none"],
+          ["MIG", d.mig ? h("span", { className: d.mig === "enabled" ? "st-suspect" : "" }, d.mig) : "—"])),
+      blk("Software and identity",
+        kv(["Reports itself as", d.name], ["Driver", d.driver], ["CUDA", d.cuda], ["VBIOS", d.vbios], ["Memory", val(d.memory_gib, " GiB")],
+          ["UUID", d.uuid ? h("span", { className: "mono", title: d.uuid }, short(d.uuid)) : "—"])),
+      blk("DCGM diagnostic",
+        !hr.dcgm?.available ? h("p", { className: "sub" }, "Not available in this pod.")
+          : hr.dcgm.tests?.length ? h("ul", { className: "samples" }, hr.dcgm.tests.map((x) => h("li", { className: x.result === "fail" ? "st-fail" : x.result === "pass" ? "st-pass" : "st-unknown" }, `${x.name} · ${x.result}`)))
+            : h("p", { className: "sub" }, hr.dcgm.note || "No results."))));
 }
 
 // Inline SVG, drawn to scale: blocks launched (x) against kernel time in ms (y).
