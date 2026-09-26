@@ -13,3 +13,5 @@ contracts/broadcast/
 !.env.example
 result.json
 **/result.json
+.vercel
+.env.local
