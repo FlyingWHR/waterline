@@ -33,10 +33,11 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
 
 ## Why
 
-- **A big market on an unchecked claim.** GPU cloud passed $25B in 2025, heading to ~$400B by 2031
-  ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
-  and banks lend against GPUs ([CoreWeave](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)).
-  The "same" H100 rents for $1.49–$6.98/h ([IntuitionLabs](https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison)).
+- **Compute is becoming money. Nobody can prove it was delivered.** GPU cloud is heading from $25B (2025) to ~$400B
+  by 2031 ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
+  banks lend against GPUs ([CoreWeave, $8.5B](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)),
+  and H100 rentals trade as futures on CME from October 5, pending review ([CME](https://investor.cmegroup.com/news-releases/news-release-details/cme-group-and-silicon-data-launch-compute-futures-october-5)).
+  Rentals, loans, futures and agents buying compute all price a claim nobody can verify: that the compute was delivered.
 - **Renters mostly get less, not fake.** Throttled H100s at full price (1,755 → ~345 MHz under load:
   [matt.sh](https://matt.sh/cloud-gpu-thermal-throttling), [Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)),
   specs that don't match, broken NVSwitch ([Vast.ai](https://www.trustpilot.com/review/vast.ai),
