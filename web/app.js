@@ -6,6 +6,7 @@ const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
 const ENS_KEYS = ["status", "class", "cores", "passes", "fails", "humans", "fingerprint"];
 const TOKEN_KEY = "waterline.agent_token";
+const WRITE_PATH = { multibaas: "MultiBaas", rpc: "RPC", "dry-run": "dry run" };
 const view = document.getElementById("view");
 
 // ---- small helpers -----------------------------------------------------------------------------------------
@@ -108,14 +109,15 @@ async function overview() {
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     section("System", null, h("div", { className: "tiles" },
       tile("api", "API", "Online", hl.store === "redis" ? "Store: Redis" : "Store: memory (this process only)"),
-      tile("chain", "Chain", c.mode === "live" ? "Live" : "Dry run", `Sepolia · chain ${c.chain_id}`,
+      tile("chain", "Chain", c.mode === "live" ? "Live" : "Dry run", `Sepolia · chain ${c.chain_id}`, `Writes via ${WRITE_PATH[c.write_path] || c.write_path}`,
         c.marks ? h("span", {}, "Marks ", scan("address", c.marks)) : "Marks address not set: reports are logged, not sent"),
       tile("chain", "Reporter", c.reporter_balance_eth == null ? "—" : `${c.reporter_balance_eth.toFixed(4)} ETH`,
         c.reporter ? h("span", {}, "Account ", scan("address", c.reporter)) : "No reporter account set",
         c.mode === "live" && c.reporter_balance_eth == null ? "Balance unknown: the RPC did not answer" : null),
       tile("world", "World", hl.world.mode === "mock" ? "Mock" : "Live", hl.world.mode === "mock" ? "Local stand-in, no real humans" : hl.world.issuer),
       tile("mb", "MultiBaas", hl.multibaas.configured ? "Configured" : "Not configured",
-        hl.multibaas.configured ? hl.multibaas.url : "GPU table uses this API's own records"),
+        hl.multibaas.configured ? hl.multibaas.url : "GPU table uses this API's own records",
+        hl.multibaas.webhook ? "Webhook: configured" : "Webhook: not configured (reports won't show as indexed)"),
       tile("ens", "ENS", hl.ens.parent, hl.ens.universal_resolver ? h("span", {}, "Universal resolver ", scan("address", hl.ens.universal_resolver)) : "Universal resolver not set"))),
     section("GPUs on record", g.source === "multibaas" ? "from MultiBaas" : "from this API", h("div", { className: "nums" },
       ...[["Checked", g.gpus.length, ""], ["Pass", count("pass"), "st-pass"], ["Suspect", count("suspect"), "st-suspect"], ["Failed", count("failed"), "st-failed"]]
@@ -214,6 +216,52 @@ async function gpus() {
   ];
 }
 
+// Text records of one ENS name, read in the browser through the universal resolver (viem).
+async function ensReader(name) {
+  const hl = await getHealth();
+  if (!hl.ens.universal_resolver) throw new Error("the API has no ENS universal resolver configured");
+  const [{ createPublicClient, http }, { sepolia }, { normalize }] = await Promise.all([import(VIEM), import(VIEM + "/chains"), import(VIEM + "/ens")]);
+  const client = createPublicClient({ chain: sepolia, transport: http(hl.ens.rpc) });
+  const n = normalize(name);
+  return { n, text: (key) => client.getEnsText({ name: n, key, universalResolverAddress: hl.ens.universal_resolver }) };
+}
+
+// "On chain": how it was written, whether MultiBaas saw it, and the evidence behind it (reportHash).
+function onChain(r, kv) {
+  const dry = r.via === "dry-run" || (r.published && !r.tx);
+  const written = !r.published ? h("span", { className: "sub" }, needsApproval(r) ? "Not published: waiting for a human approval" : "Not published")
+    : dry ? h("span", { className: "st-suspect" }, "Not on chain yet (dry run)") : h("span", {}, "Published via ", WRITE_PATH[r.via] || r.via || "—");
+  const indexed = r.indexed ? h("span", { className: "st-pass" }, `Indexed by MultiBaas ✓ `, h("span", { className: "sub" }, when(r.indexed_at)))
+    : h("span", { className: "sub" }, r.published && !dry ? "Not indexed yet (waiting for the MultiBaas webhook)" : "—");
+  const out = h("p", { className: "msg", "aria-live": "polite" });
+  const verify = async () => {
+    if (!r.published) return out.replaceChildren("Not published yet, so there is no on-chain record to compare with.");
+    if (dry) return out.replaceChildren("Not on chain yet (dry run): there is no on-chain record to compare with.");
+    out.className = "msg";
+    out.replaceChildren(`Reading waterline.report of ${r.gpu_name} from Sepolia…`);
+    try {
+      const { text } = await ensReader(r.gpu_name);
+      const onchain = ((await text("waterline.report")) || "").toLowerCase();
+      if (!onchain) out.replaceChildren("The name has no waterline.report yet. The transaction may still be confirming; try again shortly.");
+      else if (onchain === r.report_hash.toLowerCase()) { out.className = "st-pass"; out.replaceChildren("Matches the on-chain record ✓"); }
+      else { out.className = "st-suspect"; out.replaceChildren(`Doesn't match: the name now carries ${short(onchain)}. A newer check of this GPU may have replaced it; this report's hash stays in its transaction's Reported event.`); }
+    } catch (e) {
+      out.className = "err";
+      out.replaceChildren(`Couldn't read ${r.gpu_name}: ${e.shortMessage || e.message}`);
+    }
+  };
+  const evidence = r.report_hash
+    ? h("div", { className: "evidence" },
+      h("span", { className: "mono hash", title: r.report_hash }, r.report_hash),
+      h("div", { className: "row" },
+        h("a", { className: "btn sm", href: `/api/reports/${encodeURIComponent(r.report_id)}/evidence`, download: `waterline-report-${r.report_id}.json` }, "Download evidence"),
+        h("button", { type: "button", className: "btn sm primary", onclick: verify }, "Verify")), out,
+      h("p", { className: "sub small" }, "keccak256 of the downloaded file is the report hash. Verify reads waterline.report from the GPU's ENS name, straight from the chain."))
+    : h("span", { className: "sub" }, "This check was made before reports carried an evidence hash.");
+  return section("On chain", null, kv(["Written", written], ["Transaction", txLink(r.tx, r.published)], ["MultiBaas", indexed],
+    ["ENS node", h("span", { className: "mono", title: r.node }, short(r.node))], ["GPU name", r.gpu_name], ["Evidence", evidence]));
+}
+
 // Returns [form, output, run(name)]. Reads the waterline.* text records through the universal resolver.
 function ensLookup(initial = "") {
   const input = h("input", { type: "text", id: "ens-name", value: initial, placeholder: "gpu-91c0ab12.cloud-b.waterline.eth", autocomplete: "off", spellcheck: false });
@@ -226,11 +274,8 @@ function ensLookup(initial = "") {
     input.value = name;
     out.replaceChildren(h("p", { className: "msg" }, `Reading ${name} from Sepolia…`));
     try {
-      if (!hl.ens.universal_resolver) throw new Error("the API has no ENS universal resolver configured");
-      const [{ createPublicClient, http }, { sepolia }, { normalize }] = await Promise.all([import(VIEM), import(VIEM + "/chains"), import(VIEM + "/ens")]);
-      const client = createPublicClient({ chain: sepolia, transport: http(hl.ens.rpc) });
-      const n = normalize(name);
-      const vals = await Promise.all(ENS_KEYS.map((k) => client.getEnsText({ name: n, key: "waterline." + k, universalResolverAddress: hl.ens.universal_resolver })));
+      const { text, n } = await ensReader(name);
+      const vals = await Promise.all(ENS_KEYS.map((k) => text("waterline." + k)));
       if (!vals.some(Boolean)) {
         out.replaceChildren(h("p", { className: "msg" }, `No record for ${n} yet. Nobody has published a check of this GPU, or Marks is not its resolver yet.`));
         return;
@@ -252,11 +297,12 @@ function ensLookup(initial = "") {
 
 // ---- checks ------------------------------------------------------------------------------------------------
 function checksTable(reps) {
-  return table(["When", "GPU", "Listed as", "Measured as", "Verdict", "Tx", ""], reps.map((r) => h("tr", {},
+  return table(["When", "GPU", "Listed as", "Measured as", "Verdict", "Tx", "Indexed", ""], reps.map((r) => h("tr", {},
     h("td", {}, when(r.created_at)),
     h("td", {}, h("a", { href: `#/check/${r.report_id}`, className: "mono", title: "Open this check" }, r.gpu_name || r.report_id)),
     h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r)),
     h("td", {}, txLink(r.tx, r.published)),
+    h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
     h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", onclick: () => approveFlow(r) }, "Approve with World") : null))));
 }
 
@@ -324,9 +370,8 @@ async function checkDetail(id) {
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
     perfSection(r, cmp),
     healthSection(r.health),
-    section("On chain", null,
-      kv(["Published", r.published ? "yes" : "no"], ["Transaction", txLink(r.tx, r.published)], ["ENS node", h("span", { className: "mono", title: r.node }, short(r.node))], ["GPU name", r.gpu_name]),
-      h("div", { className: "label" }, "Live ENS record"), form, out),
+    onChain(r, kv),
+    section("Live ENS record", null, form, out),
   ];
 }
 

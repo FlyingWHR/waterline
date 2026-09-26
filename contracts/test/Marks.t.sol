@@ -19,7 +19,7 @@ contract MarksTest is Test {
 
     function test_passIsRecorded() public {
         vm.prank(api);
-        marks.record(node, 1, 1, 132, fp, keccak256("report-1"), 14105, 7125);
+        marks.record(node, 1, 1, 132, fp, keccak256("report-1"), 14105, 7125, bytes32(0));
         assertEq(marks.text(node, "waterline.status"), "pass");
         assertEq(marks.text(node, "waterline.tops"), "1410.5");
         assertEq(marks.text(node, "waterline.pct_of_spec"), "71.25");
@@ -33,14 +33,14 @@ contract MarksTest is Test {
         vm.prank(host);
         vm.expectRevert(abi.encodeWithSelector(
             IEnhancedAccessControl.EACUnauthorizedAccountRoles.selector, uint256(node), role, host));
-        marks.record(node, 1, 1, 132, fp, keccak256("fake"), 0, 0);
+        marks.record(node, 1, 1, 132, fp, keccak256("fake"), 0, 0, bytes32(0));
     }
 
     function test_oneFailureIsSuspectTwoHumansFail() public {
         vm.startPrank(api);
-        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0);
+        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0, bytes32(0));
         assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 humans");
-        marks.record(node, 2, 3, 108, fp, keccak256("human-2"), 0, 0);
+        marks.record(node, 2, 3, 108, fp, keccak256("human-2"), 0, 0, bytes32(0));
         vm.stopPrank();
         assertEq(marks.text(node, "waterline.status"), "failed");
         assertEq(marks.text(node, "waterline.class"), "A100");
@@ -49,27 +49,27 @@ contract MarksTest is Test {
 
     function test_sameHumanCannotVoteTwiceOnOneGpu() public {
         vm.startPrank(api);
-        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0);
+        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0, bytes32(0));
         vm.expectRevert(Marks.AlreadyVoted.selector);
-        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0);
+        marks.record(node, 2, 3, 108, fp, keccak256("human-1"), 0, 0, bytes32(0));
         vm.stopPrank();
     }
 
     function test_failureNeedsAVoter() public {
         vm.prank(api);
         vm.expectRevert(Marks.AlreadyVoted.selector);
-        marks.record(node, 2, 3, 108, fp, bytes32(0), 0, 0);
+        marks.record(node, 2, 3, 108, fp, bytes32(0), 0, 0, bytes32(0));
     }
 
     function test_badVerdictReverts() public {
         vm.prank(api);
         vm.expectRevert(Marks.BadVerdict.selector);
-        marks.record(node, 7, 1, 132, fp, keccak256("x"), 0, 0);
+        marks.record(node, 7, 1, 132, fp, keccak256("x"), 0, 0, bytes32(0));
     }
 
     function test_resolveAnswersTextAndAddr() public {
         vm.prank(api);
-        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0);
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0, bytes32(0));
         bytes memory out = marks.resolve("", abi.encodeWithSelector(marks.text.selector, node, "waterline.status"));
         assertEq(abi.decode(out, (string)), "pass");
         out = marks.resolve("", abi.encodeWithSelector(bytes4(0x3b3b57de), node));
@@ -80,7 +80,7 @@ contract MarksTest is Test {
         assertEq(marks.text(node, "waterline.status"), "unknown");
         assertEq(marks.text(node, "waterline.fingerprint"), "");
         vm.prank(api);
-        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0);
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0, bytes32(0));
         assertEq(bytes(marks.text(node, "waterline.fingerprint")).length, 66);
     }
 
@@ -94,21 +94,21 @@ contract MarksTest is Test {
     function test_perfTextRecordsKeepZeroPaddingAndLatest() public {
         assertEq(marks.text(node, "waterline.tops"), "");
         vm.startPrank(api);
-        marks.record(node, 1, 1, 132, fp, keccak256("r1"), 14105, 7125);
-        marks.record(node, 1, 1, 132, fp, keccak256("r2"), 7, 705);
+        marks.record(node, 1, 1, 132, fp, keccak256("r1"), 14105, 7125, bytes32(0));
+        marks.record(node, 1, 1, 132, fp, keccak256("r2"), 7, 705, bytes32(0));
         vm.stopPrank();
         assertEq(marks.text(node, "waterline.tops"), "0.7");
         assertEq(marks.text(node, "waterline.pct_of_spec"), "7.05");
-        (,,,,,,, uint32 tops, uint16 pct) = marks.gpus(node);
+        (,,,,,,, uint32 tops, uint16 pct,) = marks.gpus(node);
         assertEq(tops, 7);
         assertEq(pct, 705);
     }
 
     function test_reportedEventCarriesPerf() public {
         vm.expectEmit(true, false, false, true);
-        emit Marks.Reported(node, keccak256("r"), 1, 1, 132, fp, 14105, 7125, uint64(block.timestamp), 1, 0, 0);
+        emit Marks.Reported(node, keccak256("r"), 1, 1, 132, fp, 14105, 7125, uint64(block.timestamp), 1, 0, 0, bytes32(0));
         vm.prank(api);
-        marks.record(node, 1, 1, 132, fp, keccak256("r"), 14105, 7125);
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 14105, 7125, bytes32(0));
     }
 
     function test_onlyAdminGrantsTheReporterRole() public {
@@ -123,7 +123,7 @@ contract MarksTest is Test {
         marks.revokeRootRoles(role, api);
         vm.prank(api);
         vm.expectRevert();
-        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0);
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0, bytes32(0));
     }
 
     /// The next stage in one call: an independent verifier allowed to write one GPU's record, and no other.
@@ -134,14 +134,24 @@ contract MarksTest is Test {
         vm.prank(admin);
         marks.grantRoles(uint256(node), role, verifier);
         vm.startPrank(verifier);
-        marks.record(node, 1, 1, 132, fp, keccak256("v1"), 0, 0);
+        marks.record(node, 1, 1, 132, fp, keccak256("v1"), 0, 0, bytes32(0));
         vm.expectRevert();
-        marks.record(other, 1, 1, 132, fp, keccak256("v2"), 0, 0);
+        marks.record(other, 1, 1, 132, fp, keccak256("v2"), 0, 0, bytes32(0));
         vm.stopPrank();
         assertEq(marks.text(node, "waterline.passes"), "1");
     }
 
     function test_supportsAccessControlInterface() public view {
         assertTrue(marks.supportsInterface(type(IEnhancedAccessControl).interfaceId));
+    }
+
+    function test_reportHashAnchorsTheEvidence() public {
+        bytes32 h = keccak256("canonical report json");
+        assertEq(marks.text(node, "waterline.report"), "");
+        vm.prank(api);
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 14105, 7125, h);
+        (,,,,,,,,, bytes32 stored) = marks.gpus(node);
+        assertEq(stored, h);
+        assertEq(bytes(marks.text(node, "waterline.report")).length, 66);
     }
 }

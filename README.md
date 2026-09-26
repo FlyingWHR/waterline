@@ -47,6 +47,8 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
   resolves with no registration. Every GPU has a public name for free.
 - **Enhanced Access Control:** writing a GPU's record takes the REPORTER role from ENSv2's access-control
   library, scoped per GPU name. Today only our API holds it; providers and renters can never write a score.
+- **Evidence anchored:** each record carries the hash of the full report (`waterline.report`). Download the report
+  from `/api/reports/{id}/evidence`, hash it, and compare: if one byte changed, it won't match.
 
 ### People: World ID for Agents
 - **Stable, private, pairwise ID** (World's Human Continuity provider): one identifier per human in our app, no name
@@ -96,7 +98,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 (cd contracts && forge test --match-contract EnsFork --fork-url $SEPOLIA_RPC)  # real ENSv2 on a Sepolia fork
 
 # local end to end (simulated World, CPU profiler)
-WORLD_MOCK=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:app --port 8787
+WORLD_MOCK=1 ALLOW_CLIENT_SIZES=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:app --port 8787
 .venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud cloud-a --claimed 1 --cpu
 .venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud cloud-b --claimed 1 --cpu --sms 108
 open http://127.0.0.1:8787

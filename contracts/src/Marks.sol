@@ -28,6 +28,7 @@ contract Marks is EnhancedAccessControl {
         uint64 lastAt;
         uint32 topsX10; // latest verified INT8 TOPS x 10 (1410.5 TOPS -> 14105)
         uint16 pctBps; // latest verified TOPS as percent of the claimed model's spec x 100 (71.25% -> 7125)
+        bytes32 reportHash; // keccak256 of the latest full report (canonical JSON served by the API)
     }
 
     mapping(bytes32 node => Gpu) public gpus;
@@ -45,7 +46,8 @@ contract Marks is EnhancedAccessControl {
         uint64 at,
         uint32 passes,
         uint32 fails,
-        uint32 humans
+        uint32 humans,
+        bytes32 reportHash
     );
     error BadVerdict();
     error AlreadyVoted();
@@ -61,6 +63,7 @@ contract Marks is EnhancedAccessControl {
     /// @notice Record one verified report. Passes carry their own evidence; a failure needs a
     ///         voter ID (one per verified human per GPU, derived by the API from World ID).
     ///         topsX10 / pctBps: the report's verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
+    ///         reportHash: keccak256 of the full report, so anyone can check the off-chain evidence wasn't edited.
     function record(
         bytes32 node,
         uint8 verdict,
@@ -69,7 +72,8 @@ contract Marks is EnhancedAccessControl {
         bytes32 fingerprint,
         bytes32 voterId,
         uint32 topsX10,
-        uint16 pctBps
+        uint16 pctBps,
+        bytes32 reportHash
     ) external {
         _checkRoles(uint256(node), ROLE_REPORTER, msg.sender);
         Gpu storage g = gpus[node];
@@ -90,8 +94,9 @@ contract Marks is EnhancedAccessControl {
         g.lastAt = uint64(block.timestamp);
         g.topsX10 = topsX10;
         g.pctBps = pctBps;
+        g.reportHash = reportHash;
         emit Reported(
-            node, voterId, verdict, cls, cores, fingerprint, topsX10, pctBps, g.lastAt, g.passes, g.fails, g.humans
+            node, voterId, verdict, cls, cores, fingerprint, topsX10, pctBps, g.lastAt, g.passes, g.fails, g.humans, reportHash
         );
     }
 
@@ -117,6 +122,7 @@ contract Marks is EnhancedAccessControl {
         if (k == keccak256("waterline.fingerprint")) return g.lastAt == 0 ? "" : _hex(g.fingerprint);
         if (k == keccak256("waterline.tops")) return g.lastAt == 0 ? "" : _fixed(g.topsX10, 10, 1);
         if (k == keccak256("waterline.pct_of_spec")) return g.lastAt == 0 ? "" : _fixed(g.pctBps, 100, 2);
+        if (k == keccak256("waterline.report")) return g.lastAt == 0 ? "" : _hex(g.reportHash);
         if (k == keccak256("description")) return "Waterline: renter-verified GPU record";
         return "";
     }

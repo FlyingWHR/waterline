@@ -12,6 +12,17 @@ python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 python3 -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
 ```
 
+First, calibrate (runs the GPU self-check, then times the exam at n = 16384):
+
+```bash
+cd ~/waterline
+python3 -m prover.calibrate  # seconds per step, recommended steps, what an A100 would need, the env to set
+```
+
+Run it on the H100 (the model both listings claim). Put the printed `CHECK_STEPS` and `DEADLINES` on the API
+(Vercel env) and redeploy. `--net S` changes the network allowance (default 1 s); `--model <id>` if the SM count
+doesn't identify the card.
+
 Check the GPU path matches the CPU maths bit for bit, and look at the probe numbers:
 
 ```bash
@@ -29,4 +40,4 @@ python3 -m prover.run --api https://<api host> --cloud cloud-b --claimed 1
 ```
 
 Prints the API verdict JSON; writes `result.json` (probes + staircase timings) next to it.
-Set the deadline from real numbers: the stderr line `computed 100 steps in X s` for each GPU class.
+The stderr line `computed N steps in X s` should match the calibration; if not, re-run `prover.calibrate`.

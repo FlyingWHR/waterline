@@ -27,7 +27,8 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 | `MB_URL`, `MB_API_KEY` | `/api/gpus` | MultiBaas admin key, server-side only; unset = table from the API's own reports |
 | `ENS_UNIVERSAL_RESOLVER` | `/api/health` | set on Vercel (`contracts/` is not bundled); locally read from `contracts/ens.sepolia.json` |
 | `PUBLIC_SEPOLIA_RPC` | `/api/health` | keyless RPC the browser uses for ENS reads; default publicnode |
-| `DEADLINES` | check | JSON per claimed class, e.g. `{"1": 5.0, "2": 6.0, "3": 9.0}`; default 5.0 s |
+| `DEADLINES` | check | JSON per claimed class or model id, e.g. `{"1": 5.0}` (seconds); unset = formula in docs/METRICS.md. Print it on the pod with `python3 -m prover.calibrate` |
+| `CHECK_STEPS` | check | steps when the prover sends none (default 100); with a `DEADLINES` entry, the only steps accepted for that class |
 
 ## Run locally
 
@@ -59,7 +60,8 @@ curl -s -XPOST $API/api/check/commit -H 'content-type: application/json' \
 # -> {elapsed_s, samples:[[step,row],…]}
 curl -s -XPOST $API/api/check/reveal -H 'content-type: application/json' \
   -d '{"session_id":"…","fingerprints":{"<step>":["<uint64>",…]},"leaf_hashes":{"0":"<hex>",…},"rows":{"<step>:<row>":[…]}}'
-# -> {report_id, verdict, measured_class, reasons, gpu_name, node, published, tx, via}   via: multibaas|rpc|dry-run|null
+# -> {report_id, verdict, measured_class, reasons, gpu_name, node, published, tx, via, report_hash}   via: multibaas|rpc|dry-run|null
+curl -s $API/api/reports/<report_id>/evidence   # canonical bytes; keccak256(body) == report_hash == waterline.report
 
 curl -s -XPOST $API/api/world/login/start          # -> {device_id, user_code, verification_uri_complete, expires_in}
 curl -s -XPOST $API/api/world/login/poll -H 'content-type: application/json' -d '{"device_id":"…"}'

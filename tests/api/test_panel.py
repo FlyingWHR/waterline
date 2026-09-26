@@ -12,7 +12,7 @@ def test_health_dry_run():
     assert h["api"] == "ok" and h["store"] == "memory"
     assert h["chain"] == {"mode": "dry-run", "write_path": "dry-run", "chain_id": 11155111, "marks": None, "reporter": None,
                           "reporter_balance_eth": None}
-    assert h["world"]["mode"] == "mock" and h["multibaas"] == {"configured": False, "url": None}
+    assert h["world"]["mode"] == "mock" and h["multibaas"] == {"configured": False, "url": None, "webhook": False}
     assert h["ens"]["parent"] == "waterline.eth" and h["ens"]["universal_resolver"].startswith("0x")
 
 

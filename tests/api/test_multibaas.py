@@ -18,7 +18,7 @@ client = TestClient(appmod.app)
 KEY = "0x" + "11" * 32
 REPORTER = Account.from_key(KEY).address
 MARKS = "0x" + "4d" * 20
-ARGS = (b"\1" * 32, 1, 1, 132, b"\2" * 32, b"\3" * 32, 14105, 7125)
+ARGS = (b"\1" * 32, 1, 1, 132, b"\2" * 32, b"\3" * 32, 14105, 7125, b"\4" * 32)
 
 
 @pytest.fixture
@@ -58,7 +58,8 @@ def test_record_via_multibaas_signs_and_submits(mb):
     assert compose == "/chains/ethereum/addresses/marks/contracts/marks/methods/record"
     assert status == "/chains/ethereum/status" and submit == "/chains/ethereum/transactions/submit"
     assert hdr["Authorization"] == "Bearer admin-key"
-    assert body == {"args": ["0x" + "01" * 32, "1", "1", "132", "0x" + "02" * 32, "0x" + "03" * 32, "14105", "7125"],
+    assert body == {"args": ["0x" + "01" * 32, "1", "1", "132", "0x" + "02" * 32, "0x" + "03" * 32, "14105", "7125",
+                             "0x" + "04" * 32],
                     "from": REPORTER, "formatInts": "as_strings"}
     raw = bytes.fromhex(sub["signedTx"][2:])
     assert raw[0] == 2  # EIP-1559

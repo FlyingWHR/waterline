@@ -14,7 +14,7 @@ from eth_utils import keccak
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,7 @@ VOTE_TTL = 365 * 24 * 3600
 FRESH_S = 120
 PASS, FAIL = 1, 2
 INDEX, INDEX_MAX = "reports:index", 500
+CHECK_N = 16384
 HEALTH_MAX = 256 * 1024  # bytes of JSON; the health report is advisory, so it is kept small
 
 app = FastAPI(title="Waterline API")
@@ -62,13 +63,28 @@ def _get(key: str, what: str):
     return v
 
 
+# Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
+MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash"}
+
+
+def canonical(rep: dict) -> bytes:
+    """The report as evidence: minus MUTABLE fields, JSON with sorted keys, no whitespace, UTF-8.
+    Round-tripped through JSON first so it is byte-identical to what any later read of the store gives."""
+    frozen = {k: v for k, v in json.loads(json.dumps(rep)).items() if k not in MUTABLE}
+    return json.dumps(frozen, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def report_hash(rep: dict) -> str:
+    return "0x" + keccak(canonical(rep)).hex()
+
+
 # ---- check ------------------------------------------------------------------------------------------------
 class StartIn(BaseModel):
     cloud: str = Field(pattern=r"^[a-z0-9-]{1,63}$")
     uuid: str = Field(min_length=1, max_length=128)
     claimed_class: int = Field(ge=1, le=3)
-    n: int = Field(ge=8, le=32768)
-    steps: int = Field(ge=1, le=1000)
+    n: int = Field(CHECK_N, ge=8, le=32768)  # omitted -> the API's calibrated size (prover.run on a GPU omits both)
+    steps: int = Field(default_factory=lambda: int(os.environ.get("CHECK_STEPS") or 100), ge=1, le=1000)
 
 
 class Probes(BaseModel):
@@ -97,6 +113,10 @@ class RevealIn(BaseModel):
 
 @app.post("/api/check/start")
 def check_start(body: StartIn):
+    # The API decides how much work the exam is. If the prover could pick n/steps, a slow GPU would ask for a
+    # tiny exam and finish inside the deadline's floor. Client sizes are for tests and the local CPU demo only.
+    if os.environ.get("ALLOW_CLIENT_SIZES") != "1":
+        body = body.model_copy(update={"n": CHECK_N, "steps": int(os.environ.get("CHECK_STEPS") or 100)})
     sid = secrets.token_urlsafe(16)
     seed = secrets.randbits(63)
     s = body.model_dump() | {"seed": seed, "t0": now(), "deadline_s": deadline_s(body.claimed_class, body.n, body.steps)}
@@ -153,10 +173,11 @@ def check_reveal(body: RevealIn):
            "health": body.health and body.health | {"grade": "reported by the machine"}, "work_ok": work_ok,
            "via": None, "indexed": False, "indexed_at": None}
     rep |= perf_profile(rep, body.metrics, classification)
+    rep["report_hash"] = report_hash(rep)  # frozen with the verdict; GET /api/reports/{id}/evidence serves the bytes
     if not reasons:
         try:
             rep["tx"] = chain.record(node, PASS, measured, rep["cores"], bytes.fromhex(rep["fingerprint"][2:]),
-                                     keccak(text=rid), *_perf_onchain(rep))
+                                     keccak(text=rid), *_perf_onchain(rep), bytes.fromhex(rep["report_hash"][2:]))
             rep |= {"published": True, "status_text": "Published.", "via": chain.write_path()}
         except chain.ChainError as e:
             rep["status_text"] = "Publishing failed."
@@ -165,7 +186,7 @@ def check_reveal(body: RevealIn):
     # ponytail: read-modify-write index; two reveals in the same instant can drop an id. Redis LPUSH if it bites.
     store.put(INDEX, [rid, *(store.get(INDEX) or [])][:INDEX_MAX], REPORT_TTL)
     return {k: rep[k] for k in ("report_id", "verdict", "measured_class", "reasons", "gpu_name", "node",
-                                "published", "tx", "via")}
+                                "published", "tx", "via", "report_hash")}
 
 
 # ---- World: login and approval (device grant) --------------------------------------------------------------
@@ -235,6 +256,10 @@ def login_poll(body: DeviceIn):
     return _finish(body.device_id, d, {"status": "approved", "agent_token": world.make_agent_token(claims["sub"])})
 
 
+def _hash_bytes(rep: dict) -> bytes:
+    return bytes.fromhex((rep.get("report_hash") or report_hash(rep))[2:])  # reports from before report_hash existed
+
+
 def _fail_report(report_id: str) -> dict:
     rep = _get(f"report:{report_id}", "report")
     if rep["verdict"] != "fail":
@@ -285,7 +310,7 @@ def approve_poll(body: DeviceIn):
         return refuse("This report is already published.")
     try:
         tx = chain.record(node, FAIL, rep["measured_class"], rep["cores"], bytes.fromhex(rep["fingerprint"][2:]), vid,
-                          *_perf_onchain(rep))
+                          *_perf_onchain(rep), _hash_bytes(rep))
     except chain.ChainError as e:
         store.delete(vote_key)
         store.delete(pub_key)
@@ -300,11 +325,11 @@ def approve_poll(body: DeviceIn):
 
 # ---- control panel reads ------------------------------------------------------------------------------------
 SUMMARY = ("report_id", "created_at", "gpu_name", "node", "cloud", "claimed_class", "measured_class", "verdict",
-           "published", "tx", "status_text", "via", "indexed", "indexed_at")
+           "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash")
 # Reported(node 0, voterId 1, verdict 2, cls 3, cores 4, fingerprint 5, topsX10 6, pctBps 7, at 8, passes 9,
-#          fails 10, humans 11): must match contracts/src/Marks.sol (checked in tests/api/test_event_layout.py).
+#          fails 10, humans 11, reportHash 12): must match contracts/src/Marks.sol (tests/api/test_event_layout.py).
 # Tallies only grow, so max = latest; per-report fields use last.
-REPORTED = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32)"
+REPORTED = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32,bytes32)"
 MB_QUERY = {"events": [{
     "eventName": REPORTED,
     "select": [{"type": "input", "inputIndex": i, "alias": a, **({"aggregator": g} if g else {})}
@@ -343,7 +368,8 @@ def health():
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},
             "world": {"mode": "mock" if world.mock_on() else "live", "issuer": world.issuer()},
-            "multibaas": {"configured": bool(mb and os.environ.get("MB_API_KEY")), "url": mb or None},
+            "multibaas": {"configured": bool(mb and os.environ.get("MB_API_KEY")), "url": mb or None,
+                          "webhook": bool(os.environ.get("MB_WEBHOOK_SECRET"))},
             "ens": {"parent": "waterline.eth", "universal_resolver": _universal_resolver(),
                     # public RPC for the browser's ENS reads; SEPOLIA_RPC may carry a key, so it is never shown
                     "rpc": os.environ.get("PUBLIC_SEPOLIA_RPC", "https://ethereum-sepolia-rpc.publicnode.com")}}
@@ -357,6 +383,15 @@ def reports(limit: int = Query(50, ge=1, le=INDEX_MAX)):
 @app.get("/api/reports/{report_id}")
 def report(report_id: str):
     return _get(f"report:{report_id}", "report")
+
+
+@app.get("/api/reports/{report_id}/evidence")
+def evidence(report_id: str):
+    """The exact canonical bytes; keccak256(body) must equal the GPU name's waterline.report text record."""
+    rep = _get(f"report:{report_id}", "report")
+    hdr = {"X-Waterline-Report-Hash": rep["report_hash"]} if rep.get("report_hash") else {}
+    return Response(canonical(rep), media_type="application/json",
+                    headers=hdr | {"Content-Disposition": f'inline; filename="waterline-report-{report_id}.json"'})
 
 
 def _mb_gpus() -> list[dict]:

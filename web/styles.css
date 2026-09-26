@@ -280,6 +280,9 @@ dialog::backdrop{background:rgba(3,11,17,.78); backdrop-filter:blur(3px);}
 .status{font-family:var(--mono); font-size:13px; color:var(--body2); min-height:1.6em;}
 .status.good{color:var(--pass);} .status.bad{color:var(--fail);}
 .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+.evidence{display:grid; gap:10px; min-width:0;}
+.evidence .row{justify-content:flex-start;}
+.evidence .hash{word-break:break-all;}
 
 /* how it works */
 ol.how{margin:0; padding:0; list-style:none; counter-reset:how; display:grid; gap:0;}

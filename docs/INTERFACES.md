@@ -24,7 +24,9 @@ Python 3.12+, numpy. One chain: Ethereum Sepolia (chainId 11155111).
 All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
 
 `POST /api/check/start`
-  in  `{ "cloud": "cloud-b", "uuid": "GPU-…", "claimed_class": 1, "n": 16384, "steps": 100 }`
+  in  `{ "cloud": "cloud-b", "uuid": "GPU-…", "claimed_class": 1, "n"?: 16384, "steps"?: 100 }`
+  (`n` defaults to 16384, `steps` to `CHECK_STEPS` (default 100). When `DEADLINES` fixes the class's deadline,
+  any other n/steps is refused with 400: a fixed deadline only means something for the work it was calibrated on.)
   out `{ "session_id", "seed" (string int), "n", "steps", "fp_key" (string int), "deadline_s" }`
   The API starts its clock here. `deadline_s` comes from a per-class table (env/config), default 5.0 for class 1.
 `POST /api/check/commit`
@@ -34,7 +36,7 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   in  `{ "session_id", "fingerprints": {"<step>": [uint64 as strings…]}, "leaf_hashes": {"<step>": hex}, "rows": {"<step>:<row>": [int…]}, "health"?: {…} }`
   `health` is optional, advisory, at most 256 KB of JSON (else 413). Stored with the report, stamped
   `"grade": "reported by the machine"`, never graded: it can't change the verdict.
-  out `{ "report_id", "verdict": "pass"|"fail", "measured_class": int, "reasons": [str], "gpu_name", "node", "published": bool, "tx": str|null }`
+  out `{ "report_id", "verdict": "pass"|"fail", "measured_class": int, "reasons": [str], "gpu_name", "node", "published": bool, "tx": str|null, "via", "report_hash" }`
   Checks: deadline, leaf hashes, root recomputed from leaf hashes, row fingerprints, 64 spot entries per row
   (columns from secret randomness), class from probes (sms 132 + fp8 -> 1, sms 114 + fp8 -> 2, sms 108 & !fp8 -> 3).
   Verdict fail if any check fails OR measured class != claimed class.
@@ -55,13 +57,13 @@ Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECR
 
 ## Marks contract (contracts/, Solidity ^0.8.25, Foundry)
 ```
-record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId, uint32 topsX10, uint16 pctBps)  onlyReporter
+record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId, uint32 topsX10, uint16 pctBps, bytes32 reportHash)  onlyReporter
   pass: passes++ ; fail: require voterId != 0 and not used for this node; fails++, humans++
 event Reported(bytes32 indexed node, bytes32 voterId, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint,
-               uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes, uint32 fails, uint32 humans)
+               uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes, uint32 fails, uint32 humans, bytes32 reportHash)
 text(bytes32 node, string key) view -> string
   keys: waterline.class ("H100 SXM"…), waterline.cores, waterline.fingerprint (0x hex), waterline.passes,
-        waterline.fails, waterline.humans, waterline.status ("unknown"|"pass"|"suspect · 1 of 2 humans"|"failed")
+        waterline.fails, waterline.humans, waterline.report (0x hex of the latest reportHash), waterline.status ("unknown"|"pass"|"suspect · 1 of 2 humans"|"failed")
 resolve(bytes dnsName, bytes data) -> bytes   (ENSIP-10; handles text(bytes32,string) and addr(bytes32) -> zero)
 supportsInterface: 0x01ffc9a7, 0x9061b923 (IExtendedResolver), 0x59d1d43c (text)
 grantRoles(uint256(node), ROLE_REPORTER, account) / grantRootRoles(ROLE_REPORTER, account)  admin only (ENSv2 EnhancedAccessControl); unauthorized record() reverts EACUnauthorizedAccountRoles
@@ -100,7 +102,7 @@ DApp User key (read-only); staircase chart from a pasted/linked profiler result.
 ## Control panel additions (web app served by the API)
 The web app lives in `web/` and is served by the API at `/` (same origin, no CORS, no keys in the browser).
 New read endpoints (JSON):
-- `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, world: {mode: "live"|"mock", issuer}, multibaas: {configured: bool, url}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
+- `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, world: {mode: "live"|"mock", issuer}, multibaas: {configured: bool, url, webhook: bool (MB_WEBHOOK_SECRET set)}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
   (`universal_resolver` from `ENS_UNIVERSAL_RESOLVER`, else `contracts/ens.sepolia.json` when present; `rpc` = `PUBLIC_SEPOLIA_RPC`, default publicnode; `SEPOLIA_RPC` is never shown because it may carry a key.)
 - `GET /api/reports?limit=50` -> `[{ report_id, created_at, gpu_name, node, cloud, claimed_class, measured_class, verdict, published, tx, status_text }]` newest first (API keeps an index of recent report ids in the store).
 - `GET /api/reports/{id}` -> full report: the above + `probes`, `staircase` (map of blocks -> ms, if sent), `elapsed_s`, `deadline_s`, `samples`, `reasons`, `n`, `steps`, `health` (or null), and throughput against the listed class:
@@ -160,3 +162,24 @@ text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries
   then most passes, then cheapest. Jev only reads listing text.
 - The `Reported` layout is hard-coded in `api/app.py` and `agent/history.py`; `tests/api/test_event_layout.py`
   checks both against `contracts/src/Marks.sol`.
+
+## Evidence: reportHash (Sat 26 Sep)
+- **Canonical report** = the stored report minus the fields that change after the verdict (`published`, `tx`,
+  `via`, `indexed`, `indexed_at`, `status_text`, `report_hash`), as JSON with sorted keys, no whitespace
+  (`separators=(",",":")`), UTF-8 (`api/app.py: canonical`). `report_hash = keccak256(canonical bytes)`, computed
+  once at reveal (the verdict) and stored on the report. It is sent as `reportHash` in `Marks.record` on both the
+  pass path and the approved-fail path; Marks keeps the latest in `waterline.report` and emits it in `Reported`
+  (index 12; the MultiBaas queries don't select it).
+- `GET /api/reports/{id}/evidence` -> the exact canonical bytes (`application/json`) + header
+  `X-Waterline-Report-Hash`. `/api/reports`, `/api/reports/{id}` and the reveal output carry `report_hash`.
+- **Anyone can verify**, without trusting the API:
+  ```
+  curl -s $API/api/reports/$ID/evidence -o report.json
+  cast keccak "$(cat report.json)"              # or: python -c 'import sys,eth_utils;print(eth_utils.keccak(open("report.json","rb").read()).hex())'
+  cast call $MARKS_ADDRESS "text(bytes32,string)(string)" $(cast namehash $GPU_NAME) waterline.report --rpc-url $RPC
+  # or through ENS: viem getEnsText({ name: GPU_NAME, key: "waterline.report" }) (universal resolver)
+  ```
+  `keccak256(body) == waterline.report` on the GPU's ENS name means the evidence is the one Marks recorded.
+  The text record is the GPU's *latest* report; an older report is checked against its own `Reported` event
+  (`reportHash`, e.g. on Etherscan or from MultiBaas). The control panel's Check detail has a Verify button that
+  does the ENS read in the browser.

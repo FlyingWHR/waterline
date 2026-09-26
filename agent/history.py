@@ -7,9 +7,9 @@ import urllib.request
 
 from Crypto.Hash import keccak
 
-EVENT = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32)"
+EVENT = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32,bytes32)"
 # Reported(node 0, voterId 1, verdict 2, cls 3, cores 4, fingerprint 5, topsX10 6, pctBps 7, at 8, passes 9,
-# fails 10, humans 11). Tallies only grow, so max = latest; per-report fields use last.
+# fails 10, humans 11, reportHash 12). Tallies only grow, so max = latest; per-report fields use last.
 FIELDS = [("node", 0, None), ("verdict", 2, "last"), ("cls", 3, "last"), ("cores", 4, "last"),
           ("at", 8, "max"), ("passes", 9, "max"), ("fails", 10, "max"), ("humans", 11, "max")]
 QUERY = {"events": [{"eventName": EVENT, "select": [

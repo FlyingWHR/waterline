@@ -92,6 +92,19 @@ Not yet live: nothing deployed, no real GPU run, World and MultiBaas only simula
 | Sun 08:00–08:45 | Submit (15 min buffer before 09:00) | |
 If the pods slip past 20:00, record the check beat with whatever real run exists and say so; never fake numbers.
 
+## Go-live sequence
+Done: Marks `0xb69D2F0690b3d8F96Ff041eA524657391FB521c1` deployed, `waterline.eth` registered (resolver = Marks),
+reporter holds the REPORTER role, Marks linked in MultiBaas (indexing from block 11784289).
+1. Vercel project + fixed domain; `vercel --prod` with env: REDIS_URL, VOTER_SECRET, AGENT_TOKEN_SECRET, REPORTER_KEY,
+   MARKS_ADDRESS, SEPOLIA_RPC, PUBLIC_SEPOLIA_RPC, ENS_UNIVERSAL_RESOLVER, MB_URL, MB_API_KEY, MB_MARKS_ALIAS,
+   MB_MARKS_LABEL, WORLD_ISSUER, WORLD_CLIENT_ID, WORLD_CLIENT_SECRET, CHECK_STEPS (WORLD_MOCK and ALLOW_CLIENT_SIZES unset).
+2. `API_URL` in .env → `.venv/bin/python scripts/multibaas_link.py` (creates the webhook, prints its secret once) →
+   `vercel env add MB_WEBHOOK_SECRET production` → `vercel --prod`.
+3. `.venv/bin/python scripts/check_live.py` until all ✓.
+4. H100 pod: `python3 -m prover.calibrate` → set CHECK_STEPS + DEADLINES on Vercel → `vercel --prod`.
+5. Real checks: Pod A (H100), Pod B (A100 listed as H100, `--stop-cmd` set) → Verify in the panel.
+The API decides the exam size in production (a prover can't ask for a tiny exam); `ALLOW_CLIENT_SIZES=1` is for local only.
+
 ## Trust rules
 - Pass/fail comes from the check only. Telemetry, Jev and self-reported data never decide a verdict.
 - Parts to check are chosen with the API's secret randomness after the answer is locked in.

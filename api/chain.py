@@ -12,9 +12,9 @@ from eth_account import Account
 from eth_utils import keccak, to_checksum_address
 
 log = logging.getLogger("waterline.chain")
-SIGNATURE = "record(bytes32,uint8,uint8,uint16,bytes32,bytes32,uint32,uint16)"
+SIGNATURE = "record(bytes32,uint8,uint8,uint16,bytes32,bytes32,uint32,uint16,bytes32)"
 SELECTOR = keccak(text=SIGNATURE)[:4]
-ARG_TYPES = ["bytes32", "uint8", "uint8", "uint16", "bytes32", "bytes32", "uint32", "uint16"]
+ARG_TYPES = ["bytes32", "uint8", "uint8", "uint16", "bytes32", "bytes32", "uint32", "uint16", "bytes32"]
 DRY_RUN_CALLS = []  # dry-run record() calls, newest last (tests read this)
 
 
@@ -123,16 +123,18 @@ def balance_eth(address):
 
 
 def record(node: bytes, verdict: int, cls: int, cores: int, fingerprint: bytes, voter_id: bytes,
-           tops_x10: int = 0, pct_bps: int = 0):
-    """Marks.record(...). tops_x10 / pct_bps from encode_perf. Returns the tx hash (0x hex), or None in dry-run.
+           tops_x10: int = 0, pct_bps: int = 0, report_hash: bytes = b"\0" * 32):
+    """Marks.record(...). tops_x10 / pct_bps from encode_perf; report_hash = keccak256 of the canonical report.
+    Returns the tx hash (0x hex), or None in dry-run.
     The path taken is write_path(). Raises ChainError on failure."""
-    args = (node, verdict, cls, cores, fingerprint, voter_id, tops_x10, pct_bps)
+    args = (node, verdict, cls, cores, fingerprint, voter_id, tops_x10, pct_bps, report_hash)
     addr, key, rpc = (os.environ.get(k) for k in ("MARKS_ADDRESS", "REPORTER_KEY", "SEPOLIA_RPC"))
     path = write_path()
     if path == "dry-run":
         DRY_RUN_CALLS.append(args)
-        log.info("dry-run Marks.record node=0x%s verdict=%d cls=%d cores=%d fp=0x%s voter=0x%s tops_x10=%d pct_bps=%d",
-                 node.hex(), verdict, cls, cores, fingerprint.hex(), voter_id.hex(), tops_x10, pct_bps)
+        log.info("dry-run Marks.record node=0x%s verdict=%d cls=%d cores=%d fp=0x%s voter=0x%s tops_x10=%d pct_bps=%d "
+                 "report=0x%s", node.hex(), verdict, cls, cores, fingerprint.hex(), voter_id.hex(), tops_x10, pct_bps,
+                 report_hash.hex())
         return None
     data = SELECTOR + encode(ARG_TYPES, list(args))
     if path == "multibaas":

@@ -48,7 +48,7 @@ def test_report_carries_metrics_and_the_profiler_cannot_claim_verified(monkeypat
     assert mt["int8_tops_verified"]["value"] == pytest.approx(rep["effective_tops"], rel=1e-3)
     assert mt["int8_tops_verified"]["trust"] == "verified"
     v = mt["int8_tops_verified"]  # the pass went to Marks with the verified numbers
-    assert chain.DRY_RUN_CALLS[-1][-2:] == chain.encode_perf(v["value"], v["pct_of_spec"])
+    assert chain.DRY_RUN_CALLS[-1][6:8] == chain.encode_perf(v["value"], v["pct_of_spec"])
     assert rep["claimed_model"] == "h100-sxm"
     assert mt["int8_tops"]["trust"] == "measured"  # a pod can't promote its own number
     assert mt["hbm_copy_tbs"]["pct_of_spec"] == pytest.approx(57.91) and mt["hbm_copy_tbs"]["flag"] == "low"

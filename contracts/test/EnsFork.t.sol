@@ -60,7 +60,7 @@ contract EnsForkTest is Test {
         string memory name = string.concat("gpu-91c0ab12.cloud-b.", label, ".eth");
         bytes32 node = EnsNames.namehash(name);
         vm.prank(api);
-        marks.record(node, 2, 3, 108, bytes32(uint256(1)), keccak256("human-1"), 6012, 9635);
+        marks.record(node, 2, 3, 108, bytes32(uint256(1)), keccak256("human-1"), 6012, 9635, keccak256("report"));
 
         (bytes memory out, address resolver) =
             ur.resolve(EnsNames.dnsEncode(name), abi.encodeWithSelector(Marks.text.selector, node, "waterline.status"));
