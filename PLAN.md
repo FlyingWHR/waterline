@@ -65,7 +65,7 @@ Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops pay
 |---|---|---|
 | 0:00 | Problem | "It all rests on a claim the renter can't check." |
 | 0:25 | Zoom in | "Pod B is really an A100. I relabeled it myself." |
-| 0:35 | Overview | "Waterline is proof of delivered hardware." |
+| 0:35 | Overview | "Waterline is proof of delivered compute." |
 | 0:50 | Rent | "I could run fifty agents; I'm still one person." |
 | 1:10 | Check | "Pod B fails. My agent stops paying for it." |
 | 1:50 | Record | "Nobody registered this name. Only our API can write it." |

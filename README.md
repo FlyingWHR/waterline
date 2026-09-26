@@ -2,8 +2,7 @@
 
 # Waterline
 
-**Check a rented GPU is the chip you paid for, at the speed you paid for. The verdict goes on ENS, where the host
-can't edit it.**
+**Proof of Delivered Compute.** Permissionless GPU verification. Any renter checks, the network keeps the record.
 
 *Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
 need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
@@ -12,8 +11,8 @@ ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBa
 
 ## One-sentence summary
 
-Waterline checks, from inside the rental, that a cloud GPU is the listed chip at its rated speed, and publishes the
-verdict on the GPU's ENS name.
+Waterline is permissionless proof of delivered compute: any renter verifies, from inside the rental, that a cloud GPU
+is the listed chip at its rated speed, and the verdict lives onchain on the GPU's ENS name.
 
 - Demo video: [link]
 - Live app: [link]
@@ -205,4 +204,4 @@ All code was written during the event.
 
 Unprivileged Topology Certificates (arXiv 2606.24934) and DrawnApart for GPU fingerprinting; standard GPU tooling
 (NVML, DCGM, gpu-fryer-style burns) for the health report. What's new is combining them into a renter-run check
-whose passes carry evidence and whose failures need verified humans, recorded where the host can't edit it.
+whose passes carry evidence and whose failures need verified humans, recorded onchain where no host can write.

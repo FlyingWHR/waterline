@@ -130,9 +130,9 @@ async function overview() {
   ].filter(Boolean);
   return [
     h("div", { className: "hero" }, canvas,
-      h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
+      h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of Delivered Compute"),
         h("h1", {}, "Waterline"),
-        h("p", { className: "lede" }, "Check a rented GPU is the chip you paid for, at the speed you paid for. The verdict goes on ENS, where the host can't edit it.")),
+        h("p", { className: "lede" }, "Permissionless GPU verification. Any renter checks, the network keeps the record.")),
       oneLine()),
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
@@ -175,10 +175,10 @@ function flowDiagram() {
       h("div", { className: "stage" }, node("ens", "ENS names", "one per GPU"), att("ens", "rolls up to", "its provider's name"))),
     h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
     h("div", { className: "partners", "aria-label": "Built on" },
-      ...[["ens", "ENSv2", "the place: a name per GPU and per provider, and the roles that decide who may write"],
-          ["world", "World ID for Agents", "the people: a failure goes public only with a fresh human approval"],
-          ["mb", "Curvegrid MultiBaas", "the memory: every report indexed, so agents skip bad GPUs and providers"],
-          ["chain", "Ethereum Sepolia", "the record: Marks stores it and resolves the names"]]
+      ...[["ens", "ENSv2", "the namespace: an onchain name per GPU and per provider; roles decide who writes"],
+          ["world", "World ID for Agents", "sybil resistance: no failure goes onchain without a fresh human approval"],
+          ["mb", "Curvegrid MultiBaas", "the index: every verdict queryable, so agents skip bad GPUs and providers"],
+          ["chain", "Ethereum Sepolia", "the ledger: Marks holds every verdict and resolves the names"]]
         .map(([c, name, role]) => h("div", { className: "partner c-" + c }, h("b", {}, name), h("span", {}, role)))),
     h("div", { className: "rules" },
       h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Only the listed chip at speed beats the deadline. Nobody can fake that, so passes publish at once.")),
@@ -856,7 +856,7 @@ async function about() {
         h("div", {}, forget)))),
     section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
       "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
-    section("For agents and integrations", "the record is public and machine-readable", h("p", { className: "sub" },
+    section("For agents and integrations", "open data, composable by any agent or protocol", h("p", { className: "sub" },
       "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers.")),
     section("How a check works", null, h("ol", { className: "how" }, steps.map((s) => h("li", {}, h("span", {}, s))))),
     section("What the statuses mean", null, kv(["pass", "At least one check passed and nobody has reported it."],
