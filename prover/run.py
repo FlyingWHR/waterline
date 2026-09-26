@@ -177,6 +177,9 @@ def main(argv=None):
     log({"pass": "PASS: the listed chip, done in time.",
          "degraded": "DEGRADED: the listed chip with correct answers, but too slow for the deadline.",
          }.get(rv["verdict"], "FAIL: " + "; ".join(rv.get("reasons") or ["see the report"])))
+    log(f"on ENS: {rv['gpu_name']}   (its provider: {rv['gpu_name'].split('.', 1)[1]})")
+    if rv.get("published"):
+        log(f"published: {rv.get('tx') or 'dry run, no transaction'}" + (f" (via {rv['via']})" if rv.get("via") not in (None, "dry-run") else ""))
     log(f"report: {link}" + ("\n  nothing is published yet: open the link and Approve with World to publish this failure"
                              if rv["verdict"] == "fail" else ""))
     print(json.dumps(rv))

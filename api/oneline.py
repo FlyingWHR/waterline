@@ -37,13 +37,20 @@ def need(module, package):
         if package is None:
             sys.exit(f"waterline: this pod has no {module}; use a PyTorch image")
         print(f"waterline: installing {package} (once per pod) ...", file=sys.stderr)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", package])
+        pip = [sys.executable, "-m", "pip", "install", "-q", package]
+        if subprocess.call(pip) and subprocess.call(pip + ["--break-system-packages"]):  # PEP 668 system Pythons
+            sys.exit(f"waterline: couldn't install {package}; run: {' '.join(pip)}")
 
 
 need("numpy", "numpy")
 if not a.cpu:
     need("torch", None)
-    need("cupy", "cupy-cuda12x")
+    import torch
+    if not torch.cuda.is_available():
+        sys.exit("waterline: no GPU is visible to PyTorch on this pod")
+    if not hasattr(torch, "_int_mm"):
+        sys.exit(f"waterline: PyTorch {torch.__version__} has no INT8 matmul; use a PyTorch 2.1+ image")
+    need("cupy", "cupy-cuda11x" if str(torch.version.cuda).startswith("11") else "cupy-cuda12x")
 
 with urllib.request.urlopen(a.api.rstrip("/") + "/api/bundle", timeout=60) as r:
     bundle = zipfile.ZipFile(io.BytesIO(r.read()))
