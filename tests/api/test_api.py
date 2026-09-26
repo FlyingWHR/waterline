@@ -333,3 +333,17 @@ def test_mandate_lets_agents_report_within_its_limits():
 def test_gpu_label_is_the_nvidia_uuid_prefix():
     assert appmod.gpu_label("GPU-6f3c2a1b-9d0e-4c1a-8b2f-0123456789ab") == "gpu-6f3c2a1b"
     assert appmod.gpu_label("GPU-1").startswith("gpu-") and len(appmod.gpu_label("GPU-1")) == 12
+
+
+def test_suspicious_failures_are_flagged_not_blocked():
+    tok = login(sub="human-l")
+    run_check(uuid="GPU-FLAG", claimed=3, probes=A100)  # the card passes as a listed A100
+    rep = run_check(uuid="GPU-FLAG", claimed=1, probes=A100)  # then someone lists the same card as an H100
+    world.MOCK.update(decision="approve", sub="human-l")
+    d = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok, "listing": "apprcedsd"})
+    assert d.status_code == 200  # never blocked: flagged
+    assert post("/api/report/approve/poll", {"device_id": d.json()["device_id"]}).json()["published"] is True
+    kinds = {f["kind"] for f in client.get(f"/api/reports/{rep['report_id']}").json()["flags"]}
+    assert kinds == {"listing_no_gpu", "card_listed_twice"}
+    row = next(r for r in client.get("/api/reports").json() if r["report_id"] == rep["report_id"])
+    assert len(row["flags"]) == 2

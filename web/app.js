@@ -498,6 +498,8 @@ function ensLookup(initial = "") {
 // ---- checks ------------------------------------------------------------------------------------------------
 // Periodic checks (--every): the same rental re-checked at jittered intervals. A tag in tables, and a timeline where a
 // throttle or a swapped card shows as a break in the line.
+// Automatic flags on a failure (worked out by the API when read; the record never changes): weigh before trusting it.
+const flagTag = (r) => r.flags?.length ? h("span", { className: "stag flag", title: r.flags.map((f) => f.text).join("\n") }, "⚑ flagged") : null;
 const seriesTag = (r) => r.series ? h("span", { className: "stag", title: `Periodic series ${r.series}` }, `↻ #${r.seq}`) : null;
 
 function seriesStrip(all, id, current) {
@@ -521,7 +523,7 @@ function checksTable(reps) {
   return table(["When", "GPU", "Listed as", "Measured as", "Verdict", "Tx", "Indexed", ""], reps.map((r) => h("tr", {},
     h("td", {}, when(r.created_at)),
     h("td", {}, h("a", { href: `#/check/${r.report_id}`, className: "mono", title: "Open this check" }, r.gpu_name || r.report_id)),
-    h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r), seriesTag(r)),
+    h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r), seriesTag(r), flagTag(r)),
     h("td", {}, txLink(r.tx, r.published)),
     h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
     h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", title: "Approve with World", onclick: () => approveFlow(r) }, "Approve") : null))));
@@ -591,8 +593,10 @@ async function checkDetail(id) {
         kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
           ...(r.uuid ? [["Card", h("span", { className: "mono", title: "NVIDIA UUID, as the host's driver reports it; the GPU's name is its first 8 hex digits" }, r.uuid)]] : []),
           ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
-          ...(r.listing_reads_as?.class ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : "st-pass" },
-            `${cls(r.listing_reads_as.class)} (${r.listing_reads_as.source}) · ${r.listing_reads_as.contradicts ? "contradicts the claim; reported anyway" : "matches the claim"}`)]] : []),
+          ...(r.listing_reads_as ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : r.listing_reads_as.class ? "st-pass" : "st-degraded" },
+            `${r.listing_reads_as.class ? cls(r.listing_reads_as.class) : "no GPU found"} (${r.listing_reads_as.source}) · ${r.listing_reads_as.contradicts ? "contradicts the claim; reported anyway" : r.listing_reads_as.class ? "matches the claim" : "nothing to hold the claim to"}`)]] : []),
+          ...(r.flags?.length ? [["Flagged", h("ul", { className: "flags" }, r.flags.map((f) => h("li", {}, f.text,
+            f.report_id ? [" ", h("a", { href: `#/check/${f.report_id}` }, "see that check")] : null)))]] : []),
           ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
             ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_via === "mandate" ? h("span", { className: "world-c", title: `mandate ${r.mandate_id}, valid until ${when(r.mandate_expires_at)}` }, ` · reported by their agent under a World mandate ${when(r.approved_at)}`)
               : r.approved_at ? ` · approved with World ${when(r.approved_at)}` : "")]] : []))),

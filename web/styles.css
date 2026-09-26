@@ -443,3 +443,6 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .tip b{color:color-mix(in srgb, var(--c) 72%, #ffffff);} /* the brand hue, lifted enough to read on the dark ground */
 /* World's outline softer than pure white, so it sits with the other attachments */
 .flow .att.c-world{border-color:color-mix(in srgb, var(--world) 55%, transparent);}
+/* automatic flags on a failure report */
+.stag.flag{color:var(--warn);}
+.flags{margin:0; padding-left:18px; color:var(--warn);} .flags li{margin:2px 0;}

@@ -556,17 +556,37 @@ def health():
                     "rpc": os.environ.get("PUBLIC_SEPOLIA_RPC", "https://ethereum-sepolia-rpc.publicnode.com")}}
 
 
+def _flags(rep: dict, reps: list[dict]) -> list[dict]:
+    """Automatic flags on a failure report, worked out when it is read (the record itself never changes): what a
+    reader should weigh before trusting it. Advisory: they change no count or status."""
+    if rep.get("verdict") != "fail":
+        return []
+    out, reads = [], rep.get("listing_reads_as") or {}
+    if rep.get("listing") and not reads.get("class"):
+        out.append({"kind": "listing_no_gpu", "text": f"The reporter's listing names no GPU ({reads.get('source', 'Jev')} found none)."})
+    if reads.get("contradicts"):
+        out.append({"kind": "listing_contradicts", "text": "The reporter's listing reads as another GPU than the one reported; they reported anyway."})
+    other = next((r for r in reps if r["node"] == rep["node"] and r["report_id"] != rep["report_id"]
+                  and r.get("verdict") in ("pass", "degraded") and r.get("claimed_class") != rep.get("claimed_class")), None)
+    if other:
+        out.append({"kind": "card_listed_twice", "report_id": other["report_id"],
+                    "text": f"The same card passed as a listed {listings.CLASSES.get(other['claimed_class'], 'other GPU')} "
+                            f"in another check; this report lists it as {listings.CLASSES.get(rep.get('claimed_class'), 'another GPU')}."})
+    return out
+
+
 @app.get("/api/reports")
 def reports(limit: int = Query(50, ge=1, le=INDEX_MAX)):
-    return [{k: r.get(k) for k in SUMMARY} for r in _reports(limit)]
+    reps = _reports(INDEX_MAX)
+    return [{k: r.get(k) for k in SUMMARY} | {"flags": _flags(r, reps)} for r in reps[:limit]]
 
 
 @app.get("/api/reports/{report_id}")
 def report(report_id: str):
-    rep = _get(f"report:{report_id}", "report")
+    rep, reps = _get(f"report:{report_id}", "report"), _reports(INDEX_MAX)
     if rep.get("provider_voter"):  # pseudonymous, never a name: how many of this provider's GPUs this person reported
-        rep = rep | {"reporter_reports": sum(r.get("provider_voter") == rep["provider_voter"] for r in _reports(INDEX_MAX))}
-    return rep
+        rep = rep | {"reporter_reports": sum(r.get("provider_voter") == rep["provider_voter"] for r in reps)}
+    return rep | {"flags": _flags(rep, reps)}
 
 
 @app.get("/api/reports/by-hash/{report_hash}")
