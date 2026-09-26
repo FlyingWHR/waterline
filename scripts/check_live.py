@@ -143,14 +143,28 @@ def checks():
             yield h["store"] == "redis", f"API store: {h['store']}", "Add Redis on Vercel (REDIS_URL), then redeploy."
             yield bool(h["chain"].get("marks")) and str(h["chain"]["marks"]).lower() == str(marks).lower(),\
                 f"API uses Marks {h['chain'].get('marks')}", "Set MARKS_ADDRESS on Vercel to the deployed Marks, then redeploy."
-            yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_APP_ID, WORLD_RP_ID, WORLD_SIGNING_KEY there (scripts/vercel_env.sh), then redeploy."
+            yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_CLIENT_ID and WORLD_CLIENT_SECRET there, then redeploy."
         except (httpx.HTTPError, ValueError, KeyError) as e:
             yield False, f"API unreachable at {api} ({type(e).__name__})", "Deploy the API (vercel --prod) and check API_URL."
 
-    signer = addr_of("WORLD_SIGNING_KEY")
-    yield bool(env("WORLD_APP_ID") and env("WORLD_RP_ID") and signer),\
-        f"World app {env('WORLD_APP_ID')}, RP {env('WORLD_RP_ID')}, signer {signer} (must match the portal's RP signer)",\
-        "Set WORLD_APP_ID, WORLD_RP_ID and WORLD_SIGNING_KEY in .env (developer.world.org, World ID 4.0 relying party)."
+    iss = (env("WORLD_ISSUER") or "https://sandbox.auth.world.org").rstrip("/")
+    try:
+        keys = httpx.get(iss + "/.well-known/jwks.json", timeout=15).json().get("keys")
+        yield bool(keys), f"World issuer {iss} serves its signing keys", "Check WORLD_ISSUER."
+    except (httpx.HTTPError, ValueError) as e:
+        yield False, f"World issuer {iss} unreachable ({type(e).__name__})", "Check WORLD_ISSUER and the network."
+    cid, sec = env("WORLD_CLIENT_ID"), env("WORLD_CLIENT_SECRET")
+    if not (cid and sec):
+        yield False, "World client id and secret set", \
+            "Register an OIDC client at sandbox.auth.world.org/portal, then set WORLD_CLIENT_ID / WORLD_CLIENT_SECRET."
+    else:
+        try:  # starts (and abandons) one device login: proves the client is real without anyone approving
+            r = httpx.post(iss + "/api/v1/device_authorization", auth=(cid, sec), data={"client_id": cid, "scope": "openid"},
+                           timeout=15)
+            yield r.status_code == 200, f"World accepts client {cid} for device login (HTTP {r.status_code})", \
+                "Check the client id/secret and that the device grant is enabled for it in the portal."
+        except httpx.HTTPError as e:
+            yield False, f"World device login unreachable ({type(e).__name__})", "Check the network."
 
 
 def main():

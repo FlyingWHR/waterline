@@ -1,7 +1,6 @@
 // Waterline control panel. Plain ES module, no build. Talks only to this origin's /api/*; addresses come from /api/health.
 const VIEM = "https://esm.sh/viem@2.56.9";
 const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
-const IDKIT = "vendor/idkit-core-4.3.0/idkit.global.js"; // served by us (a CDN can be blocked); loads its WASM beside it
 const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
@@ -82,7 +81,7 @@ const table = (cols, rows) => {
 };
 
 // ---- router ------------------------------------------------------------------------------------------------
-const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], world: [worldPage, "World"],
+const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"],
   leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
@@ -340,14 +339,14 @@ function checksTable(reps) {
     h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r)),
     h("td", {}, txLink(r.tx, r.published)),
     h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
-    h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", onclick: () => approveFlow(r) }, "Approve with World") : null))));
+    h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", title: "Approve with World", onclick: () => approveFlow(r) }, "Approve") : null))));
 }
 
 async function checks() {
   const reps = await api("/api/reports?limit=100");
   const pending = reps.filter(needsApproval).length;
   return [
-    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes publish on their own. A failure waits here until a person approves it with World; denying or ignoring it publishes nothing.")),
+    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish on their own. A failure waits here until a person approves it with World; denying or ignoring it publishes nothing.")),
     section("All checks", pending ? `${pending} waiting for approval` : `${reps.length} shown`,
       reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet."),
       h("div", {}, h("button", { type: "button", className: "btn", onclick: () => route(false) }, "Refresh"))),
@@ -824,7 +823,7 @@ async function about() {
         kv(["Store", hl.store], ["Chain mode", hl.chain.mode], ["Chain id", String(hl.chain.chain_id)], ["Marks", scan("address", hl.chain.marks) || "not set"],
           ["Reporter", scan("address", hl.chain.reporter) || "not set"], ["Reporter balance", hl.chain.reporter_balance_eth == null ? "—" : `${hl.chain.reporter_balance_eth} ETH`])),
       h("div", { className: "block" }, h("div", { className: "label" }, "Partners"),
-        kv(["World", `${hl.world.mode} · ${hl.world.environment} · ${hl.world.app_id || "no app"}`], ["MultiBaas", hl.multibaas.configured ? hl.multibaas.url : "not configured"],
+        kv(["World", `${hl.world.mode} · ${hl.world.issuer}`], ["MultiBaas", hl.multibaas.configured ? hl.multibaas.url : "not configured"],
           ["MultiBaas webhook", hl.multibaas.webhook ? "configured" : "not configured"], ["ENS parent", hl.ens.parent], ["Universal resolver", scan("address", hl.ens.universal_resolver) || "not set"], ["Public RPC (ENS reads)", hl.ens.rpc])),
       h("div", { className: "block" }, h("div", { className: "label" }, "This browser"),
         h("p", { className: "sub" }, token.get() ? "You are logged in with World here. The login is kept in this browser only." : "Not logged in with World in this browser."),
@@ -847,55 +846,28 @@ const say = (text, tone = "", ...extra) => { const s = $w("status"); s.className
 $w("close").addEventListener("click", () => dlg.close());
 dlg.addEventListener("close", () => { flow++; route(false); }); // cancels any polling and refreshes the page
 
-async function qrInto(box, text) {
+async function showCode(d) {
+  $w("usercode").textContent = d.user_code;
+  $w("link").href = d.verification_uri_complete;
+  $w("code").hidden = false;
+  const box = $w("qr");
   box.replaceChildren();
-  box.hidden = false;
   try {
     const { default: qrcode } = await import(QRLIB);
     const q = qrcode(0, "M");
-    q.addData(text);
+    q.addData(d.verification_uri_complete);
     q.make();
     box.append(h("img", { src: q.createDataURL(4, 0), alt: "" }));
   } catch {
-    box.hidden = true; // the link still works
+    box.hidden = true; // the link and the code still work
   }
 }
 
-let idkitP;
-const loadIdkit = () => idkitP ||= new Promise((ok, bad) => {
-  const s = h("script", { src: IDKIT });
-  s.onload = () => ok(globalThis.IDKit);
-  s.onerror = () => { idkitP = null; s.remove(); bad(new Error("Couldn't load World's IDKit.")); };
-  document.head.append(s);
-});
-
-// One World ID proof: the API signed the request; IDKit shows the QR, the phone answers, and the API checks the
-// proof with World before anything counts. Returns the API's status, or null (mock World / closed / expired).
-async function worldProof(wid, show, alive) {
-  let s;
-  try { s = await api(`/api/world/session/${encodeURIComponent(wid)}`); } catch (e) { if (e.status === 404) return null; throw e; }
-  const IDKit = await loadIdkit();
-  const req = await IDKit.request({ app_id: s.app_id, action: s.action, rp_context: s.rp_context, action_description: s.what,
-    allow_legacy_proofs: false, environment: s.environment }).preset(IDKit[s.preset]({ signal: s.signal }));
-  await show(req.connectorURI);
-  const done = await req.pollUntilCompletion({ pollInterval: 2000, timeout: Math.max(1000, s.rp_context.expires_at * 1000 - Date.now()) });
-  if (!alive()) return null;
-  const r = await api(`/api/world/session/${encodeURIComponent(wid)}/result`, done.success ? { result: done.result } : { error: done.error });
-  return r.status;
-}
-
-async function showCode(uri) {
-  $w("link").href = uri;
-  $w("code").hidden = false;
-  await qrInto($w("qr"), uri);
-}
-
-// Start a World request, run IDKit for it, poll the API until it has an answer. Returns the final poll answer, or null if closed.
+// Device grant: show code + QR, poll until the person decides. Returns the final poll answer, or null if closed.
 async function device(startPath, body, pollPath, my, hint) {
   const d = await api(startPath, body);
+  await showCode(d);
   say(hint + " Waiting for World…");
-  worldProof(d.verification_uri_complete.split("#/world/")[1], showCode, () => my === flow)
-    .catch((e) => { if (my === flow) say(e.message, "bad"); });
   const until = Date.now() + d.expires_in * 1000;
   while (Date.now() < until) {
     await sleep(2000);
@@ -914,38 +886,17 @@ async function device(startPath, body, pollPath, my, hint) {
   return { status: "expired" };
 }
 
-// #/world/<id>: the page the agent's link opens. Same proof as the dialog; the agent in the terminal picks up the answer.
-async function worldPage(wid) {
-  const box = h("div", { className: "qr", "aria-hidden": "true", hidden: true });
-  const link = h("a", { target: "_blank", rel: "noopener", hidden: true }, "Open in the World ID app");
-  const status = h("p", { className: "status", role: "status", "aria-live": "polite" }, "Preparing the World request…");
-  const my = nav;
-  const words = { approved: ["Verified by World. Go back to your terminal.", "good"], denied: ["Denied. Nothing will be published.", "bad"],
-    failed: ["World did not accept this proof. Nothing will be published.", "bad"], expired: ["This request expired.", "bad"] };
-  worldProof(wid, async (uri) => {
-    link.href = uri; link.hidden = false;
-    await qrInto(box, uri);
-    status.textContent = "Scan the code with the World ID app, then approve or deny there.";
-  }, () => my === nav).then((st) => {
-    const [text, tone] = words[st] || ["This World request is finished or expired.", "bad"];
-    box.hidden = link.hidden = true;
-    status.className = "status " + tone; status.textContent = text;
-  }).catch((e) => { status.className = "status bad"; status.textContent = e.message; });
-  return [head("World", "Approve with World", h("p", { className: "sub" }, "Your agent asked for a World ID proof. It counts only after the Waterline API has checked it with World.")),
-    h("div", { className: "codebox" }, box, h("div", { className: "codeinfo" }, link)), status];
-}
-
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
-  $w("what").textContent = `Failure report for ${rep.gpu_name}. It goes on the public record only if you approve it in the World ID app now.`;
+  $w("what").textContent = `Failure report for ${rep.gpu_name}. It goes on the public record only if you approve it in World App now.`;
   say("");
   dlg.showModal();
   try {
     let tok = token.get();
     if (!tok) {
       $w("title").textContent = "Log in with World";
-      const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "First, log in: scan the code with the World ID app.");
+      const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "First, log in: scan the code with World App or open the link.");
       if (!r) return;
       if (r.status !== "approved") return say(`Login ${r.status}. Nothing was published.`, "bad");
       token.set((tok = r.agent_token));
@@ -954,7 +905,7 @@ async function approveFlow(rep) {
     let r;
     try {
       r = await device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok }, "/api/report/approve/poll", my,
-        "Approve this failure report: scan the code with the World ID app.");
+        "Approve this failure report: scan the code with World App or open the link.");
     } catch (e) {
       if (e.status !== 401) throw e;
       token.set(null);

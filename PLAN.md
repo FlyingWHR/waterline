@@ -97,7 +97,7 @@ Done: Marks `0xb69D2F0690b3d8F96Ff041eA524657391FB521c1` deployed, `waterline.et
 reporter holds the REPORTER role, Marks linked in MultiBaas (indexing from block 11784289).
 1. Vercel project + fixed domain; `vercel --prod` with env: REDIS_URL, VOTER_SECRET, AGENT_TOKEN_SECRET, REPORTER_KEY,
    MARKS_ADDRESS, SEPOLIA_RPC, PUBLIC_SEPOLIA_RPC, ENS_UNIVERSAL_RESOLVER, MB_URL, MB_API_KEY, MB_MARKS_ALIAS,
-   MB_MARKS_LABEL, WORLD_APP_ID, WORLD_RP_ID, WORLD_SIGNING_KEY, WORLD_ENV, WORLD_PRESET, CHECK_STEPS (WORLD_MOCK and ALLOW_CLIENT_SIZES unset).
+   MB_MARKS_LABEL, WORLD_ISSUER, WORLD_CLIENT_ID, WORLD_CLIENT_SECRET, CHECK_STEPS (WORLD_MOCK and ALLOW_CLIENT_SIZES unset).
 2. `API_URL` in .env → `.venv/bin/python scripts/multibaas_link.py` (creates the webhook, prints its secret once) →
    `vercel env add MB_WEBHOOK_SECRET production` → `vercel --prod`.
 3. `.venv/bin/python scripts/check_live.py` until all ✓.
@@ -114,8 +114,8 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
 - Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = FAIL (needs
   people). Right chip, right answers, too slow = DEGRADED (published at once with its numbers, never counts toward
   failed; throttle flags explain it, never decide it). Pass = in time.
-- Asymmetry: passes need real silicon, failures need real people. One World proof (action `waterline-report-<cloud>`)
-  gives a per-GPU and a per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`, each human
+- Asymmetry: passes need real silicon, failures need real people. One approval (the World `sub`) gives a per-GPU and
+  a per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`, each human
   counted once per provider. Two passes after a GPU's last failure = `recovered`. Providers may write
   `waterline.note` (NOTE role) on their own name, never a score.
 - `core/vectors.json` is frozen; `python -m core.verify_vectors` must pass.
@@ -131,12 +131,9 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
 - ENSv2: addresses from tag `sepolia-deployment-2026-09-15`, kept in one config file (no hard-coded values is a
   prize rule). waterline.eth: MockUSDC mint -> approve -> commit -> wait 60 s -> register (min 28 days).
   Wildcard resolvers must support ERC-165 `0x9061b923`. Marks inherits ENSv2's EnhancedAccessControl (remapped from contracts-v2); the role grant is `grantRoles(uint256(node), ROLE_REPORTER, verifier)` or `grantRootRoles` for all GPUs. Use viem >= 2.35; the ensjs npm package is stale.
-- World: the OIDC device grant (`sandbox.auth.world.org`) answers `invalid_client` for portal apps and is no longer
-  documented; we use World ID 4.0 IDKit (app_id + rp_id + RP signer key). The sandbox World ID app (TestFlight via
-  the portal's World ID Sandbox) issues Selfie Check proofs, so `WORLD_PRESET=selfieCheck`, `WORLD_ENV=sandbox`.
-  Nullifiers are per action, so a login and an approval can't be matched to one human; the approval action is per
-  provider so its nullifier yields both voter ids. Whether the portal refuses a replayed nullifier is untested (docs
-  conflict): if it does, the action falls back to per GPU (`report_action` in api/app.py) and the provider voter
-  equals the GPU voter. Sandbox identities are fake.
+- World: two portals. World ID for Agents (our prize) = the Human Continuity OIDC IdP at `sandbox.auth.world.org`,
+  clients registered at `sandbox.auth.world.org/portal` (device grant). developer.world.org is IDKit: its app ids
+  get `invalid_client` at the IdP. The event mocks proofs ("you don't need sandbox app anymore"), so Deny/Approve
+  runs in a browser; say on camera the identities are test ones. Pairwise `sub` = one stable id per human for us.
 - MultiBaas: link Marks right after deploy with a `startingBlock` (free plan looks back 100 blocks); sign
   locally; DApp User key only in the browser; add every frontend origin to CORS.

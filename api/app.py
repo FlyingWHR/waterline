@@ -11,6 +11,7 @@ from typing import Any
 
 from eth_utils import keccak
 import httpx
+import jwt
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -200,7 +201,7 @@ def check_reveal(body: RevealIn):
                                 "published", "tx", "via", "report_hash")}
 
 
-# ---- World: login and approval (IDKit sessions) ------------------------------------------------------------
+# ---- World: login and approval (device grant) ---------------------------------------------------------------
 class DeviceIn(BaseModel):
     device_id: str
 
@@ -210,14 +211,9 @@ class ApproveIn(BaseModel):
     agent_token: str
 
 
-class WorldResultIn(BaseModel):
-    result: dict[str, Any] | None = None
-    error: str | None = None
-
-
-def _new_device(extra: dict, action: str, what: str) -> dict:
+def _new_device(extra: dict) -> dict:
     try:
-        d = world.device_start(action, what)
+        d = world.device_start()
     except world.Unavailable:
         raise HTTPException(503, "World is unavailable; try again shortly.")
     did = secrets.token_urlsafe(16)
@@ -237,6 +233,8 @@ def _poll(device_id: str):
         status, claims = world.device_poll(d["device_code"])
     except world.Unavailable:
         raise HTTPException(503, "World is unavailable; this is not an approval. Poll again.")
+    except jwt.PyJWTError:
+        status, claims = "denied", None  # World's answer did not verify
     if status == "slow_down":
         d["interval"] += 5
         status = "pending"
@@ -251,26 +249,9 @@ def _finish(device_id: str, d: dict, result: dict) -> dict:
     return result
 
 
-@app.get("/api/world/session/{wid}")
-def world_session(wid: str):
-    s = world.session_public(wid)
-    if s is None:
-        raise HTTPException(404, "This World request is finished or expired.")
-    return s
-
-
-@app.post("/api/world/session/{wid}/result")
-def world_session_result(wid: str, body: WorldResultIn):
-    try:
-        return {"status": world.session_result(wid, body.result, body.error)}
-    except world.Unavailable:
-        raise HTTPException(503, "World is unavailable; this is not an approval. Try again.")
-
-
 @app.post("/api/world/login/start")
 def login_start():
-    # a fresh action per login: World refuses a nullifier replayed on the same action
-    return _new_device({"kind": "login"}, f"waterline-login-{secrets.token_hex(8)}", "Log in to Waterline")
+    return _new_device({"kind": "login"})
 
 
 @app.post("/api/world/login/poll")
@@ -302,17 +283,13 @@ def _fail_report(report_id: str) -> dict:
 
 @app.post("/api/report/approve/start")
 def approve_start(body: ApproveIn):
-    if world.agent_sub(body.agent_token) is None:
+    sub = world.agent_sub(body.agent_token)
+    if sub is None:
         raise HTTPException(401, "The agent token is invalid or expired; log in again.")
     rep = _fail_report(body.report_id)
-    return _new_device({"kind": "approve", "report_id": body.report_id}, report_action(rep),
-                       f"Report {rep.get('gpu_name') or 'this GPU'} as failed")
-
-
-def report_action(rep: dict) -> str:
-    """One World action per provider: the proof's nullifier is then stable per human per provider, so one approval
-    yields both voter ids (per GPU and per provider). Uniqueness is ours to enforce (Redis + Marks)."""
-    return f"waterline-report-{rep['cloud']}"
+    if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
+        raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
+    return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
 
 
 @app.post("/api/report/approve/poll")
@@ -332,13 +309,15 @@ def approve_poll(body: DeviceIn):
 
     if now() - claims["auth_time"] >= FRESH_S:
         return refuse("The approval was not fresh; approve again.")
+    if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
+        return refuse("The approving person is not the one logged in to this agent.")
     rep = _fail_report(d["report_id"])
     node = bytes.fromhex(rep["node"][2:])
     pnode = chain.namehash(f"{rep['cloud']}.waterline.eth")
     vid, pvid = world.voter_id(claims["sub"], node), world.voter_id(claims["sub"], pnode)
     vote_key, pub_key = f"vote:{vid.hex()}", f"published:{rep['report_id']}"
     if not store.add(vote_key, 1, VOTE_TTL):
-        return refuse("This human has already reported this GPU.")
+        return refuse("You have already reported this GPU: one voice per person per GPU.")
     if not store.add(pub_key, 1, REPORT_TTL):
         store.delete(vote_key)
         return refuse("This report is already published.")
@@ -423,8 +402,8 @@ def health():
             "chain": {"mode": "live" if live else "dry-run", "write_path": chain.write_path(), "chain_id": 11155111,
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},
-            "world": {"mode": "mock" if world.mock_on() else "live" if world.configured() else "not-configured",
-                      "environment": world.environment(), "app_id": os.environ.get("WORLD_APP_ID") or None},
+            "world": {"mode": "mock" if world.mock_on() else "live" if os.environ.get("WORLD_CLIENT_ID")
+                      and os.environ.get("WORLD_CLIENT_SECRET") else "not-configured", "issuer": world.issuer()},
             "multibaas": {"configured": bool(mb and os.environ.get("MB_API_KEY")), "url": mb or None,
                           "webhook": bool(os.environ.get("MB_WEBHOOK_SECRET"))},
             "ens": {"parent": "waterline.eth", "universal_resolver": _universal_resolver(),

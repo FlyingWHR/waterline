@@ -1,3 +1,0 @@
-@worldcoin/idkit-core 4.3.0 (MIT), dist/idkit.global.js + dist/idkit_wasm_bg.wasm, unmodified.
-npm tarball shasum ca9a8a6b44d7f06db0c04859809814485357c437 (matches registry.npmjs.org dist.shasum).
-Served from our origin because a CDN can be blocked on the renter's network.

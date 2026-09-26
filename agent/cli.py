@@ -45,11 +45,11 @@ def load_token():
 
 
 def world_flow(api, start_path, start_body, poll_path, what):
-    """Show the panel link (it runs World's IDKit), poll until the human decides. Returns the last poll answer."""
+    """Device grant: show the code and link, poll until the human decides. Returns the last poll answer."""
     d = post(api, start_path, start_body)
     link = d["verification_uri_complete"]
     link = api.rstrip("/") + link if link.startswith("/") else link  # API without API_URL set (local dev)
-    print(f"\n{what}: open {link}\n  and scan its code with the World ID app")
+    print(f"\n{what}: open {link}\n  (or enter code {d['user_code']} in World App)")
     deadline = time.time() + int(d.get("expires_in", 600))
     while time.time() < deadline:
         r = post(api, poll_path, {"device_id": d["device_id"]})
@@ -125,13 +125,13 @@ def check(a, api):
     print(f"\nGPU: {rv['gpu_name']}")
     if rv["verdict"] == "pass":
         print(f"PASS: it did the work in time and measures as {measured}.")
-        print(f"Published on chain: {rv.get('tx') or 'pending'}")
+        print(f"Published on chain: {rv.get('tx') or ('dry run: no transaction' if rv.get('via') == 'dry-run' else 'pending')}")
         return 0
     if rv["verdict"] == "degraded":  # heat, power or sharing: a true property of this rental, not a fraud claim
         print(f"DEGRADED: it is the {measured} it was listed as and its answers are correct, but it is too slow:")
         for r in rv.get("reasons", []):
             print(f"  - {r}")
-        print(f"Published on chain without an approval (it never counts toward failed): {rv.get('tx') or 'pending'}")
+        print(f"Published on chain without an approval (it never counts toward failed): {rv.get('tx') or ('dry run: no transaction' if rv.get('via') == 'dry-run' else 'pending')}")
         print("You are paying for full speed. Ending this rental is your call; the agent only stops paying on a FAIL.")
         return 2
     print(f"FAIL: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}.")

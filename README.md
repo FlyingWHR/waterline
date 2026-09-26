@@ -67,18 +67,18 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
   last failure bring it back as `recovered`; the history stays.
 - **Enhanced Access Control:** writing a record takes the REPORTER role from ENSv2's access-control library,
   scoped per name (a GPU, or a provider for all its GPUs). Today only our API holds it; providers and renters can
-  never write a score. A provider can be granted the NOTE role on its own name to add `waterline.note` (a rebuttal
-  or contact): a voice, never the verdict.
+  never write a score. A provider can be granted the NOTE role on its own name, "letting an account edit only
+  certain text records on a name": `waterline.note` (a rebuttal or contact), a voice, never the verdict.
 - **Evidence anchored:** each record carries the hash of the full report (`waterline.report`). Download the report
   from `/api/reports/{id}/evidence`, hash it, and compare: if one byte changed, it won't match.
 
 ### People: World ID for Agents
-- **World ID 4.0 through IDKit, per provider.** A failure approval is a World ID proof for the action
-  `waterline-report-<cloud>`, requested with our RP signature and verified by World's Developer Portal. Its
-  nullifier is private and stable per human per provider, so one proof gives two voter ids: one voice per GPU,
-  and one per provider however many of its GPUs that person reports.
+- **World ID for Agents (Human Continuity IdP, dev environment).** The renter logs their agent in once with a
+  device code; World returns a private, stable, pairwise `sub` for our service, checked in our backend (RS256,
+  issuer, audience, `auth_time`). From it the API derives two voter ids for a failure: one per GPU and one per
+  provider, so one person is one voice per GPU and counts once per provider however many GPUs they report.
 - **Step-up:** renting, passing and degraded results need no World check. Publishing a failure steps up to a fresh
-  human approval. Deny publishes nothing. A GPU is marked failed only when two different people agree.
+  device-code approval from the same person (a fresh `auth_time`, same `sub`). Deny or expiry publishes nothing. A GPU is marked failed only when two different people agree.
 
 ### Use: Curvegrid MultiBaas
 - **The history decides, not the LLM.** MultiBaas event queries (grouped by GPU, and by provider) make the agent

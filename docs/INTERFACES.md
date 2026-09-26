@@ -49,15 +49,11 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
 `POST /api/report/approve/poll` in `{ "device_id" }` ->
   `{ "status": "pending"|"approved"|"denied"|"expired", "published"?: bool, "tx"?: str, "status_text"?: str }`
   On approve: check `auth_time` is fresh (< 120 s), same human as the agent token, compute
-  `gpuVoter = HMAC_SHA256(VOTER_SECRET, nullifier || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, nullifier ||
+  `gpuVoter = HMAC_SHA256(VOTER_SECRET, sub || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, sub ||
   providerNode)`; call Marks.record(fail). Denied/expired: nothing published.
-World: ID 4.0 through IDKit. The API signs each request (RP signature, `WORLD_SIGNING_KEY`); the panel at
-`verification_uri_complete` (`#/world/<id>`) reads `GET /api/world/session/<id>`, runs IDKit (QR -> World ID app) and
-posts `POST /api/world/session/<id>/result` `{result}` or `{error}`; the API forwards the proof to
-`POST https://developer.world.org/api/v4/verify/{rp_id}` and checks nonce, action, environment and signal itself.
-Actions: `waterline-login-<random>` per login, `waterline-report-<cloud>` per provider (one proof -> a per-GPU and a
-per-provider voter id).
-Env: `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_SIGNING_KEY`, `WORLD_ENV`, `WORLD_PRESET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,
+World: World ID for Agents, OIDC device grant against `WORLD_ISSUER` (default `https://sandbox.auth.world.org`),
+endpoints `/api/v1/device_authorization`, `/api/v1/token`, JWKS `/.well-known/jwks.json`, scope `openid`, RS256 id_token.
+Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,
 `MARKS_ADDRESS`, `REDIS_URL`. `WORLD_MOCK=1` enables a local mock IdP (approve/deny via env or a test hook) for tests.
 
 ## Marks contract (contracts/, Solidity ^0.8.25, Foundry)

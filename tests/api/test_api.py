@@ -194,6 +194,13 @@ def test_deny_and_expired_publish_nothing():
     assert not chain.DRY_RUN_CALLS
 
 
+def test_other_human_approval_refused():
+    rep = run_check(uuid="GPU-C", claimed=1, probes=A100)
+    r = approve(rep["report_id"], login("human-1"), "approve", sub="human-2").json()
+    assert r["published"] is False and "not the one logged in" in r["status_text"]
+    assert not chain.DRY_RUN_CALLS
+
+
 def test_stale_auth_time_refused(monkeypatch):
     rep = run_check(uuid="GPU-G", claimed=1, probes=A100)
     tok = login()
@@ -208,8 +215,8 @@ def test_double_vote_same_human_same_gpu_rejected():
     first = run_check(uuid="GPU-D", claimed=1, probes=A100)
     assert approve(first["report_id"], tok, "approve").json()["published"] is True
     second = run_check(uuid="GPU-D", claimed=1, probes=A100)  # same GPU, new failed check, same human
-    r = approve(second["report_id"], tok, "approve").json()  # live, World refuses the replayed nullifier first
-    assert r["published"] is False and "already reported" in r["status_text"]
+    r = approve(second["report_id"], tok, "approve")  # refused before World is even asked
+    assert r.status_code == 409 and "already reported" in r.json()["error"]
     assert len(chain.DRY_RUN_CALLS) == 1
 
 
