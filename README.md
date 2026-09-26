@@ -20,10 +20,11 @@ is the listed chip at its rated speed, and the verdict lives onchain on the GPU'
 
 ## Check a GPU in one line
 
-In the rented pod's terminal (provider, then what the listing promises: `h100`, `h100-pcie` or `a100`):
+In the rented pod's terminal: the provider, then the GPU the listing promises (`h100`, `h200`, `b200`, `l40s`, `a100`,
+`rtx-4090`, … 25 NVIDIA classes in `core/gpu_classes.json`):
 
 ```bash
-curl -fsSL waterline-eth.vercel.app/run | python3 - <cloud> <h100 | h100-pcie | a100>
+curl -fsSL waterline-eth.vercel.app/run | python3 - <cloud> <gpu>
 ```
 
 The profiler is fetched from our API and runs from memory; nothing is written to the pod. It needs numpy and torch
@@ -162,7 +163,7 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
   gave us "indexed" confirmation for free; event queries grouped by GPU and by provider replaced a backend database.
 - **Challenges:** the free plan's 100-block look-back means you must link a contract right after deploying it, or
   history is lost. Re-deploying a contract version hit a 409 on the existing address alias; we linked it under a new
-  alias (`marks2`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
+  alias (`marks3`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
 - **Feedback:** the MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits
   agent use; the Python SDK lags the current API paths, so we called REST directly.
 

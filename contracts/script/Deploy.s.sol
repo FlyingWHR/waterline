@@ -49,11 +49,16 @@ abstract contract Base is Script {
     /// Name every class code from core/gpu_classes.json (the same table the API grades with).
     function nameClasses(Marks marks) internal {
         string memory t = vm.readFile("../core/gpu_classes.json");
-        uint256[] memory codes = vm.parseJsonUintArray(t, "$.classes[*].code");
-        string[] memory names = vm.parseJsonStringArray(t, "$.classes[*].name");
-        uint8[] memory c8 = new uint8[](codes.length);
-        for (uint256 i; i < codes.length; i++) c8[i] = uint8(codes[i]);
-        marks.setClassNames(c8, names);
+        uint256 n;
+        while (vm.keyExistsJson(t, string.concat(".classes[", vm.toString(n), "]"))) n++;
+        uint8[] memory codes = new uint8[](n);
+        string[] memory names = new string[](n);
+        for (uint256 i; i < n; i++) {
+            string memory at = string.concat(".classes[", vm.toString(i), "]");
+            codes[i] = uint8(vm.parseJsonUint(t, string.concat(at, ".code")));
+            names[i] = vm.parseJsonString(t, string.concat(at, ".name"));
+        }
+        marks.setClassNames(codes, names);
     }
 
     /// namehash(<label>.eth)

@@ -24,7 +24,7 @@ Python 3.12+, numpy. One chain: Ethereum Sepolia (chainId 11155111).
 All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
 
 `POST /api/check/start`
-  in  `{ "cloud": "cloud-b", "uuid": "GPU-…", "claimed_class": 1, "n"?: 16384, "steps"?: 100 }`
+  in  `{ "cloud": "cloud-b", "uuid": "GPU-…", "claimed_class": 1 (a code from core/gpu_classes.json), "n"?: 16384, "steps"?: 100 }`
   (`n` defaults to 16384, `steps` to `CHECK_STEPS` (default 100). When `DEADLINES` fixes the class's deadline,
   any other n/steps is refused with 400: a fixed deadline only means something for the work it was calibrated on.)
   out `{ "session_id", "seed" (string int), "n", "steps", "fp_key" (string int), "deadline_s" }`
@@ -67,6 +67,8 @@ record(bytes32 cloudLabel, bytes32 gpuLabel, uint8 verdict, uint8 cls, uint16 co
   2 fail: both voters != 0; gpuVoter once per node ever; providerVoter counted once per provider; fails++, humans++, active++
   3 degraded: degraded++ (right chip, correct answers, too slow: no voter, no recovery credit, never "failed")
 setNote(bytes32 providerNode, string note)   ROLE_NOTE on providerNode; <= 280 bytes; changes no count
+setClassNames(uint8[] codes, string[] names)  ROLE_CLASSES at the root (admin); names waterline.class; changes no count.
+                                             Codes and names: core/gpu_classes.json (append only). GET /api/gpu-classes serves it.
 event Reported(bytes32 indexed node, bytes32 indexed provider, bytes32 gpuVoter, bytes32 providerVoter, uint8 verdict,
                uint8 cls, uint16 cores, bytes32 fingerprint, uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes,
                uint32 fails, uint32 active, bytes32 reportHash)
