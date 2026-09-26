@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from agent import history, listing
-from prover.run import ApiError, post
+from prover.run import AMBER, DIM, GREEN, RED, ApiError, mark, paint, post
 
 REPO = Path(__file__).resolve().parents[1]
 REMOTE_DIR = "waterline"
@@ -44,12 +44,18 @@ def load_token():
     return json.loads(f.read_text()).get("agent_token") if f.exists() else None
 
 
+def fact(key, value):
+    """Same receipt style as the profiler's (prover.run), on stdout."""
+    print(f"  {paint(DIM, key.ljust(9))} {value}")
+
+
 def world_flow(api, start_path, start_body, poll_path, what):
     """Device grant: show the code and link, poll until the human decides. Returns the last poll answer."""
     d = post(api, start_path, start_body)
     link = d["verification_uri_complete"]
     link = api.rstrip("/") + link if link.startswith("/") else link  # API without API_URL set (local dev)
-    print(f"\n{what}: open {link}\n  (or enter code {d['user_code']} in World App)")
+    fact("world", f"{what[0].lower()}{what[1:]}: {link}")
+    print(paint(DIM, f"            or enter code {d['user_code']} in World App"))
     deadline = time.time() + int(d.get("expires_in", 600))
     while time.time() < deadline:
         try:
@@ -66,13 +72,13 @@ def world_flow(api, start_path, start_body, poll_path, what):
 def login(api):
     r = world_flow(api, "/api/world/login/start", {}, "/api/world/login/poll", "Log in with World")
     if r["status"] != "approved":
-        print(f"Login {r['status']}.")
+        fact("world", f"login {r['status']}")
         return None
     home().mkdir(parents=True, exist_ok=True)
     f = home() / "agent.json"
     f.write_text(json.dumps({"agent_token": r["agent_token"]}))
     f.chmod(0o600)
-    print("Logged in. Your agent can now ask you to approve failure reports.")
+    fact("world", "logged in: your agent can now ask you to approve failure reports")
     return r["agent_token"]
 
 
@@ -81,7 +87,7 @@ def claimed_class(text, forced=None):
         return forced
     code, conf, src = listing.parse(text)
     name = listing.CLASSES.get(code, "unknown")
-    print(f'Listing "{text}" reads as {name} ({src}, confidence {conf:.2f}).')
+    fact(src.lower(), f'"{text}" reads as {name} (confidence {conf:.2f})')
     if conf >= 0.9 and code:
         return code
     if not sys.stdin.isatty():
@@ -92,7 +98,7 @@ def claimed_class(text, forced=None):
 
 def run_profiler(a, api, cls):
     """Returns the API's final JSON (the profiler's last stdout line). result.json lands in a.out."""
-    args = ["--api", api, "--cloud", a.cloud, "--claimed", str(cls)]
+    args = ["--api", api, "--cloud", a.cloud, "--claimed", str(cls), "--no-mark"]  # the agent already printed it
     if a.n:
         args += ["--n", str(a.n)]
     if a.steps:
@@ -122,71 +128,68 @@ def run_profiler(a, api, cls):
 
 
 def check(a, api):
+    mark()
     cls = claimed_class(a.listing, a.claimed)
-    print(f"Checking {'locally (CPU)' if a.local else a.pod} as {listing.CLASSES.get(cls, cls)} ...")
-    rv = run_profiler(a, api, cls)
+    claim = listing.CLASSES.get(cls, cls)
+    print(paint(DIM, f"  · checking {'this machine (CPU)' if a.local else a.pod} against the listing: {claim}"))
+    rv = run_profiler(a, api, cls)  # prints its own receipt: the verdict, the ENS names, where it landed
     measured = listing.CLASSES.get(rv["measured_class"], "unknown")
-    print(f"\nGPU: {rv['gpu_name']}")
     if rv["verdict"] == "pass":
-        print(f"PASS: it did the work in time and measures as {measured}.")
-        print(f"Published on chain: {rv.get('tx') or ('dry run: no transaction' if rv.get('via') == 'dry-run' else 'pending')}")
+        fact("agent", paint(GREEN, "keep this rental: it is the listed chip, in time"))
         return 0
     if rv["verdict"] == "degraded":  # heat, power or sharing: a true property of this rental, not a fraud claim
-        print(f"DEGRADED: it is the {measured} it was listed as and its answers are correct, but it is too slow:")
-        for r in rv.get("reasons", []):
-            print(f"  - {r}")
-        print(f"Published on chain without an approval (it never counts toward failed): {rv.get('tx') or ('dry run: no transaction' if rv.get('via') == 'dry-run' else 'pending')}")
-        print("You are paying for full speed. Ending this rental is your call; the agent only stops paying on a FAIL.")
+        fact("agent", paint(AMBER, "you pay for full speed and get less; ending the rental is your call"))
         return 2
-    print(f"FAIL: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}.")
-    for r in rv.get("reasons", []):
-        print(f"  - {r}")
+    fact("agent", paint(RED, f"listed as {claim}, measures as {measured}: stopping the rental"))
     stop_paying(a.stop_cmd or os.environ.get("WATERLINE_STOP_CMD"), a.pod_id)
-    print("\nNothing is published yet. A failure goes on the record only with your fresh approval.")
     token = load_token() or login(api)
     if not token:
-        print("Not logged in: nothing published.")
+        fact("agent", "not logged in with World: nothing published")
         return 1
     # a failure accuses the provider of misselling this GPU: say what you rented, in the listing's own words
-    text = a.listing or input("Paste the listing you rented (its URL or text): ").strip()
-    print(f"You are reporting: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}. "
-          "This report is tied to your World ID and shown with the listing above.")
+    text = a.listing or input("  paste the listing you rented (its URL or text): ").strip()
+    fact("report", f"listed as {claim} · measures as {measured} · tied to your World ID")
+    code, _, src = listing.parse(text)
+    if code:
+        fact(src.lower(), f"your listing reads as {listing.CLASSES[code]}"
+             + (": the claim stands" if code == cls else paint(AMBER, f": not {claim}")))
     body = {"report_id": rv["report_id"], "agent_token": token, "listing": text}
     try:
         r = world_flow(api, "/api/report/approve/start", body, "/api/report/approve/poll", "Approve this failure report")
     except ApiError as e:
         if "report anyway" not in str(e):
             raise
-        print(str(e).split(": ", 1)[-1])  # Jev read the listing as another GPU than the one being reported
-        if input("Report anyway? [y/N] ").strip().lower() != "y":
-            print("Not reported: nothing published.")
+        fact("agent", paint(AMBER, str(e).split(": ", 1)[-1]))  # Jev read the listing as another GPU
+        if input("  report anyway? [y/N] ").strip().lower() != "y":
+            fact("agent", "not reported: nothing published")
             return 1
         r = world_flow(api, "/api/report/approve/start", body | {"report_anyway": True}, "/api/report/approve/poll",
                        "Approve this failure report")
     if r["status"] == "approved" and r.get("published"):
-        tx = f" (tx {r['tx']})" if r.get("tx") else ""
-        print(f"Approved. Published: {r.get('status_text', 'fail recorded')}{tx}")
+        tx = r.get("tx") or "dry run, no transaction"
+        fact("onchain", paint(GREEN, "published") + f" · {tx}" + (f" via {r['via']}" if r.get("via") not in (None, "dry-run") else "")
+             + f" · {r.get('status_text', 'failure recorded')}")
     elif r["status"] == "approved":
-        print(f"Approved, but not published: {r.get('status_text', 'no reason given')}")
+        fact("onchain", paint(AMBER, f"approved, not published: {r.get('status_text', 'no reason given')}"))
     else:
-        print(f"{r['status'].capitalize()}: nothing published.")
+        fact("world", paint(AMBER, f"{r['status']}: nothing published"))
     return 1
 
 
 def stop_paying(cmd, pod_id):
     """On a FAIL, end the rental right away (before any approval). Never called on a PASS."""
     if not cmd:
-        print("FAIL: end this rental now (no stop command configured).")
+        fact("agent", "FAIL: end this rental now (no stop command configured).")
         return False
     if "{pod_id}" in cmd and not pod_id:
-        print("FAIL: end this rental now (a stop command is set but no --pod-id was given).")
+        fact("agent", "FAIL: end this rental now (a stop command is set but no --pod-id was given).")
         return False
     # the template is the renter's own config; only the pod id is quoted in
     rc = subprocess.run(cmd.replace("{pod_id}", shlex.quote(pod_id or "")), shell=True).returncode
     if rc:
-        print(f"The stop command failed (exit {rc}): end rental {pod_id} yourself now.")
+        fact("agent", f"The stop command failed (exit {rc}): end rental {pod_id} yourself now.")
         return False
-    print(f"Stopped paying: rental {pod_id} ended.")
+    fact("agent", f"Stopped paying: rental {pod_id} ended.")
     return True
 
 

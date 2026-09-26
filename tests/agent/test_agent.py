@@ -15,18 +15,19 @@ def test_check_local_pass(make_api, env, capsys):
     api = make_api()
     assert run_check(api, env, "--listing", "H100 80GB HBM3 SXM5") == 0
     out = capsys.readouterr().out
-    assert "reads as H100 SXM" in out and "PASS" in out and "0xpass" in out
+    assert "reads as H100 SXM" in out and "keep this rental" in out  # the verdict itself is the profiler's receipt
     assert json.loads((env / "result.json").read_text())["probes"]["sms"] == 132
     assert not any(p.startswith("/api/report") for p, _ in api.calls)
 
 
-@pytest.mark.parametrize("world, expect", [("denied", "Denied: nothing published."),
+@pytest.mark.parametrize("world, expect", [("denied", "denied: nothing published"),
                                            ("approved", "suspect · 1 of 2 humans")])
 def test_check_local_fail_then_world(make_api, env, capsys, world, expect):
     api = make_api(world=world)
     assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108") == 1
     out = capsys.readouterr().out
-    assert "FAIL: listed as H100 SXM, measures as A100." in out
+    assert "listed as H100 SXM, measures as A100: stopping the rental" in out
+    assert "your listing reads as H100 SXM: the claim stands" in out  # Jev (or rules) agrees with the claim
     assert "WXYZ-1234" in out and expect in out
     paths = [p for p, _ in api.calls]
     assert paths.index("/api/world/login/poll") < paths.index("/api/report/approve/start")  # logged in first

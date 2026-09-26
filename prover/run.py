@@ -186,6 +186,7 @@ def main(argv=None):
     ap.add_argument("--burn-seconds", type=int, default=10, help="health report: sustained burn length (0 skips it)")
     ap.add_argument("--perf-seconds", type=int, default=60,
                     help="performance profile time budget, run after commit (0 skips it)")
+    ap.add_argument("--no-mark", action="store_true", help=argparse.SUPPRESS)  # the agent prints it first
     ap.add_argument("--out", help="also write the probes and timings to this file (nothing is written without it)")
     a = ap.parse_args(argv)
 
@@ -194,7 +195,8 @@ def main(argv=None):
     else:
         from prover.gpu import Gpu  # lazy: CuPy/torch only exist on the pod
         backend, n, steps = Gpu(), a.n, a.steps
-    mark()
+    if not a.no_mark:
+        mark()
     try:
         rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds)
     except ApiError as e:
