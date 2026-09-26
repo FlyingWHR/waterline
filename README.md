@@ -4,33 +4,43 @@
 
 **Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed.
 
-*Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
-need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
+ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENSv2 · World ID for Agents · Curvegrid MultiBaas
 
-ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBaas
+| | |
+|---|---|
+| **Live app** | https://waterline-eth.vercel.app |
+| **Demo video** | [link] |
+| **Try it on a rented GPU** | `curl -fsSL waterline-eth.vercel.app/run \| python3 - <provider> <gpu>` |
+| **Contract** | `Marks` [`0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8`](https://sepolia.etherscan.io/address/0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8) on Sepolia, resolver for `*.waterline.eth` |
 
 ## One-sentence summary
 
-Waterline is permissionless proof of delivered compute: any renter verifies, from inside the rental, that a cloud GPU
-is the listed chip at its rated speed, and the verdict lives onchain on the GPU's ENS name.
-
-- Demo video: [link]
-- Live app: [link]
-- Showcase (architecture + demo walkthrough): [link]
+A renter runs one command inside a rented GPU; Waterline sends a sealed INT8 exam against a deadline, re-grades a
+random slice and counts the cores, then writes the verdict to that GPU's own ENS name, where a pass needs real
+silicon and a failure needs a real person verified with World ID.
 
 ## Check a GPU in one line
 
-In the rented pod's terminal: the provider, then the GPU the listing promises (`h100`, `h200`, `b200`, `l40s`, `a100`,
-`rtx-4090`, … 25 NVIDIA classes in `core/gpu_classes.json`):
+In the rented pod's terminal, give the provider and the GPU the listing promises:
 
 ```bash
-curl -fsSL waterline-eth.vercel.app/run | python3 - <cloud> <gpu>
+curl -fsSL waterline-eth.vercel.app/run | python3 - <provider> <gpu>
+# e.g. python3 - runpod h100   ·   python3 - vastai a100   ·   python3 - lambda h200
 ```
 
-The profiler is fetched from our API and runs from memory; nothing is written to the pod. It needs numpy and torch
-(every PyTorch image has them) and installs cupy once if the image lacks it. A pass or a degraded result is published
-at once; a failure prints a link where you approve it with World. The renter agent (`python -m agent check --pod …`)
-does the same over SSH, and also stops paying on a failure and picks the next GPU from history.
+- **Nothing to install or clean up.** The profiler is fetched from our API and imported from memory; nothing is
+  written to the pod. It needs numpy and torch (every PyTorch image has them) and adds CuPy once if missing.
+- **25 NVIDIA GPU classes:** H100 SXM, H100 PCIe, H100 NVL, H200, GH200, B200, B300, GB200, GB300, A100, L40S, L40,
+  L4, A40, A10, A10G, T4, RTX 6000 Ada, RTX PRO 6000 Blackwell, RTX 5090, 4090, 3090, A6000, A5000, A4000
+  (`core/gpu_classes.json`). The exam is CUDA INT8, so V100 and AMD are not covered yet.
+- **63 known providers** (`core/providers.json`, from the hyperscalers to RunPod and Vast.ai) keep names
+  consistent; any other name is still recorded as typed and marked "unlisted".
+- **Options:** `--gpu 3` checks the fourth card of a multi-GPU pod; `--every 30m` re-checks at jittered intervals
+  (a periodic series, shown as a timeline); `--times N` stops after N checks.
+- **What you get:** a short receipt (verdict, the GPU's ENS name, the transaction, the report link). A pass or a
+  degraded result is published at once; a failure waits for a person (below).
+
+The web panel builds the command for you: pick the provider and GPU from the two drop-downs in the hero.
 
 ## Why
 
@@ -49,116 +59,186 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
   ([SemiAnalysis](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)); the renter can't check
   their own rental, and the record lives on Trustpilot.
 
+## How it works
+
+```mermaid
+flowchart LR
+  A[Agent or renter] -- starts --> P[Profiler in the rented pod]
+  P -- seed ⇄ sealed answer --> API[Waterline API<br/>times it, re-grades it]
+  API -- records --> M[Marks on Sepolia]
+  M -- resolves --> E["gpu-….provider.waterline.eth<br/>provider.waterline.eth"]
+  W[World ID] -. approves failures .-> API
+  MB[Curvegrid MultiBaas] -. indexes, webhook .-> M
+```
+
+1. **The exam.** The API issues a fresh seed and starts a clock. The GPU multiplies seeded 16,384² INT8 matrices on
+   its tensor cores (8.8 trillion ops a step), commits a Merkle root of per-row fingerprints, and only then learns
+   which 8 rows the API will recompute on a CPU. INT8 is exact, so the grade is bit for bit.
+2. **The chip.** A timing staircase counts the cores (132 H100 SXM, 114 H100 PCIe, 108 A100, …), FP8 and memory
+   bandwidth are timed. Heat slows a chip; it can't remove cores.
+3. **Three verdicts.** Wrong chip or wrong answers: **fail**. The right chip, too slow: **degraded**, published with
+   its numbers and never counted toward failed. On time: **pass**.
+4. **The record.** `Marks` stores the verdict under the GPU's ENS name and rolls it up to the provider's name.
+
 ## Four pillars
 
 | Pillar | Question | Carried by |
 |---|---|---|
-| **Proof** | Is this GPU what was sold? | The profiler |
+| **Proof** | Is this GPU what was sold? | The profiler and the API's exam |
 | **Place** | Where is the result kept? | ENSv2 |
 | **People** | Who can report a failure? | World ID for Agents |
 | **Use** | How do agents act on it? | Curvegrid MultiBaas |
 
 ### Proof: the profiler
-Sealed work, a deadline and a core count, run from inside the renter's rental.
-- **Secret INT8 exam.** A fresh seed; 16,384² INT8 matrices multiplied on the tensor cores (8.8 trillion ops a step)
-  against a deadline on the API's clock. INT8 because its answer is exact, so we grade it bit for bit.
-- **Seal, then spot-check.** The GPU commits a Merkle root of every row; then the API picks 8 random rows and
-  recomputes them on a CPU.
-- **Count the cores.** A timing staircase counts SMs (132 H100 SXM, 114 PCIe, 108 A100); FP8 is timed. Heat slows a
-  chip; it can't remove cores.
-- **Three verdicts.** Wrong chip or wrong answers: **fail**. Right chip, too slow: **degraded**, published with its
-  numbers, never counted toward failed. In time: **pass**.
-- **Performance.** Verified INT8 throughput from the re-graded work, plus measured tensor, memory and link numbers,
-  against the rating, 37 reference GPUs and other checks of the same model (`docs/METRICS.md`). The machine's own
-  health report is advisory.
+- **Secret INT8 exam, sealed then spot-checked**, against a deadline scaled to the claimed GPU's rated INT8 speed.
+- **Heat-proof chip check:** cores from a timing staircase, FP8, bandwidth; 37 reference GPUs tell look-alikes apart.
+  When two chips can't be told apart (an H100 SXM and an H100 NVL), the claim stands; an H100 sold as an H200 fails
+  on bandwidth.
+- **Performance:** verified INT8 throughput from the re-graded work against the rating, the reference table and other
+  checks of the same model (`docs/METRICS.md`). The machine's own health report (NVML, DCGM) is advisory.
+- **GPU names from the card:** `gpu-` + the first 8 hex digits of the NVIDIA UUID (`GPU-6f3c2a1b-…` →
+  `gpu-6f3c2a1b`), the digits `nvidia-smi -L` prints. The full UUID and a per-core timing fingerprint are kept with
+  each check; a fingerprint change is shown, never judged.
 
 ### Place: ENSv2
-- **Wildcard resolution.** `Marks` resolves every `gpu-<id>.<cloud>.waterline.eth` and `<cloud>.waterline.eth` with
-  no registrations.
+- **Wildcard resolution.** `Marks` is the ENSIP-10 resolver for `waterline.eth`: every `gpu-<id>.<provider>.waterline.eth`
+  and `<provider>.waterline.eth` resolves with no registration. Text records: `waterline.status`, `class`, `cores`,
+  `pct_of_spec`, `passes`, `degraded`, `fails`, `humans`, `recoveries`, `fingerprint`, `report`; providers add `gpus`,
+  `failed_gpus`, `note`.
 - **The tree is the roll-up.** A GPU's node derives from its provider's, so every report also scores the provider
   (GPUs checked, failed now, degraded, people who reported, each once). Renaming a chip hides nothing. Two passes
   after a failure mark a GPU `recovered`.
-- **Enhanced Access Control.** Only the REPORTER role writes scores (today our API; grantable per GPU or provider).
-  A provider's NOTE role is "letting an account edit only certain text records on a name": `waterline.note`, never a
-  score.
-- **Evidence anchored.** `waterline.report` is the hash of the full report; download it, hash it, compare.
+- **Enhanced Access Control.** Only the REPORTER role writes scores (our API today; grantable per GPU or per provider).
+  A provider's NOTE role edits only `waterline.note`, never a score. Class names are an admin-set table, so new GPUs
+  need no redeploy.
+- **Evidence anchored.** `waterline.report` is the keccak256 of the full report: download it, hash it, compare. The
+  panel opens any check from that hash (`/#/r/<hash>`).
 
 ### People: World ID for Agents
-- **One person, one voice.** The agent logs in once by device code; World's pairwise `sub`, validated in our backend
-  (RS256, issuer, audience, fresh `auth_time`), gives one voice per GPU and one per provider.
-- **Failures step up.** Passes and degraded results need no World check. A failure needs a fresh World approval, and
-  the person who approves is the reporter; deny or expiry publishes nothing; two different people mark a GPU failed.
-- **One person, many agents: the mandate.** Scanning a code for every failure doesn't work for someone running twenty
-  agents. One fresh World approval grants a mandate (hours, a report budget, revocable, shown in the panel's World ID
-  page and header); the agents then report failures at once, each as that person's one voice per GPU and per provider.
-  A mandate never overrides Jev, and every report made under it says so. `python -m agent mandate --hours 24 --max 20`.
+- **One person, one voice.** Login and approvals use World's device-code flow against `sandbox.auth.world.org`; the
+  id_token is verified in our backend (RS256, issuer, audience, `auth_time` under 120 s). From the pairwise `sub` we
+  derive two private voter ids (HMAC): one per GPU, one per provider. One person counts once per GPU and once per
+  provider; two different people mark a GPU failed.
+- **Failures need a person, passes don't.** A failure is published only after a fresh World approval; the person who
+  approves is the reporter; deny or expiry publishes nothing.
+- **One person, many agents: the mandate.** One fresh approval grants a mandate (1 hour to 3 days, 5 to 100 reports,
+  revocable). The person's agents then report failures at once, each still that person's one voice. The panel's
+  **World ID** page and header show the session and the mandate (used, left, expiry); every report made under it says
+  so. `python -m agent mandate --hours 24 --max 20`.
 - **Accusations cost something.** The reporter pastes the listing they rented and accepts that the report is tied to
-  their World ID. **Jev reads that listing**: if it contradicts the claim (an A100 listing reported "as H100"), the
-  report stops unless they insist. The dashboard shows the listing, Jev's reading and the pseudonymous reporter.
+  their World ID. **Jev (TypeSafe) reads that listing**: if it reads as another GPU, the report stops unless the person
+  insists, and a mandate never overrides it. The panel shows the listing, Jev's reading and the pseudonymous reporter.
 
 ### Use: Curvegrid MultiBaas
 - **History decides, not an LLM.** Event queries by GPU and by provider make the agent skip suspect, failed and
-  degraded GPUs and prefer providers with fewer failures. Jev only reads listings. On a fail, the agent stops paying.
+  degraded GPUs and prefer providers with fewer failures. On a fail, the agent stops paying.
 - **Writes without handing over a key.** MultiBaas builds each transaction, we check and sign it, MultiBaas submits
   it, indexes the event and calls our webhook.
 
+## The renter agent
+
+```bash
+export WATERLINE_API=https://waterline-eth.vercel.app
+python -m agent login                                   # once, with World App
+python -m agent mandate --hours 24 --max 20             # optional: let your agents report failures
+python -m agent check --pod ssh://root@host:port --cloud vastai --listing "1x H100 80GB SXM5"
+python -m agent check ... --every 30m --times 6         # a periodic series
+python -m agent check ... --web                         # leave any approval to the web panel
+python -m agent choose --listings listings.json         # pick a GPU from MultiBaas history only
+```
+On a failure it stops the rental (`--stop-cmd`, e.g. `runpodctl stop pod {pod_id}`), then reports under the mandate,
+asks for your World approval, or points you to the web panel.
+
+## The control panel
+
+https://waterline-eth.vercel.app: **Overview** (the one-line check, how it works, recent checks), **GPUs** (the ENS
+name tree, every GPU on record), **Checks** (each check: the exam, the core staircase, performance against the rating
+and other checks, health, the evidence and its onchain hash, approval), **Providers** (roll-up per provider, then by
+model), **World ID** (your session and mandate). Every GPU and provider name has its own page, read live from ENS.
+
+## Deployed
+
+| | |
+|---|---|
+| `Marks` (resolver + record) | [`0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8`](https://sepolia.etherscan.io/address/0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8) |
+| ENS name | `waterline.eth` on ENSv2 (Sepolia), resolver = Marks |
+| Reporter (API) | [`0xA0B0dCe3c40499f7554c1835766B555D73A15C10`](https://sepolia.etherscan.io/address/0xA0B0dCe3c40499f7554c1835766B555D73A15C10) |
+| MultiBaas | contract alias `marks3`, webhook to `/api/webhooks/multibaas` |
+| API + panel | Vercel (FastAPI) + Redis |
+
+`scripts/check_live.py` checks the whole stack (RPC, roles, ENS resolution, MultiBaas link and webhook, API, World).
+
 ## Principles and limits
 
-- **Evidence decides.** Passes carry evidence; failures need verified humans; the machine's own numbers only inform.
-- **Two layers.** Exam design guards the measurement (secret seed, sealed answers, API-chosen rows, heat-proof chip
-  check). World, two humans and per-provider dedup guard the verdict: gaming can't be amplified, and it's attributable.
+- **Evidence decides.** Passes carry evidence; failures need verified people; the machine's own numbers only inform.
+- **Two layers.** The exam guards the measurement (secret seed, sealed answers, API-chosen rows, heat-proof chip
+  check). World, two people and per-provider dedup guard the verdict: gaming can't be amplified, and it's attributable.
 - **No provider cooperation.** The host never writes a score.
-- **Limits.** A host could answer checks on a real H100 and run your job on an A100 (random in-job checks raise the
-  cost; attestation closes it). A modified profiler could report 108 cores on a real H100 (two humans, the roll-up
-  and later passes bound it). The renter picks when to check. No serial-number proof. People can be bribed. World is
-  checked in our backend.
+- **Limits.** A host could answer checks on a real H100 and run your job on an A100 (checks at random moments raise
+  the cost; attestation would close it). A modified profiler could report fewer cores (two people, the roll-up and
+  later passes bound it). The GPU UUID and the provider name are what the host's driver and the renter report. People
+  can be bribed. World runs on its sandbox (proofs mocked by World) and is verified in our backend.
 
 ## What's next
 
 - Checks at API-chosen moments inside the job, several per rental: a distribution, not a point.
-- Every renter's container a verifier: the REPORTER role granted per GPU, per provider or for all, World keeping
-  each a distinct human.
-- A site level in the name tree (`gpu-….tyo1.cloud-b.waterline.eth`, as listed), where throttling clusters.
-- The listing bound into the evidence, so "listed as" stops being the renter's word.
+- Every renter's container a verifier: the REPORTER role granted per GPU, per provider or for all.
+- A site level in the name tree (`gpu-….tyo1.vastai.waterline.eth`), where throttling clusters.
+- The listing bound into the evidence, and the provider proven from the network the pod runs on.
+- AMD Instinct and V100 (a non-INT8 exam path).
 
 ## Repo
 
 | Folder | What |
 |---|---|
-| `core/` | Challenge maths: seeded INT8 generator, row fingerprints, Merkle root; frozen test vectors |
-| `contracts/` | `Marks`: report store, ENS wildcard resolver, ENSv2 Enhanced Access Control (Foundry); ENSv2 pinned at `sepolia-deployment-2026-09-15` |
-| `api/` | Waterline API (FastAPI on Vercel + Redis): the check, World login and approval, chain writes |
-| `prover/` | Profiler that runs in the rented pod (CuPy + torch), health report |
-| `agent/` | Renter CLI: check a pod over SSH, approve failures, choose GPUs from history |
+| `core/` | Challenge maths (seeded INT8 generator, row fingerprints, Merkle root, frozen vectors), GPU classes, reference specs, known providers, listing reader |
+| `contracts/` | `Marks`: record, ENS wildcard resolver, ENSv2 Enhanced Access Control (Foundry); ENSv2 pinned at `sepolia-deployment-2026-09-15` |
+| `api/` | Waterline API (FastAPI on Vercel + Redis): the exam, grading, World login/approval/mandate, chain writes, MultiBaas reads and webhook, the one-liner |
+| `prover/` | Profiler that runs in the rented pod (CuPy + torch): exam, probes, performance, health |
+| `agent/` | Renter CLI: check a pod over SSH, stop paying, report, mandate, choose GPUs from history |
 | `web/` | Control panel served by the API |
-| `docs/` | `INTERFACES.md` (the spec), `prompts/` (build prompts), GPU reference data |
+| `scripts/` | Deploy helpers, MultiBaas link, live checks, World probe |
+| `tests/` | API, profiler and agent tests (169) |
+| `docs/` | `INTERFACES.md` (the spec), `METRICS.md`, GPU reference, build prompts |
 
 ## Setup and testing
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m core.verify_vectors                 # frozen vectors
-.venv/bin/python -m pytest -q                           # API, profiler, agent
+.venv/bin/python -m pytest -q tests                     # API, profiler, agent
 (cd contracts && forge test --no-match-contract EnsFork) # contract
 (cd contracts && forge test --match-contract EnsFork --fork-url $SEPOLIA_RPC)  # real ENSv2 on a Sepolia fork
+.venv/bin/python scripts/check_live.py                  # the deployed stack
 
 # local end to end (simulated World, CPU profiler)
 WORLD_MOCK=1 ALLOW_CLIENT_SIZES=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:app --port 8787
-.venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud cloud-a --claimed 1 --cpu
-.venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud cloud-b --claimed 1 --cpu --sms 108
+.venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud runpod --claimed 1 --cpu
+.venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud vastai --claimed 1 --cpu --sms 108   # an A100 sold as H100
 open http://127.0.0.1:8787
 ```
 On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/README.md`. Environment: `.env.example`.
+
+## How we used ENSv2
+
+- `Marks` is registered as the resolver of `waterline.eth` on the ENSv2 Sepolia deployment and answers every name
+  below it (ENSIP-10 wildcard), so a GPU gets an ENS name the moment it is first checked, without a registration.
+- The name tree is the data model: `node = keccak(providerNode, gpuLabel)`, derived in the contract, so a GPU can only
+  roll up into its real provider.
+- ENSv2 Enhanced Access Control splits who may write what: REPORTER (scores), NOTE (a provider's own words),
+  class-name admin; roles can be granted per name.
+- Anyone reads the record with any ENS client through the Universal Resolver; the panel's name pages and lookup do
+  exactly that, live from Sepolia.
 
 ## How we used MultiBaas
 
 - **Writes:** the API composes every `Marks.record` call through MultiBaas (nonce and gas filled in), checks the
   calldata, signs it locally, and submits it through MultiBaas. (MultiBaas's concurrent nonce management needs its
   hosted wallets; our reporter signs locally, so we publish one report at a time.)
-- **Indexer:** event indexing of `Marks.Reported`; event queries grouped by GPU power the agent's choice and the
-  control panel's GPU list, name tree and Providers page. `Marks` emits running totals so queries only need `last`/`max`.
-- **Listener:** a webhook on `Reported` confirms each report was indexed; the control panel shows it.
-- **Provider roll-up:** a second event query on `ProviderTally`, grouped by provider, ranks clouds for the agent.
+- **Indexer:** event queries on `Marks.Reported` grouped by GPU, and on `ProviderTally` grouped by provider, power the
+  agent's choice and the panel's GPU list, name tree and Providers page. `Marks` emits running totals so queries only
+  need `last`/`max`.
+- **Listener:** a signed webhook on `Reported` confirms each report was indexed; the panel shows "Indexed ✓".
 
 ## Our experience with MultiBaas
 
@@ -168,6 +248,8 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 - **Challenges:** the free plan's 100-block look-back means you must link a contract right after deploying it, or
   history is lost. Re-deploying a contract version hit a 409 on the existing address alias; we linked it under a new
   alias (`marks3`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
+- **A surprise:** event queries returned `bytes32` fields as lists of byte values (`"[253, 55, …]"`) instead
+  of hex after a new contract version, while the webhook still sent hex; we now decode both.
 - **Feedback:** the MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits
   agent use; the Python SDK lags the current API paths, so we called REST directly.
 
@@ -191,6 +273,10 @@ the prize page.
 docs.world.org doesn't link to the Agents IdP or its portal, and the device-grant guide is only reachable through
 the IdP's MCP resources. It isn't documented whether the World ID Simulator works with the sandbox IdP.
 
+### What worked well
+The pairwise `sub` is stable: two device logins from the same World App gave the same `sub` (checked with
+`scripts/world_sub_probe.py`, which prints only hashes). That made one-person-one-voice and the mandate simple.
+
 ### The one improvement with the greatest impact
 Make `invalid_client` say which environment and portal a client id belongs to (or link both portals from each other).
 That one message would have saved us the IDKit detour.
@@ -212,3 +298,6 @@ All code was written during the event.
 Unprivileged Topology Certificates (arXiv 2606.24934) and DrawnApart for GPU fingerprinting; standard GPU tooling
 (NVML, DCGM, gpu-fryer-style burns) for the health report. What's new is combining them into a renter-run check
 whose passes carry evidence and whose failures need verified humans, recorded onchain where no host can write.
+
+Brand marks: ENS, World and Curvegrid logos in `web/logos/` are their owners' and are shown only to credit the
+technologies this project is built on.
