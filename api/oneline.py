@@ -1,6 +1,7 @@
 """Waterline one-line check, served by the API at /run. Paste into the rented pod's terminal:
 
   curl -fsSL <host>/run | python3 - <cloud> <what the listing promises: h100 | h100-pcie | a100>
+  curl -fsSL <host>/run | python3 - calibrate      # once, on the reference H100: prints the exam size to set
 
 Nothing is written to disk: the profiler (core/ + prover/) is fetched from the API and imported from memory.
 It needs numpy and torch (every PyTorch pod image has them); cupy is installed once if the image lacks it.
@@ -22,7 +23,8 @@ ap.add_argument("cloud", help="the provider, lowercase, e.g. cloud-b")
 ap.add_argument("claimed", help="what the listing promises: h100 (SXM), h100-pcie or a100")
 ap.add_argument("--api", default=API, help=argparse.SUPPRESS)
 ap.add_argument("--cpu", action="store_true", help=argparse.SUPPRESS)  # no GPU: the offline test path
-a, rest = ap.parse_known_args()
+calibrating = sys.argv[1:2] == ["calibrate"]
+a, rest = (ap.parse_known_args(["calibrate", "h100", *sys.argv[2:]]) if calibrating else ap.parse_known_args())
 claimed = CLASSES.get(a.claimed.lower())
 if claimed is None:
     sys.exit("waterline: the listing must be h100, h100-pcie or a100")
@@ -71,6 +73,9 @@ class Memory(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 
 sys.meta_path.insert(0, Memory())
+if calibrating:
+    from prover.calibrate import main as calibrate  # noqa: E402
+    sys.exit(calibrate([*(["--cpu"] if a.cpu else []), *rest]))
 from prover.run import main  # noqa: E402
 
 sys.exit(main(["--api", a.api, "--cloud", a.cloud, "--claimed", str(claimed), *(["--cpu"] if a.cpu else []), *rest]))
