@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from core.challenge import Params
 from core.specs import MODELS
 
-from agent import listing as listings
+from core import listing as listings
 
 from . import chain, world
 from . import perf
