@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.multibaas_link import ROOT, load_env, mb  # noqa: E402
 
 SEPOLIA = 11155111
-MIN_DEPLOYER_ETH, MIN_REPORTER_ETH = 0.05, 0.01  # deploy + commit + register; a few dozen record() calls
+# deploy + commit + register before Marks exists; after, the deployer only pays for role grants. Reporter: a few dozen record() calls
+MIN_DEPLOYER_ETH, MIN_DEPLOYER_AFTER_ETH = 0.05, 0.005
+MIN_REPORTER_ETH = 0.01
 ROLE_REPORTER = 1
 
 
@@ -71,7 +73,7 @@ def checks():
         rpc_ok = False
         yield False, f"RPC unreachable ({type(e).__name__})", "Check SEPOLIA_RPC (e.g. https://ethereum-sepolia-rpc.publicnode.com)."
 
-    for who, key, addr, low in (("Deployer", "DEPLOYER_KEY", None, MIN_DEPLOYER_ETH),
+    for who, key, addr, low in (("Deployer", "DEPLOYER_KEY", None, MIN_DEPLOYER_AFTER_ETH if env("MARKS_ADDRESS") else MIN_DEPLOYER_ETH),
                                 ("Reporter", "REPORTER_KEY", "REPORTER_ADDRESS", MIN_REPORTER_ETH)):
         a = addr_of(key, addr)
         if not a:
