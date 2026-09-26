@@ -1136,22 +1136,28 @@ async function device(startPath, body, pollPath, my, hint) {
 
 // A failure accuses the provider of misselling this GPU. Before World is asked, the reporter sees the accusation,
 // states what they rented in the listing's own words, and accepts that the report is tied to their World ID.
-function confirmReport(rep, my) {
+function confirmReport(rep, my, label = "Continue to World") {
   return new Promise((done) => {
     const text = h("textarea", { id: "world-listing", rows: 3, placeholder: "https://… or the listing text, e.g. 1x H100 80GB SXM5 · $2.49/h" });
     const ack = h("input", { type: "checkbox", id: "world-ack" });
-    const go = h("button", { type: "button", className: "btn primary", disabled: true }, "Continue to World");
-    const ready = () => { go.disabled = !(ack.checked && text.value.trim().length >= 8); };
+    const go = h("button", { type: "button", className: "btn primary", disabled: true }, label);
+    const need = h("p", { className: "sub small", role: "status" });
+    const ready = () => {
+      const missing = [text.value.trim().length < 8 ? "paste the listing you rented" : null, !ack.checked ? "tick the box" : null].filter(Boolean);
+      go.disabled = missing.length > 0;
+      need.textContent = missing.length ? `To continue: ${missing.join(" and ")}.` : "";
+    };
     text.addEventListener("input", ready); ack.addEventListener("change", ready);
     const box = h("div", { className: "confirm" },
       h("p", {}, "You are reporting: ", h("b", {}, `listed as ${cls(rep.claimed_class)}`), " · ", h("b", { className: "st-fail" }, `measures as ${cls(rep.measured_class)}`), "."),
       h("label", { className: "label", htmlFor: "world-listing" }, "The listing you rented (URL or text)"), text,
       h("label", { className: "check", htmlFor: "world-ack" }, ack, " I rented this GPU from this listing. This report is tied to my World ID and shown with the listing."),
-      go);
+      need, go);
     $w("what").after(box);
     const end = (v) => { box.remove(); done(v); };
     go.addEventListener("click", () => end(text.value.trim()));
     dlg.addEventListener("close", () => end(null), { once: true });
+    ready();
     text.focus();
     if (my !== flow) end(null);
   });
@@ -1219,9 +1225,21 @@ async function approveFlow(rep) {
   try {
     const tok = token.get() || (await login(my));
     if (!tok) return;
+    const { m } = await mandateNow();
     $w("title").textContent = "Report this GPU";
-    const listing = await confirmReport(rep, my);
+    const listing = await confirmReport(rep, my, m?.active ? `Report under my mandate (${m.max_reports - m.used} left)` : "Continue to World");
     if (!listing) return;
+    if (m?.active) {  // one voice, same checks; a listing Jev reads as another GPU still needs the person (below)
+      try {
+        const r = await api("/api/report/auto", { report_id: rep.report_id, agent_token: tok, listing });
+        if (!r.published) return say(r.status_text || "Nothing was published.", "bad");
+        return say("Published under your World mandate. ", "good", r.tx ? h("a", { href: `${SCAN}/tx/${r.tx}`, target: "_blank", rel: "noopener" }, "View the transaction") : "(dry run: no transaction sent)",
+          ` · ${r.mandate.used} of ${r.mandate.max_reports} used`);
+      } catch (e) {
+        if (!(e.status === 409 && /report anyway/.test(e.message)) && e.status !== 403) throw e;
+        say(e.status === 403 ? e.message : "A mandate can't override Jev's reading; approve it yourself with World.", "bad");
+      }
+    }
     $w("title").textContent = "Approve with World";
     let r;
     const start = (extra) => device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing, ...extra },
