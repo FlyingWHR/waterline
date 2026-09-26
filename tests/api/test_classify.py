@@ -50,7 +50,10 @@ def test_emulated_fp8_does_not_count():
 
 
 def test_legacy_class_codes_and_claims():
-    assert check.classify({"sms": 132, "fp8": True, "bw_tbs": 3.2}) == 1
+    assert check.classify({"sms": 132, "fp8": True, "bw_tbs": 3.2}, claimed=1) == 1
+    assert check.classify({"sms": 132, "fp8": True, "bw_tbs": 4.3}, claimed=5) == 5  # an H200: the claim stands
+    assert check.classify({"sms": 132, "fp8": True, "bw_tbs": 3.2}, claimed=5) != 5  # H100 bandwidth sold as H200
+    assert check.classify({"sms": 132, "fp8": True, "bw_tbs": 3.2}, claimed=3) in (1, 4, 5, 6)  # never A100
     assert check.classify({"sms": 114, "fp8": True, "bw_tbs": 1.7}) == 2
     assert check.classify({"sms": 108, "fp8": False, "bw_tbs": 1.9}) == 3
     assert check.classify({"sms": 0, "fp8": False}) == 0

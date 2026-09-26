@@ -2,7 +2,8 @@
 const VIEM = "https://esm.sh/viem@2.56.9";
 const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
 const SCAN = "https://sepolia.etherscan.io";
-const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
+const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" }; // filled from /api/gpu-classes at boot
+let GPU_TABLE = [];
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
 const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "humans", "recoveries", "fingerprint", "report"];
 const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "humans", "passes", "fails", "note"];
@@ -105,7 +106,8 @@ async function route(focus) {
   if (focus) view.focus({ preventScroll: true }), scrollTo(0, 0);
 }
 addEventListener("hashchange", () => (dlg.open ? dlg.close() : route(true))); // closing the dialog re-routes
-route(false);
+// class names first (every table and pill uses them); a failed load keeps the three built in
+api("/api/gpu-classes").then((t) => { GPU_TABLE = t; for (const c of t) CLASSES[c.code] = c.name; }).catch(() => {}).finally(() => route(false));
 
 // ---- overview ----------------------------------------------------------------------------------------------
 async function overview() {
@@ -162,7 +164,9 @@ function oneLine() {
       ps.filter((p) => p.kind === k).map((p) => h("option", { value: p.slug, title: p.name }, p.slug)))),
     h("option", { value: "other" }, "other…"))).catch(() => pickCloud.replaceWith(other));
   const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => { fit(gpu, gpu.value); reset(); } },
-    h("option", { value: "", disabled: true, selected: true }, "gpu"), ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
+    h("option", { value: "", disabled: true, selected: true }, "gpu"),
+    (GPU_TABLE.length ? GPU_TABLE : [{ slug: "h100", name: "H100 SXM" }, { slug: "h100-pcie", name: "H100 PCIe" }, { slug: "a100", name: "A100" }])
+      .map((g) => h("option", { value: g.slug, title: g.name }, g.slug)));
   fit(gpu, "gpu");
   // a typed name becomes a valid label: lowercase, a-z 0-9 and hyphens (what the API accepts)
   const cloudValue = () => (other.isConnected ? other.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) : pickCloud.value);

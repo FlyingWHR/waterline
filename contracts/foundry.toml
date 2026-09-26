@@ -12,7 +12,7 @@ remappings = [
   "@openzeppelin/contracts/=lib/contracts-v2/contracts/lib/openzeppelin-contracts/contracts/",
   "forge-std/=lib/forge-std/src/",
 ]
-fs_permissions = [{ access = "read", path = "./ens.sepolia.json" }, { access = "read-write", path = "./deployments" }]
+fs_permissions = [{ access = "read", path = "./ens.sepolia.json" }, { access = "read", path = "../core/gpu_classes.json" }, { access = "read-write", path = "./deployments" }]
 
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC}"

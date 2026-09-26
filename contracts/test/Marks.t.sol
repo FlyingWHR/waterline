@@ -23,6 +23,28 @@ contract MarksTest is Test {
 
     function setUp() public {
         marks = new Marks(admin, api, parent);
+        uint8[] memory codes = new uint8[](3);
+        string[] memory names = new string[](3);
+        (codes[0], codes[1], codes[2]) = (1, 3, 5);
+        (names[0], names[1], names[2]) = ("H100 SXM", "A100", "H200");
+        vm.prank(admin);
+        marks.setClassNames(codes, names);
+    }
+
+    function test_class_names_are_admin_set_and_unknown_otherwise() public {
+        bytes32 gpu = keccak256("gpu-h200");
+        vm.prank(api);
+        marks.record(cloudB, gpu, 1, 5, 132, fp, 0, 0, 0, 0, bytes32(0));
+        (, bytes32 node) = marks.nodes(cloudB, gpu);
+        assertEq(marks.text(node, "waterline.class"), "H200");
+        vm.prank(api);
+        marks.record(cloudB, gpu, 1, 9, 132, fp, 0, 0, 0, 0, bytes32(0));
+        assertEq(marks.text(node, "waterline.class"), "unknown"); // code 9 not named here
+        uint8[] memory codes = new uint8[](1);
+        string[] memory names = new string[](1);
+        vm.prank(api); // the reporter can't rename classes
+        vm.expectRevert();
+        marks.setClassNames(codes, names);
     }
 
     function pass(bytes32 gpu) internal {

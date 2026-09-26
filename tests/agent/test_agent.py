@@ -42,7 +42,7 @@ def test_rules_parse_demo_listings(text, code):
 
 
 def test_plain_h100_is_unsure():
-    assert listing.parse_rules("H100 80GB")[1] < 0.9 and listing.parse_rules("RTX 4090") == (0, 0.0)
+    assert listing.parse_rules("H100 80GB")[1] < 0.9 and listing.parse_rules("RTX 4090") == (17, 0.9) and listing.parse_rules("V100 32GB") == (0, 0.0)
 
 
 def test_jev_failure_falls_back(monkeypatch):

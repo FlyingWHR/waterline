@@ -21,3 +21,12 @@ def test_bundle_has_the_profiler_and_its_data():
     assert {"core/__init__.py", "core/challenge.py", "core/rng.py", "core/specs.py", "core/gpu_specs.json",
             "prover/__init__.py", "prover/run.py", "prover/gpu.py"} <= names
     assert not any(n.endswith("vectors.json") or "__pycache__" in n for n in names)
+
+
+def test_run_knows_every_gpu_class():
+    import json, re
+    from core import classes
+    body = client.get("/run").text
+    table = json.loads(re.search(r"_TABLE = '(\{.*?\})'", body).group(1))
+    assert table["h200"] == 5 and table["h100"] == 1 and table["rtx-4090"] == 17
+    assert set(classes.BY_SLUG) <= set(table)

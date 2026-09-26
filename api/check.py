@@ -7,23 +7,24 @@ import secrets
 import numpy as np
 
 from core.challenge import Params, leaf_hash, merkle_root, row_fingerprint, verify_row_entries
+from core import classes
 from core.specs import MODELS
 
 from . import classify as cl
 
 SAMPLES = 8
 SPOT_COLS = 64
-CLASS_NAMES = {1: "H100 SXM", 2: "H100 PCIe", 3: "A100"}
-# On-chain class codes (uint8) -> the gpu_specs.json models each one accepts
-CLASS_MODELS = {1: ["h100-sxm"], 2: ["h100-pcie"], 3: ["a100-sxm-80", "a100-sxm-40", "a100-pcie-80", "a100-pcie-40"]}
-# Dense INT8 tensor-core TOPS per class, from core/gpu_specs.json (1979, 1513, 624: datasheet sparse / 2)
+CLASS_NAMES = classes.NAMES
+# On-chain class codes (uint8) -> the gpu_specs.json models each one accepts (core/gpu_classes.json)
+CLASS_MODELS = classes.MODELS
+# Dense INT8 tensor-core TOPS per class, from core/gpu_specs.json (H100 SXM 1979: datasheet sparse / 2)
 SPEC_TOPS = {c: MODELS[ids[0]]["dense"]["int8_tops"] for c, ids in CLASS_MODELS.items()}
 # Deadline = max(MIN, BASE + 2 n^3 steps / (dense INT8 x MIN_EFF)); docs/METRICS.md. Calibrate on real pods.
 DEADLINE_BASE_S, DEADLINE_MIN_EFF, DEADLINE_MIN_S, DEADLINE_NO_INT8_S = 3.0, 0.25, 5.0, 60.0
 
 
 def claimed_models(claimed) -> list[str]:
-    """Model ids a claim accepts: a class code (1-3) or a gpu_specs.json model id."""
+    """Model ids a claim accepts: a class code or a gpu_specs.json model id."""
     return CLASS_MODELS.get(claimed, []) if isinstance(claimed, int) else [claimed] if claimed in MODELS else []
 
 
@@ -79,10 +80,14 @@ def gpu_label(uuid: str) -> str:
     return "gpu-" + hashlib.sha256(uuid.encode()).hexdigest()[:8]
 
 
-def classify(probes: dict, metrics: dict | None = None) -> int:
-    """On-chain class code (0-3) of the measured GPU: the best match, else the first ambiguous partner with a code."""
+def classify(probes: dict, metrics: dict | None = None, claimed=None) -> int:
+    """On-chain class code (0 = none) of the measured GPU. When the chip can't be told apart from the claimed class
+    (an H100 SXM and an H200 look alike without a memory reading), the claim stands; else the best match's code."""
     c = cl.classification(probes, metrics)
-    return next((class_for_model(i) for i in [c["best_match"], *c["ambiguous_with"]] if class_for_model(i)), 0)
+    candidates = [c["best_match"], *c["ambiguous_with"]]
+    if isinstance(claimed, int) and set(claimed_models(claimed)) & set(candidates):
+        return claimed
+    return next((class_for_model(i) for i in candidates if class_for_model(i)), 0)
 
 
 def draw_samples(n: int, steps: int):

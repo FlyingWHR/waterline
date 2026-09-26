@@ -46,6 +46,10 @@ contract EnsForkTest is Test {
         address owner = address(this);
         address api = address(0xA91);
         Marks marks = new Marks(owner, api, EnsNames.namehash(string.concat(label, ".eth")));
+        uint8[] memory codes = new uint8[](1);
+        string[] memory names = new string[](1);
+        (codes[0], names[0]) = (3, "A100");
+        marks.setClassNames(codes, names);
 
         // register <label>.eth with Marks as its resolver
         usdc.mint(owner, 1_000e6);

@@ -46,6 +46,16 @@ abstract contract Base is Script {
         return vm.envOr("NAME_LABEL", vm.parseJsonString(cfg(), ".label"));
     }
 
+    /// Name every class code from core/gpu_classes.json (the same table the API grades with).
+    function nameClasses(Marks marks) internal {
+        string memory t = vm.readFile("../core/gpu_classes.json");
+        uint256[] memory codes = vm.parseJsonUintArray(t, "$.classes[*].code");
+        string[] memory names = vm.parseJsonStringArray(t, "$.classes[*].name");
+        uint8[] memory c8 = new uint8[](codes.length);
+        for (uint256 i; i < codes.length; i++) c8[i] = uint8(codes[i]);
+        marks.setClassNames(c8, names);
+    }
+
     /// namehash(<label>.eth)
     function parentNode() internal view returns (bytes32) {
         bytes32 eth = keccak256(abi.encodePacked(bytes32(0), keccak256("eth")));
@@ -60,6 +70,7 @@ contract DeployAndCommit is Base {
         require(registrar().isAvailable(label()), "name is taken: set NAME_LABEL");
         vm.startBroadcast(key);
         Marks marks = new Marks(owner, vm.envAddress("REPORTER_ADDRESS"), parentNode());
+        nameClasses(marks);
         registrar().commit(
             registrar().makeCommitment(
                 label(), owner, vm.envBytes32("NAME_SECRET"), address(0), address(marks), DURATION, 0
@@ -102,6 +113,7 @@ contract Redeploy is Base {
         address previous = registry.getResolver(label());
         vm.startBroadcast(key);
         Marks marks = new Marks(owner, vm.envAddress("REPORTER_ADDRESS"), parentNode());
+        nameClasses(marks);
         registry.setResolver(uint256(keccak256(bytes(label()))), address(marks));
         vm.stopBroadcast();
         require(registry.getResolver(label()) == address(marks), "resolver not updated");

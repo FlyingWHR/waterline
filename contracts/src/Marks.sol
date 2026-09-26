@@ -31,13 +31,17 @@ contract Marks is EnhancedAccessControl {
     uint256 public constant ROLE_NOTE = 1 << 4;
     uint256 public constant ROLE_REPORTER_ADMIN = ROLE_REPORTER << 128;
     uint256 public constant ROLE_NOTE_ADMIN = ROLE_NOTE << 128;
+    uint256 public constant ROLE_CLASSES = 1 << 8; // names the class codes; granted to the admin at the root
+
+    /// Display name per class code (waterline.class). Codes are permanent; new GPUs get new codes, no redeploy.
+    mapping(uint8 => string) public classNames;
 
     /// namehash of the parent name (waterline.eth); providers are its children, GPUs its grandchildren.
     bytes32 public immutable parent;
 
     struct Gpu {
         bytes32 provider; // node of <cloud>.waterline.eth
-        uint8 cls; // last measured class: 0 unknown, 1 H100 SXM, 2 H100 PCIe, 3 A100
+        uint8 cls; // last measured class code, named by classNames (0 unknown); core/gpu_classes.json
         uint16 cores;
         bytes32 fingerprint;
         uint32 passes;
@@ -90,9 +94,11 @@ contract Marks is EnhancedAccessControl {
         bytes32 indexed provider, uint32 gpus, uint32 failedGpus, uint32 humans, uint32 passes, uint32 fails, uint64 at
     );
     event NoteSet(bytes32 indexed provider, string note);
+    event ClassNamed(uint8 indexed code, string name);
     error BadVerdict();
     error AlreadyVoted();
     error NoteTooLong();
+    error LengthMismatch();
     error UnsupportedRecord(bytes4 selector);
 
     /// @param admin_ may grant and revoke the reporter and note roles.
@@ -100,7 +106,7 @@ contract Marks is EnhancedAccessControl {
     /// @param parent_ namehash of waterline.eth.
     constructor(address admin_, address reporter_, bytes32 parent_) {
         parent = parent_;
-        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER_ADMIN | ROLE_NOTE_ADMIN, admin_, false);
+        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER_ADMIN | ROLE_NOTE_ADMIN | ROLE_CLASSES, admin_, false);
         _grantRoles(ROOT_RESOURCE, ROLE_REPORTER, reporter_, false);
     }
 
@@ -148,6 +154,16 @@ contract Marks is EnhancedAccessControl {
         if (bytes(note).length > NOTE_MAX) revert NoteTooLong();
         providers[providerNode].note = note;
         emit NoteSet(providerNode, note);
+    }
+
+    /// @notice Name class codes (e.g. 5 -> "H200"). Only changes a label: never a count or a status.
+    function setClassNames(uint8[] calldata codes, string[] calldata names) external {
+        _checkRoles(ROOT_RESOURCE, ROLE_CLASSES, msg.sender);
+        if (codes.length != names.length) revert LengthMismatch();
+        for (uint256 i; i < codes.length; i++) {
+            classNames[codes[i]] = names[i];
+            emit ClassNamed(codes[i], names[i]);
+        }
     }
 
     /// @dev Counts, votes, recovery and the provider roll-up for one report.
@@ -297,11 +313,9 @@ contract Marks is EnhancedAccessControl {
 
     // ---- helpers -------------------------------------------------------------------------------
 
-    function _className(uint8 cls) private pure returns (string memory) {
-        if (cls == 1) return "H100 SXM";
-        if (cls == 2) return "H100 PCIe";
-        if (cls == 3) return "A100";
-        return "unknown";
+    function _className(uint8 cls) private view returns (string memory) {
+        string memory n = classNames[cls];
+        return bytes(n).length == 0 ? "unknown" : n;
     }
 
     function _uint(uint256 v) private pure returns (string memory) {

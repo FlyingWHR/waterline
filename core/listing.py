@@ -7,18 +7,27 @@ import os
 import re
 import urllib.request
 
-CLASSES = {1: "H100 SXM", 2: "H100 PCIe", 3: "A100"}
-CRITERIA = {
+from core import classes
+
+CLASSES = classes.NAMES
+CRITERIA = {c["name"]: f"NVIDIA {c['name']}" for c in classes.TABLE} | {
     "H100 SXM": "NVIDIA H100 in the SXM form factor (SXM5, HGX, HBM3, 132 SMs, 700 W)",
     "H100 PCIe": "NVIDIA H100 PCIe card (HBM2e, 114 SMs, 350 W)",
+    "H100 NVL": "NVIDIA H100 NVL (94 GB, PCIe pairs with NVLink bridge)",
     "A100": "NVIDIA A100, any memory size or form factor (Ampere)",
     "unknown": "Any other GPU, or not enough information",
 }
+# every other class by its slug, longest first so GB200 wins over B200 (h100/a100 keep the rules below)
+_SLUGS = sorted(((re.compile(r"(?<![A-Z0-9])" + re.escape(c["slug"].upper()).replace(r"\-", r"[\s-]?") + r"(?![A-Z0-9])"), c["code"])
+                 for c in classes.TABLE if c["code"] > 3), key=lambda x: -len(x[0].pattern))
 
 
 def parse_rules(text):
     """(class code, confidence). Confident only when the form factor is explicit."""
     t = text.upper()
+    for pat, code in _SLUGS:
+        if pat.search(t):
+            return code, 0.9
     if "A100" in t:
         return 3, 0.95
     if "H100" in t:

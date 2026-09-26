@@ -1,0 +1,30 @@
+{
+  "note": "Onchain class codes (uint8, Marks cls). Codes are permanent: append, never renumber. slug = what a renter types; models = core/gpu_specs.json ids the class accepts. NVIDIA GPUs with INT8 tensor cores only: the exam is CUDA INT8 (no V100, no AMD).",
+  "classes": [
+    {"code": 1, "slug": "h100", "name": "H100 SXM", "models": ["h100-sxm"]},
+    {"code": 2, "slug": "h100-pcie", "name": "H100 PCIe", "models": ["h100-pcie"]},
+    {"code": 3, "slug": "a100", "name": "A100", "models": ["a100-sxm-80", "a100-sxm-40", "a100-pcie-80", "a100-pcie-40"]},
+    {"code": 4, "slug": "h100-nvl", "name": "H100 NVL", "models": ["h100-nvl"]},
+    {"code": 5, "slug": "h200", "name": "H200", "models": ["h200-sxm", "h200-nvl"]},
+    {"code": 6, "slug": "gh200", "name": "GH200", "models": ["gh200"]},
+    {"code": 7, "slug": "b200", "name": "B200", "models": ["b200"]},
+    {"code": 8, "slug": "b300", "name": "B300", "models": ["b300"]},
+    {"code": 9, "slug": "gb200", "name": "GB200", "models": ["gb200"]},
+    {"code": 10, "slug": "gb300", "name": "GB300", "models": ["gb300"]},
+    {"code": 11, "slug": "l40s", "name": "L40S", "models": ["l40s"]},
+    {"code": 12, "slug": "l40", "name": "L40", "models": ["l40"]},
+    {"code": 13, "slug": "l4", "name": "L4", "models": ["l4"]},
+    {"code": 14, "slug": "rtx-6000-ada", "name": "RTX 6000 Ada", "models": ["rtx-6000-ada"]},
+    {"code": 15, "slug": "rtx-pro-6000", "name": "RTX PRO 6000 Blackwell", "models": ["rtx-pro-6000-server", "rtx-pro-6000-ws"]},
+    {"code": 16, "slug": "rtx-5090", "name": "RTX 5090", "models": ["rtx-5090"]},
+    {"code": 17, "slug": "rtx-4090", "name": "RTX 4090", "models": ["rtx-4090"]},
+    {"code": 18, "slug": "rtx-3090", "name": "RTX 3090", "models": ["rtx-3090"]},
+    {"code": 19, "slug": "rtx-a6000", "name": "RTX A6000", "models": ["rtx-a6000"]},
+    {"code": 20, "slug": "rtx-a5000", "name": "RTX A5000", "models": ["rtx-a5000"]},
+    {"code": 21, "slug": "rtx-a4000", "name": "RTX A4000", "models": ["rtx-a4000"]},
+    {"code": 22, "slug": "a40", "name": "A40", "models": ["a40"]},
+    {"code": 23, "slug": "a10", "name": "A10", "models": ["a10"]},
+    {"code": 24, "slug": "a10g", "name": "A10G", "models": ["a10g"]},
+    {"code": 25, "slug": "t4", "name": "T4", "models": ["t4"]}
+  ]
+}

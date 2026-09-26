@@ -22,6 +22,7 @@ from core.challenge import Params
 from core.specs import MODELS
 
 from core import listing as listings
+from core import classes as gpu_classes
 from core import providers as providers_known
 
 from . import chain, world
@@ -86,7 +87,7 @@ def report_hash(rep: dict) -> str:
 class StartIn(BaseModel):
     cloud: str = Field(pattern=r"^[a-z0-9-]{1,63}$")
     uuid: str = Field(min_length=1, max_length=128)
-    claimed_class: int = Field(ge=1, le=3)
+    claimed_class: int = Field(ge=1, le=gpu_classes.MAX)
     n: int = Field(CHECK_N, ge=8, le=32768)  # omitted -> the API's calibrated size (prover.run on a GPU omits both)
     steps: int = Field(default_factory=lambda: int(os.environ.get("CHECK_STEPS") or 100), ge=1, le=1000)
     # a periodic series (--every): the same renter re-checking one rental at jittered intervals
@@ -162,7 +163,7 @@ def check_reveal(body: RevealIn):
     work = grade(p, s["root"], s["samples"], body.fingerprints, body.leaf_hashes, body.rows)
     work_ok = not work  # re-graded correct: the API-clock timing is a verified number, in time or not
     classification, class_reasons = class_check(s["claimed_class"], s["probes"], body.metrics)
-    measured = classify(s["probes"], body.metrics)  # on-chain class code of the best match
+    measured = classify(s["probes"], body.metrics, s["claimed_class"])  # on-chain class code, the claim when consistent
     # Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = fail, which
     # needs people. Heat, power caps and sharing only slow a chip: right chip, right answers, too slow = degraded,
     # published with its numbers like a pass, never counted toward failed.
@@ -563,6 +564,12 @@ def gpus():
     return {"source": source, "error": error, "gpus": rows}
 
 
+@app.get("/api/gpu-classes")
+def gpu_class_table():
+    """The GPU classes a listing can claim: code (onchain), slug (what a renter types), name, accepted models."""
+    return gpu_classes.TABLE
+
+
 @app.get("/api/providers/known")
 def known_providers():
     """The standard provider labels (core/providers.json), for pickers. Advisory: any name is still accepted."""
@@ -754,7 +761,7 @@ def bundle():
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for pkg in ("core", "prover"):
                 for f in sorted((_ROOT / pkg).glob("*")):
-                    if f.suffix == ".py" or f.name in ("gpu_specs.json", "providers.json"):
+                    if f.suffix == ".py" or f.name in ("gpu_specs.json", "providers.json", "gpu_classes.json"):
                         z.write(f, f"{pkg}/{f.name}")
         _BUNDLE["zip"] = buf.getvalue()
     return Response(_BUNDLE["zip"], media_type="application/zip")
@@ -763,7 +770,9 @@ def bundle():
 @app.get("/run")
 def run_py(request: Request):
     api = (os.environ.get("API_URL") or str(request.base_url)).rstrip("/")
-    return Response((_ROOT / "api/oneline.py").read_text().replace("__API__", api), media_type="text/x-python")
+    table = json.dumps(gpu_classes.BY_SLUG | {str(c): c for c in gpu_classes.NAMES})
+    return Response((_ROOT / "api/oneline.py").read_text().replace("__API__", api).replace("__CLASSES__", table),
+                    media_type="text/x-python")
 
 
 _web = Path(__file__).resolve().parent.parent / "web"

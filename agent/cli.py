@@ -28,6 +28,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from agent import history, listing
+from core import classes
 from prover.run import AMBER, DIM, GREEN, RED, ApiError, mark, paint, post
 
 REPO = Path(__file__).resolve().parents[1]
@@ -94,9 +95,17 @@ def claimed_class(text, forced=None):
     if conf >= 0.9 and code:
         return code
     if not sys.stdin.isatty():
-        raise SystemExit("Not sure what this listing is. Pass --claimed 1|2|3 (1 H100 SXM, 2 H100 PCIe, 3 A100).")
-    ans = input(f"Is this right? Enter to accept {name}, or type 1 (H100 SXM), 2 (H100 PCIe), 3 (A100): ").strip()
-    return int(ans) if ans else code
+        raise SystemExit("Not sure what this listing is. Pass --claimed with the GPU, e.g. h100, h200, a100, l40s.")
+    ans = input(f"Is this right? Enter to accept {name}, or type the GPU (h100, h100-pcie, h200, a100, ...): ").strip()
+    return gpu_code(ans) if ans else code
+
+
+def gpu_code(v):
+    """--claimed as a slug (h200) or a class code (5)."""
+    code = int(v) if str(v).isdigit() else classes.BY_SLUG.get(str(v).lower())
+    if code not in classes.NAMES:
+        raise SystemExit(f"Unknown GPU {v!r}. One of: {', '.join(sorted(classes.BY_SLUG))}")
+    return code
 
 
 def run_profiler(a, api, cls):
@@ -260,7 +269,7 @@ def main(argv=None):
     c.add_argument("--sim-sms", type=int, default=132, help="--local only: SM count to report (108 = A100)")
     c.add_argument("--cloud", required=True)
     c.add_argument("--listing", default="")
-    c.add_argument("--claimed", type=int, help="skip listing parsing: 1 H100 SXM, 2 H100 PCIe, 3 A100")
+    c.add_argument("--claimed", type=gpu_code, help="skip listing parsing: the GPU, e.g. h100, h100-pcie, h200, a100, l40s")
     c.add_argument("--push", action="store_true", help="re-copy core/ and prover/ to the pod")
     c.add_argument("--n", type=int)
     c.add_argument("--steps", type=int)

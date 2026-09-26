@@ -1,6 +1,6 @@
 """Waterline one-line check, served by the API at /run. Paste into the rented pod's terminal:
 
-  curl -fsSL <host>/run | python3 - <cloud> <what the listing promises: h100 | h100-pcie | a100>
+  curl -fsSL <host>/run | python3 - <cloud> <the GPU the listing promises: h100, h200, b200, l40s, a100, ...>
   curl -fsSL <host>/run | python3 - <cloud> h100 --gpu 3   # a multi-GPU pod: check the fourth GPU
   curl -fsSL <host>/run | python3 - <cloud> h100 --every 30m   # a periodic series, until Ctrl-C (or --times N)
   curl -fsSL <host>/run | python3 - calibrate      # once, on the reference H100: prints the exam size to set
@@ -17,16 +17,18 @@ import time
 import importlib.util
 import io
 import subprocess
+import json
 import sys
 import urllib.request
 import zipfile
 
 API = "__API__"
-CLASSES = {"h100-sxm": 1, "h100": 1, "h100-pcie": 2, "a100": 3, "1": 1, "2": 2, "3": 3}
+_TABLE = '__CLASSES__'  # the API fills in core/gpu_classes.json as {slug: code}
+CLASSES = json.loads(_TABLE) if _TABLE.startswith("{") else {"h100": 1, "h100-sxm": 1, "h100-pcie": 2, "a100": 3}
 
 ap = argparse.ArgumentParser(prog="waterline", description="Check this GPU against its listing, from inside the rental.")
 ap.add_argument("cloud", help="the provider, lowercase, e.g. cloud-b")
-ap.add_argument("claimed", help="what the listing promises: h100 (SXM), h100-pcie or a100")
+ap.add_argument("claimed", help="the GPU the listing promises, e.g. h100, h200, b200, l40s, a100, rtx-4090")
 ap.add_argument("--gpu", help="on a multi-GPU pod, which GPU to check (0, 1, ...); default the first")
 ap.add_argument("--every", help="check again at this interval, e.g. 30m or 2h (jittered ±20%%), until Ctrl-C")
 ap.add_argument("--times", type=int, help="with --every: stop after this many checks")
@@ -36,7 +38,7 @@ calibrating = sys.argv[1:2] == ["calibrate"]
 a, rest = (ap.parse_known_args(["calibrate", "h100", *sys.argv[2:]]) if calibrating else ap.parse_known_args())
 claimed = CLASSES.get(a.claimed.lower())
 if claimed is None:
-    sys.exit("waterline: the listing must be h100, h100-pcie or a100")
+    sys.exit("waterline: unknown GPU. One of: " + ", ".join(sorted(k for k in CLASSES if not k.isdigit())))
 
 
 def need(module, package):
