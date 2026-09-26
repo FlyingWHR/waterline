@@ -1,5 +1,13 @@
 # Pod setup (Ubuntu, CUDA 12, H100 or A100)
 
+Shortest path, nothing to copy or clone (runs from memory; installs cupy once if the image lacks it):
+
+```bash
+curl -fsSL waterline-eth.vercel.app/run | python3 - cloud-b h100
+```
+
+The rest of this page is for the agent's SSH path and for calibration.
+
 The agent copies `core/` and `prover/` to `~/waterline` over scp. On a fresh pod, once:
 
 ```bash

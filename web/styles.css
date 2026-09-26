@@ -323,3 +323,5 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .rules div{display:grid; gap:4px; align-content:start;} .rules b{font-weight:500;} .rules span{color:var(--muted); font-size:13px;}
 .rules + .sub{margin-top:20px;}
 .brand{display:inline-flex; align-items:center;} .brand .mark{width:28px; height:28px; margin-right:14px; flex:none;}
+.oneline{display:flex; align-items:center; gap:14px; flex-wrap:wrap; background:#030b11; border:1px solid var(--line2); padding:14px 16px; overflow-x:auto;}
+.oneline code{font-family:var(--mono); font-size:14px; color:var(--accent); white-space:nowrap;}

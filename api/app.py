@@ -685,6 +685,33 @@ def leaderboard(model: str | None = Query(None, max_length=64)):
 
 # Static page (web/) served from the same deployment; Vercel promotes StaticFiles mounts to its CDN.
 # Mounted last: routes are matched in order, so every /api/* route above wins over the mount.
+# ---- one-line check: the pod runs `curl -fsSL <api>/run.py | python3 - ...`; nothing of ours is written to disk ----
+_ROOT = Path(__file__).resolve().parent.parent
+_BUNDLE = {}
+
+
+@app.get("/api/bundle")
+def bundle():
+    """core/ and prover/ as a zip, imported from memory by /run.py."""
+    if "zip" not in _BUNDLE:
+        import io
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for pkg in ("core", "prover"):
+                for f in sorted((_ROOT / pkg).glob("*")):
+                    if f.suffix == ".py" or f.name == "gpu_specs.json":
+                        z.write(f, f"{pkg}/{f.name}")
+        _BUNDLE["zip"] = buf.getvalue()
+    return Response(_BUNDLE["zip"], media_type="application/zip")
+
+
+@app.get("/run")
+def run_py(request: Request):
+    api = (os.environ.get("API_URL") or str(request.base_url)).rstrip("/")
+    return Response((_ROOT / "api/oneline.py").read_text().replace("__API__", api), media_type="text/x-python")
+
+
 _web = Path(__file__).resolve().parent.parent / "web"
 if _web.is_dir():
     app.mount("/", StaticFiles(directory=_web, html=True), name="web")

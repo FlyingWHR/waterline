@@ -157,7 +157,7 @@ def main(argv=None):
     ap.add_argument("--burn-seconds", type=int, default=10, help="health report: sustained burn length (0 skips it)")
     ap.add_argument("--perf-seconds", type=int, default=60,
                     help="performance profile time budget, run after commit (0 skips it)")
-    ap.add_argument("--out", default="result.json")
+    ap.add_argument("--out", help="also write the probes and timings to this file (nothing is written without it)")
     a = ap.parse_args(argv)
 
     if a.cpu:
@@ -170,8 +170,15 @@ def main(argv=None):
     except ApiError as e:
         log(f"error: {e}")
         return 2
-    with open(a.out, "w") as f:
-        json.dump(local, f, indent=1)
+    if a.out:
+        with open(a.out, "w") as f:
+            json.dump(local, f, indent=1)
+    link = f"{a.api.rstrip('/')}/#/check/{rv['report_id']}"
+    log({"pass": "PASS: the listed chip, done in time.",
+         "degraded": "DEGRADED: the listed chip with correct answers, but too slow for the deadline.",
+         }.get(rv["verdict"], "FAIL: " + "; ".join(rv.get("reasons") or ["see the report"])))
+    log(f"report: {link}" + ("\n  nothing is published yet: open the link and Approve with World to publish this failure"
+                             if rv["verdict"] == "fail" else ""))
     print(json.dumps(rv))
     return 0
 

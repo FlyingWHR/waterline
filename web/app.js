@@ -132,6 +132,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
       h("h1", {}, "Waterline"),
       h("p", { className: "lede" }, "Whether a rented GPU is the chip on the listing and delivers its speed, checked by the people who rent it. The record lives on the GPU's ENS name and rolls up to its provider's, where the host can't edit it.")),
+    oneLine(),
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
     ...(g.gpus.length ? [section("GPUs on record", g.source === "multibaas" ? "from MultiBaas" : "from this API", h("div", { className: "nums" },
@@ -140,6 +141,17 @@ async function overview() {
     section("Recent checks", null, reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to see one here."),
       h("p", {}, h("a", { href: "#/checks" }, "All checks →"))),
   ];
+}
+
+// The one-line check a renter pastes into the rented pod's terminal. Nothing of ours is written to the pod.
+function oneLine() {
+  const cmd = `curl -fsSL ${location.host}/run | python3 - cloud-b h100`;
+  const copy = h("button", { type: "button", className: "btn sm", onclick: async () => {
+    try { await navigator.clipboard.writeText(cmd); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
+  } }, "Copy");
+  return section("Check your GPU", "one line, in the rented pod",
+    h("div", { className: "oneline" }, h("code", {}, cmd), copy),
+    h("p", { className: "sub" }, "Replace cloud-b with your provider and h100 with what the listing promises (h100, h100-pcie or a100). The check runs from memory and leaves nothing on the pod. A pass or a degraded result is published at once; a failure prints a link where you approve it with World."));
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.

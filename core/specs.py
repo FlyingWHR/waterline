@@ -1,9 +1,9 @@
 """Read-only view of core/gpu_specs.json (35 models, confusable pairs). Shared by prover/ and api/."""
 import json
+import pkgutil
 import re
-from pathlib import Path
 
-_DATA = json.loads(Path(__file__).with_name("gpu_specs.json").read_text())
+_DATA = json.loads(pkgutil.get_data("core", "gpu_specs.json"))  # works from disk and from the in-memory bundle
 MODELS = {m["id"]: m for m in _DATA["models"]}
 PAIRS = [(p["a"], p["b"]) for p in _DATA["confusable_pairs"]]
 PCIE_X16_GBS = {3: 15.75, 4: 31.5, 5: 63.0, 6: 121.0}  # per direction, after line encoding
