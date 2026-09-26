@@ -435,8 +435,11 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 @media (prefers-reduced-motion:reduce){ .tip,.tip .more{transition:none;} }
 .tip:hover,.tip:focus,.tip:focus-within{z-index:10;} /* the open card and its detail sit above the next row */
 /* sponsor marks */
-.tip .logo{grid-row:span 2; width:34px; height:34px; object-fit:contain; margin:0 4px;}
-.flow .att .logo{width:15px; height:15px; vertical-align:-2px; margin-right:7px;}
+.tip .logo{grid-row:span 2; width:34px; height:30px; object-fit:contain; margin:0 4px; justify-self:center;}
+/* optically equal marks: the ENS diamond is tall and light, the Curvegrid C is solid, the World circle in between */
+.tip .logo-ens{height:32px;} .tip .logo-world{height:27px;} .tip .logo-curvegrid{height:25px;}
+.flow .att .logo-ens{height:16px;} .flow .att .logo-world{height:13px;} .flow .att .logo-curvegrid{height:13px;}
+.flow .att .logo{width:16px; height:14px; object-fit:contain; vertical-align:-2px; margin-right:7px;}
 .tip b{color:color-mix(in srgb, var(--c) 72%, #ffffff);} /* the brand hue, lifted enough to read on the dark ground */
 /* World's outline softer than pure white, so it sits with the other attachments */
 .flow .att.c-world{border-color:color-mix(in srgb, var(--world) 55%, transparent);}

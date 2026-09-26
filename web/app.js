@@ -262,7 +262,7 @@ function flowDiagram() {
 }
 
 // The sponsors' own marks (web/logos: from ens.domains/brand, world.org/brand, docs.curvegrid.com), unaltered.
-const logo = (file, alt) => h("img", { className: "logo", src: `logos/${file}.svg`, alt, width: 28, height: 28 });
+const logo = (file, alt) => h("img", { className: `logo logo-${file}`, src: `logos/${file}.svg`, alt, width: 28, height: 28 });
 
 // A card: icon, name, a short line, and the detail on hover or keyboard focus (tap on touch).
 function tipCard(tone, glyph, name, intro, more) {
