@@ -81,14 +81,14 @@ const table = (cols, rows) => {
 };
 
 // ---- router ------------------------------------------------------------------------------------------------
-const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"],
+const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], name: [namePage, "Name"],
   leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = { check: "checks", models: "leaderboard" }[name] || (name in routes ? name : "");
+  const tab = { check: "checks", models: "leaderboard", name: "gpus" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
@@ -250,7 +250,7 @@ async function gpus() {
   return [
     head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two different people mark a GPU failed; two passes after that bring it back as recovered.")),
     ...(g.gpus.length ? [section("The name tree", "every level keeps its own score",
-      h("p", { className: "sub" }, "Each GPU is named under its provider, and one World approval counts on both: two different people mark a GPU failed, and a person counts once per provider however many of its GPUs they report. A renamed chip gets a new GPU name, not a clean provider. Click any name to read it live from ENS."),
+      h("p", { className: "sub" }, "Each GPU is named under its provider, and one World approval counts on both: two different people mark a GPU failed, and a person counts once per provider however many of its GPUs they report. A renamed chip gets a new GPU name, not a clean provider. Open any name for its record, read live from ENS."),
       nameTree(pv, g.gpus, look))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
@@ -270,7 +270,7 @@ function nameTree(pv, gpus, look) {
   }
   const median = (xs) => { xs = xs.filter((v) => v != null).sort((a, b) => a - b); return xs.length ? xs[(xs.length - 1) >> 1] : null; };
   const people = (n) => `${n} ${n === 1 ? "person" : "people"}`;
-  const name = (label, full) => full ? h("button", { type: "button", className: "tn", title: `Read ${full} live from ENS`, onclick: () => look(full) }, label) : h("span", { className: "tn" }, label);
+  const name = (label, full) => full ? h("a", { className: "tn", href: `#/name/${full}`, title: `${full}: its page, read live from ENS` }, label) : h("span", { className: "tn" }, label);
   const provider = ({ p, gpus: gs }) => {
     const full = p.name || (gs[0]?.gpu_name || "").split(".").slice(1).join(".");
     const pct = median(gs.map((x) => x.pct_of_spec));
@@ -286,6 +286,41 @@ function nameTree(pv, gpus, look) {
   return h("div", { className: "tree" },
     h("div", { className: "tnode root" }, h("b", { className: "mono" }, "waterline.eth"), h("span", { className: "facts" }, "resolver: Marks · nothing below is registered, all of it resolves onchain")),
     h("ul", {}, [...groups.values()].map(provider)));
+}
+
+// #/name/<name>: the page of one ENS name, a GPU or a provider. The facts are read live from ENS; history and the
+// subtree come from the API. The record itself stays raw onchain; this is its human view.
+async function namePage(full) {
+  const hl = await getHealth();
+  const n = String(full || "").toLowerCase();
+  if (!n.endsWith("." + hl.ens.parent)) throw new Error(`Not a name under ${hl.ens.parent}.`);
+  const isProvider = n.split(".").length === 3;
+  const [g, pv, reps] = await Promise.all([api("/api/gpus"), api("/api/providers").catch(() => ({ providers: [] })), api("/api/reports?limit=500")]);
+  const mine = reps.filter((r) => isProvider ? r.gpu_name?.endsWith("." + n) : r.gpu_name === n);
+  const keys = isProvider ? PROVIDER_KEYS : ENS_KEYS;
+  const facts = h("div", { className: "namefacts" }, h("p", { className: "sub" }, "Reading the record from Sepolia…"));
+  const statusBox = h("div", { className: "namestatus" });
+  const slow = new Promise((_, no) => setTimeout(() => no(new Error("Sepolia didn't answer in 15 s; reload to try again")), 15000));
+  Promise.race([ensReader(n).then(async ({ text }) =>
+    Object.fromEntries(await Promise.all(keys.map(async (k) => [k, (await text("waterline." + k)) || ""])))), slow]).then((v) => {
+    if (!v.status || v.status === "unknown") { facts.replaceChildren(h("p", { className: "sub" }, `No published check for ${n} yet.`)); return; }
+    statusBox.replaceChildren(isProvider ? h("p", { className: "lede-s" }, v.status) : pill(v.status));
+    const tile = (k, val) => h("div", {}, h("b", {}, val || "0"), h("span", {}, k));
+    facts.replaceChildren(h("div", { className: "specline" }, ...(isProvider
+      ? [tile("GPUs", v.gpus), tile("failed now", v.failed_gpus), tile("people who reported", v.humans), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails)]
+      : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("people", v.humans), tile("recoveries", v.recoveries)])),
+      isProvider && v.note ? h("p", { className: "quote" }, `“${v.note}” `, h("span", { className: "sub" }, "the provider's note: its words, not part of the record")) : null,
+      !isProvider && v.fingerprint ? h("p", { className: "sub small" }, "Timing fingerprint ", h("span", { className: "mono" }, short(v.fingerprint)), " · report hash ", h("span", { className: "mono" }, short(v.report || "")), mine[0] ? h("span", {}, " · ", h("a", { href: `#/check/${mine[0].report_id}` }, "verify it on the latest check")) : null) : null);
+  }).catch((e) => facts.replaceChildren(h("p", { className: "err" }, `Couldn't read ${n} from ENS: ${e.shortMessage || e.message}`)));
+  const provNode = pv.providers.find((x) => x.name === (isProvider ? n : n.split(".").slice(1).join(".")));
+  return [
+    head(isProvider ? "ENS name · provider" : "ENS name · GPU", h("span", { className: "mono namehead" }, n), statusBox,
+      h("p", { className: "sub" }, isProvider ? "Every GPU this provider rents out is named under it; its score is the roll-up of theirs, each person counted once."
+        : h("span", {}, "Named under ", h("a", { href: `#/name/${n.split(".").slice(1).join(".")}` }, n.split(".").slice(1).join(".")), ". Resolved by Marks, written only by its reporter role."))),
+    section("The record", "read live from ENS on Sepolia", facts),
+    ...(isProvider ? [section("Its GPUs", "each with its own record", nameTree({ providers: provNode ? [provNode] : [] }, g.gpus.filter((x) => x.gpu_name?.endsWith("." + n)), () => {}))] : []),
+    section("History", `${mine.length} check${mine.length === 1 ? "" : "s"}`, mine.length ? checksTable(mine) : h("p", { className: "empty" }, "No checks through this API yet.")),
+  ];
 }
 
 // Text records of one ENS name, read in the browser through the universal resolver (viem).

@@ -360,3 +360,8 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .tree .facts{color:var(--muted); font-size:13px;}
 .tree .tnode.root b{color:var(--ink);}
 .rules .wide{grid-column:span 2;} @media (max-width:880px){ .rules .wide{grid-column:auto;} }
+/* the page of one ENS name */
+.namehead{font-size:clamp(20px,3vw,30px); color:var(--ens); overflow-wrap:anywhere;}
+.namestatus{margin:10px 0 2px;} .namestatus .pill{font-size:13px; padding:4px 12px;}
+.lede-s{font-size:clamp(17px,2vw,20px); font-weight:300;}
+.namefacts{display:grid; gap:14px;}
