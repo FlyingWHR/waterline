@@ -132,7 +132,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas,
       h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
         h("h1", {}, "Waterline"),
-        h("p", { className: "lede" }, "Whether a rented GPU is the chip on the listing and delivers its speed, checked by the people who rent it. The record lives on the GPU's ENS name and rolls up to its provider's, where the host can't edit it.")),
+        h("p", { className: "lede" }, "Check a rented GPU is the chip you paid for, at the speed you paid for. The verdict goes on ENS, where the host can't edit it.")),
       oneLine()),
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
@@ -154,7 +154,7 @@ function oneLine() {
   return h("div", { className: "try" },
     h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
     h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"), h("code", {}, cmd)),
-    h("p", { className: "sub small" }, "Your provider, then what the listing promises: h100, h100-pcie or a100. Runs from memory and leaves nothing on the pod. A pass or a degraded result publishes at once; a failure prints a link to approve it with World."));
+    h("p", { className: "sub small" }, "Your provider, then the listed GPU: h100, h100-pcie or a100. Runs from memory; nothing stays on the pod."));
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.
@@ -181,11 +181,11 @@ function flowDiagram() {
           ["chain", "Ethereum Sepolia", "the record: Marks stores it and resolves the names"]]
         .map(([c, name, role]) => h("div", { className: "partner c-" + c }, h("b", {}, name), h("span", {}, role)))),
     h("div", { className: "rules" },
-      h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Only the listed chip at its speed finishes the exam in time. Nobody can fake that, so a pass publishes at once.")),
-      h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat can slow a chip but can't remove cores. Another chip is a fail; the right chip running slow is degraded, published with its numbers.")),
-      h("div", {}, h("b", { className: "st-fail" }, "A failure needs real people."), h("span", {}, "A renter could sabotage their own exam, so a failure publishes only with a World ID approval, and two different people mark a GPU failed.")),
-      h("div", {}, h("b", {}, "Reputation rolls up."), h("span", {}, "Every failure also lands on the provider's name, where each person counts once. A new name for a chip is not a clean provider."))),
-    h("p", { className: "sub" }, "Your agent starts the profiler inside your pod. The API gives it a fresh puzzle and a deadline, then re-checks a random slice of the answer and reads the core count. That tells the three cases apart: the listed chip at speed, the listed chip delivering too little, or another chip. MultiBaas indexes every report so agents can skip bad GPUs and bad providers."));
+      h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Only the listed chip at speed beats the deadline. Nobody can fake that, so passes publish at once.")),
+      h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat slows a chip but can't remove cores. A wrong chip fails; the right chip running slow is degraded.")),
+      h("div", {}, h("b", { className: "st-fail" }, "A failure needs real people."), h("span", {}, "Renters could sabotage their own exam, so a failure needs a World ID approval, and two people to mark a GPU failed.")),
+      h("div", {}, h("b", {}, "Reputation rolls up."), h("span", {}, "Failures also land on the provider's name, each person counted once. Renaming a chip doesn't clean the provider."))),
+    h("p", { className: "sub" }, "The API sends a fresh puzzle and a deadline, re-grades a random slice of the answer, and counts the cores. That separates three cases: the right chip at speed, the right chip too slow, another chip."));
 }
 
 // Perspective wireframe: rows recede to a horizon, amplitude and opacity grow toward the viewer, one mint
@@ -254,15 +254,15 @@ async function gpus() {
     h("td", {}, String(x.humans)), h("td", {}, pill(x.status)), h("td", {}, when(x.last_at)),
     h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.gpu_name) }, "Look up") : null)));
   return [
-    head("GPUs", "GPU health", h("p", { className: "sub" }, "One row per GPU on the public record. A failure needs two different people before the GPU shows as failed; two passes after its last failure bring it back as recovered.")),
+    head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two different people mark a GPU failed; two passes after that bring it back as recovered.")),
     ...(prows.length ? [section("Providers", "each person counts once per provider",
-      h("p", { className: "sub" }, "Every GPU name sits under its provider's name, so failures roll up: a provider can give a chip a new name, not itself a clean record. A provider can add a note to its own name; it can't change a number."),
+      h("p", { className: "sub" }, "GPU names sit under their provider's, so failures roll up: renaming a chip doesn't clean the provider. Providers can add a note, never a number."),
       table(["Provider", "GPUs", "Failed now", "People", "Passes", "Degraded", "Fails", ""], prows))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
       rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "People", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
-    section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "Type a GPU name or a provider name (like cloud-b). The record is read through the ENS universal resolver, straight from the chain."), form, out),
+    section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "A GPU or provider name (e.g. cloud-b), read live from Sepolia through the ENS Universal Resolver."), form, out),
   ];
 }
 
@@ -294,7 +294,7 @@ function onChain(r, kv) {
       const onchain = ((await text("waterline.report")) || "").toLowerCase();
       if (!onchain) out.replaceChildren("The name has no waterline.report yet. The transaction may still be confirming; try again shortly.");
       else if (onchain === r.report_hash.toLowerCase()) { out.className = "st-pass"; out.replaceChildren("Matches the on-chain record ✓"); }
-      else { out.className = "st-suspect"; out.replaceChildren(`Doesn't match: the name now carries ${short(onchain)}. A newer check of this GPU may have replaced it; this report's hash stays in its transaction's Reported event.`); }
+      else { out.className = "st-suspect"; out.replaceChildren(`Doesn't match: the name now shows ${short(onchain)}, likely a newer check. This report's hash stays in its Reported event.`); }
     } catch (e) {
       out.className = "err";
       out.replaceChildren(`Couldn't read ${r.gpu_name}: ${e.shortMessage || e.message}`);
@@ -330,7 +330,7 @@ function ensLookup(initial = "") {
       const vals = await Promise.all(keys.map((k) => text("waterline." + k)));
       const r = Object.fromEntries(keys.map((k, i) => [k, vals[i] || ""]));
       if (!vals.some(Boolean) || r.status === "unknown") {
-        out.replaceChildren(h("p", { className: "msg" }, `No record for ${n} yet. Nobody has published a check ${isProvider ? "of this provider's GPUs" : "of this GPU"}, or Marks is not its resolver yet.`));
+        out.replaceChildren(h("p", { className: "msg" }, `No published check for ${n} yet.`));
         return;
       }
       const row = (k, v) => [h("dt", {}, k), h("dd", {}, v || "—")];
@@ -367,7 +367,7 @@ async function checks() {
   const reps = await api("/api/reports?limit=100");
   const pending = reps.filter(needsApproval).length;
   return [
-    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish on their own. A failure waits here until a person approves it with World; denying or ignoring it publishes nothing.")),
+    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. Failures wait here for a World approval; deny or ignore, and nothing is published.")),
     section("All checks", pending ? `${pending} waiting for approval` : `${reps.length} shown`,
       reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet."),
       h("div", {}, h("button", { type: "button", className: "btn", onclick: () => route(false) }, "Refresh"))),
@@ -401,7 +401,7 @@ async function checkDetail(id) {
     head("Check " + short(r.report_id), r.gpu_name || "Unknown GPU",
       h("div", { className: "verdict st-" + r.verdict }, r.verdict),
       h("p", { className: "diagnosis" }, diagnosis),
-      r.fingerprint_changed ? h("p", { className: "sub" }, "Its per-core timing fingerprint differs from this GPU's previous check. That is noted, not judged: it can mean a different card behind the same name.") : null,
+      r.fingerprint_changed ? h("p", { className: "sub" }, "Its timing fingerprint changed since the last check. Noted, not judged: it can mean a different card behind the name.") : null,
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
       needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve with World")) : null),
     h("section", { className: "test" },
@@ -418,10 +418,10 @@ async function checkDetail(id) {
           over ? "st-fail" : "st-pass", `${r.elapsed_s} of ${r.deadline_s} seconds`),
         r.spec_tops ? gauge(`Of the ${listed}'s rating (${r.spec_tops.toLocaleString()} TOPS dense INT8)`, pct == null ? "—" : `${num(pct)}%`, pct, "",
           `${num(r.effective_tops)} TOPS is ${num(pct)} percent of ${r.spec_tops} TOPS`) : null),
-      h("p", { className: "sub small" }, "Effective TOPS counts the whole round trip (generating, hashing, network), so it reads below the chip's peak.")),
+      h("p", { className: "sub small" }, "Effective TOPS includes generation, hashing and network, so it reads below peak.")),
     h("div", { className: "detail" },
       h("div", { className: "block" }, h("div", { className: "label" }, "Why"),
-        r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "Every check passed: the work was done in time and the hardware matches the listing."),
+        r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "All checks passed: done in time, and the hardware matches the listing."),
         kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
           ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
           ...(r.listing_reads_as?.class ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : "st-pass" },
@@ -434,9 +434,9 @@ async function checkDetail(id) {
           ["Per-core fingerprint", h("span", { title: p.fingerprint }, short(p.fingerprint))])),
       h("div", { className: "block" }, h("div", { className: "label" }, "Rows re-checked (step, row)"),
         r.samples?.length ? h("ul", { className: "samples" }, r.samples.map(([st, row]) => h("li", {}, `${st}, ${row}`))) : h("p", { className: "sub" }, "—"),
-        h("p", { className: "sub small" }, "Picked with the API's secret randomness only after the answer was locked in; 64 entries of each row are recomputed on the API's CPU."))),
+        h("p", { className: "sub small" }, "Drawn with the API's secret randomness after the answer was sealed; 64 entries per row recomputed on the API's CPU."))),
     section("Core-count staircase", r.staircase ? `step at ${p.sms} blocks` : null,
-      h("p", { className: "sub" }, "One busy block per core. Once there are more blocks than cores, the extra ones wait and the time jumps. Heat can slow a GPU down, but it can't move this step."),
+      h("p", { className: "sub" }, "One busy block per core: past the core count, blocks queue and the time jumps. Heat slows a chip; it can't move this step."),
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
     perfSection(r, cmp),
     healthSection(r.health),
@@ -506,7 +506,7 @@ function healthSection(hr) {
   const chips = (b.reasons_seen || []).map((x) => h("span", { className: "pill " + (RED_REASONS.includes(x) ? "st-fail" : AMBER_REASONS.includes(x) ? "st-suspect" : "st-unknown") }, x));
   const flags = healthFlags(hr);
   return wrap(
-    h("p", { className: "sub" }, "Standard profiling any renter would run: a sustained matmul burn, NVIDIA's own counters (NVML) and, when installed, the DCGM diagnostic. The host's machine reports these numbers, so they inform you but never decide a pass or fail.",
+    h("p", { className: "sub" }, "Standard checks: a sustained burn, NVIDIA's counters (NVML) and DCGM when installed. The host's machine reports them, so they inform but never decide.",
       hr.source === "simulated" ? h("span", {}, " ", pill("simulated · CPU test run", "suspect")) : null),
     h("ul", { className: "flags" }, flags.length ? flags.map(([lv, x]) => h("li", { className: lv === "bad" ? "st-fail" : "st-suspect" }, x))
       : h("li", { className: "st-pass" }, "Nothing unusual reported.")),
@@ -762,7 +762,7 @@ function perfSection(r, cmp) {
 
   return wrap(headline,
     Object.keys(mt).length ? metricTable(mt) : h("p", { className: "empty" }, "The profiler sent no metrics for this check."),
-    h("p", { className: "sub small" }, "Hover a metric name for its method. Medians are over repeated runs in the pod; the bar shows the p10–p90 spread. The shaded band on % of rating is what a healthy card of this model typically reaches."),
+    h("p", { className: "sub small" }, "Hover a metric for its method. Medians over repeated runs; bars show p10–p90. The band on % of rating is a healthy card's range."),
     methodsNote(),
     h("div", { className: "block" }, h("div", { className: "label" }, "vs other models"),
       scatter(models, me, cl.claimed, cl.best_match),
@@ -795,13 +795,13 @@ async function leaderboard(arg) {
   const cols = ["Rank", "Cloud", "Checks", "Median verified INT8 (range · n)", "Median % of rating (range)", "Pass rate"];
   return [
     head("Leaderboard", "Clouds, by what their GPUs deliver", subtabs("#/leaderboard"),
-      h("p", { className: "sub" }, "For one listed model: how each cloud's GPUs did on checks renters ran. Only verified numbers are ranked: work the API re-graded and timed on its own clock.")),
+      h("p", { className: "sub" }, "How each cloud's GPUs of one listed model performed. Only verified numbers rank: work the API re-graded and timed itself.")),
     section(info ? info.name : "No checks yet", info ? `${info.n} checks across ${rows.length} cloud${rows.length === 1 ? "" : "s"}` : null,
       lb.models.length ? h("div", { className: "field narrow" }, h("label", { className: "label", htmlFor: "lb-model" }, "Listed model"), pick) : null,
       ranked.length ? table(cols, ranked.map(tr)) : rows.length ? h("p", { className: "empty" }, `No cloud has ${lb.min_n} checks of this model yet, so none is ranked.`) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to start the board."),
       few.length ? h("details", { className: "fewbox", open: !ranked.length }, h("summary", {}, `${few.length} cloud${few.length > 1 ? "s" : ""} with fewer than ${lb.min_n} checks, not ranked`),
         table(cols, few.map(tr))) : null,
-      h("p", { className: "sub small" }, `Verified INT8 is a lower bound: it counts the API's whole round trip (generating, hashing, network), so it reads below the chip's peak and favours pods close to the API. Pass rate counts every check, including failures still waiting for a human approval. A cloud needs ${lb.min_n} checks to be ranked.`),
+      h("p", { className: "sub small" }, `Verified INT8 includes the round trip to our API, so it reads below peak and favours nearby pods. Pass rate counts every check, pending failures too. A cloud needs ${lb.min_n} checks to rank.`),
       methodsNote()),
   ];
 }
@@ -818,7 +818,7 @@ async function modelsView() {
     h("td", {}, m.sources.map((u, i) => h("a", { href: u, target: "_blank", rel: "noopener", className: "src", title: u }, `[${i + 1}]`)))));
   return [
     head("Leaderboard", "Reference models", subtabs("#/models"),
-      h("p", { className: "sub" }, `The ${d.models.length} GPU models checks are compared against, from vendor datasheets (compiled ${d.generated}). Throughput is dense, without sparsity; where a vendor prints only sparse figures they were halved.`)),
+      h("p", { className: "sub" }, `${d.models.length} reference models from vendor datasheets (${d.generated}). Dense throughput; sparse-only figures are halved.`)),
     section("Spec table", `${d.models.length} models · ${d.confusable_pairs.length} look-alike pairs`,
       table(["Model", "SMs", "FP8", "Memory", "Bandwidth", "INT8 TOPS", "BF16 TFLOPS", "FP8 TFLOPS", "Sources"], rows),
       h("p", { className: "sub small" }, h("abbr", { className: "unv" }, "*"), " unverified: derived or from a third party, not confirmed from a primary source. For AMD, SMs are compute units. GeForce FP8 and BF16 figures use FP32 accumulate, as cuBLAS does.")),
@@ -833,14 +833,14 @@ async function about() {
   const steps = [
     "The API gives the GPU a random seed and starts a deadline clock.",
     "The GPU multiplies seeded INT8 matrices on its tensor cores, step after step.",
-    "Each output row is reduced to a fingerprint, and all fingerprints are hashed into one Merkle root.",
-    "The GPU sends the root. Only then does the API pick 8 rows at random and recompute them on its CPU.",
-    "Probes measure the core-count staircase, FP8 support, clock and memory speed. They decide the hardware class.",
-    "Verdict, in two layers. Class comes only from heat-proof probes (cores, FP8): another chip, or wrong answers, is a fail. The deadline measures delivery: the right chip with right answers but too slow is degraded, never a fail.",
-    "A pass or a degraded result is published at once, with its numbers. A failure needs a fresh approval from a person through World.",
-    "One person gets one voice per GPU. It takes two different people to mark a GPU as failed.",
-    "The same approval also counts once for the GPU's provider (cloud-b.waterline.eth), however many of its GPUs that person reports.",
-    "Two passes after a GPU's last failure bring it back as recovered; its history stays public.",
+    "Each output row becomes a fingerprint; all are hashed into one Merkle root.",
+    "Only after the root arrives does the API pick 8 random rows and recompute them.",
+    "Probes measure cores (the staircase), FP8, clock and bandwidth. They decide the chip.",
+    "Two layers. Heat-proof probes (cores, FP8) decide the chip: a wrong chip or wrong answers fail. The deadline measures speed: the right chip too slow is degraded, never failed.",
+    "A pass or degraded result publishes at once. A failure needs a fresh World approval.",
+    "One voice per person per GPU; two different people mark a GPU failed.",
+    "The same approval counts once for the provider, however many of its GPUs that person reports.",
+    "Two passes after a failure mark a GPU recovered; its history stays public.",
   ];
   return [
     head("Settings", "Configuration and how it works"),
@@ -855,16 +855,16 @@ async function about() {
         h("p", { className: "sub" }, token.get() ? "You are logged in with World here. The login is kept in this browser only." : "Not logged in with World in this browser."),
         h("div", {}, forget)))),
     section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
-      "Every GPU you rent out already has a name under your provider name, like cloud-b.waterline.eth. Look both up on the GPUs page. You can't write a score, and neither can we by hand: only a check can. Two ways back from a failure: renters' passes (two after the last failure mark the GPU recovered, with its history kept), and a note in your own words. Ask us for the note role on your provider name; the note shows beside your record and changes no number.")),
+      "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
     section("For agents and integrations", "the record is public and machine-readable", h("p", { className: "sub" },
-      "Read any GPU or provider name through ENS (text records waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; a provider also has gpus, failed_gpus, note). Or query the Reported and ProviderTally events on MultiBaas, or GET /api/gpus and /api/providers here.")),
+      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers.")),
     section("How a check works", null, h("ol", { className: "how" }, steps.map((s) => h("li", {}, h("span", {}, s))))),
     section("What the statuses mean", null, kv(["pass", "At least one check passed and nobody has reported it."],
-      ["suspect · 1 of 2 humans", "One person approved a failure report. To add a second voice, rent that GPU yourself and run the check: a failure you approve counts as a different person."], ["failed", "Two different people approved failure reports."],
-      ["degraded", "Its latest check found the listed chip with correct answers, but too slow for the deadline: heat, a power cap or sharing. Published with its numbers; never counts toward failed."],
-      ["recovered", "It had failure reports, then passed two checks after the last one. The reports stay in its history, and the people who made them can't report it again."],
+      ["suspect · 1 of 2 humans", "One person approved a failure. A second renter who checks it and approves makes it failed."], ["failed", "Two different people approved failure reports."],
+      ["degraded", "Latest check: right chip, correct answers, too slow (heat, a power cap or sharing). Published with its numbers; never counts toward failed."],
+      ["recovered", "Failure reports, then two passes after the last one. The reports stay in its history."],
       ["unknown", "No published check yet."],
-      ["provider (cloud-b.waterline.eth)", "How many of its GPUs are failed right now and how many people reported any of them, each person once. Descriptive only: GPUs are judged one by one."])),
+      ["provider (cloud-b.waterline.eth)", "GPUs failed now, and people who reported any of them (each once). Descriptive: GPUs are judged one by one."])),
   ];
 }
 
@@ -956,7 +956,7 @@ function reportAnyway(message, my) {
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
-  $w("what").textContent = `Failure report for ${rep.gpu_name}. It goes on the public record only if you approve it in World App now.`;
+  $w("what").textContent = `Report ${rep.gpu_name}? It goes public only with your World approval.`;
   say("");
   dlg.showModal();
   try {

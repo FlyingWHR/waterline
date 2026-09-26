@@ -2,17 +2,18 @@
 
 # Waterline
 
-**Your agent proves the H100 you're paying for is really an H100 delivering its speed, and the verdict goes on a public record the provider can't edit.**
+**Check a rented GPU is the chip you paid for, at the speed you paid for. The verdict goes on ENS, where the host
+can't edit it.**
 
-*Heat can slow a chip but can't remove cores, so chip class is heat-proof. Throughput is reported honestly as
-degraded. And if someone lies about the cores, World makes sure they can only lie once, under a name that remembers.*
+*Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
+need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
 
 ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBaas
 
 ## One-sentence summary
 
-Waterline lets a renter's agent prove, from inside the rental, that a cloud GPU is the chip on the listing and
-delivers its speed, and publishes the verdict on the GPU's ENS name, where the provider can't edit it.
+Waterline checks, from inside the rental, that a cloud GPU is the listed chip at its rated speed, and publishes the
+verdict on the GPU's ENS name.
 
 - Demo video: [link]
 - Live app: [link]
@@ -33,23 +34,18 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
 
 ## Why
 
-GPU cloud passed $25B in 2025 and is heading to ~$400B by 2031
-([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)).
-Banks now lend against GPUs ([CoreWeave's $8.5B facility](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)).
-Yet the "same" H100 rents for $1.49–$6.98 an hour ([IntuitionLabs](https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison)),
-and one network found ~400,000 spoofed GPU workers ([io.net](https://x.com/ionet/status/1780877493672595941)).
-Clouds test their own fleets and reviewers audit them now and then
-([SemiAnalysis ClusterMAX](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)), but the
-renter can't check their own rental, right now.
-
-What renters actually complain about is mostly **degraded delivery**, not counterfeit chips: an H100 host that drops
-from 1,755 MHz to ~345 MHz under load at full price ([matt.sh](https://matt.sh/cloud-gpu-thermal-throttling),
-[Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)), specs
-that don't match the listing, broken NVSwitch, a third of the RAM paid for
-([Vast.ai](https://www.trustpilot.com/review/vast.ai), [RunPod](https://dk.trustpilot.com/review/runpod.io) reviews).
-Marketplaces verify hosts because hosts misreport ([Vast.ai](https://docs.vast.ai/host/understanding-verification)),
-so crude swaps are rare on the big ones; an A100 sold as an H100 is the extreme case, and the one our demo plays
-(we relabelled it ourselves). The complaints live on Trustpilot, where nobody's next rental reads them.
+- **A big market on an unchecked claim.** GPU cloud passed $25B in 2025, heading to ~$400B by 2031
+  ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
+  and banks lend against GPUs ([CoreWeave](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)).
+  The "same" H100 rents for $1.49–$6.98/h ([IntuitionLabs](https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison)).
+- **Renters mostly get less, not fake.** Throttled H100s at full price (1,755 → ~345 MHz under load:
+  [matt.sh](https://matt.sh/cloud-gpu-thermal-throttling), [Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)),
+  specs that don't match, broken NVSwitch ([Vast.ai](https://www.trustpilot.com/review/vast.ai),
+  [RunPod](https://dk.trustpilot.com/review/runpod.io) reviews). Swapped chips are the extreme case: ~400,000 spoofed
+  workers on one network ([io.net](https://x.com/ionet/status/1780877493672595941)). Our demo's A100-as-H100 is our own relabel.
+- **Nobody's next rental reads the complaints.** Clouds test themselves and reviewers audit now and then
+  ([SemiAnalysis](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)); the renter can't check
+  their own rental, and the record lives on Trustpilot.
 
 ## Four pillars
 
@@ -61,78 +57,63 @@ so crude swaps are rare on the big ones; an A100 sold as an H100 is the extreme 
 | **Use** | How does truth become action? | Curvegrid MultiBaas |
 
 ### Proof: the profiler
-Work only the claimed chip can finish in time, run from inside the renter's own rental.
-- **A secret INT8 exam.** From a fresh seed, the GPU builds 16,384 × 16,384 INT8 matrices and multiplies them on its
-  tensor cores (8.8 trillion operations a step) against a deadline on the verifier's clock. INT8 because it's the
-  only tensor-core format whose answer is exactly reproducible, so we can grade it bit for bit.
-- **Seal, then spot-check.** The GPU commits a Merkle root of every result row first; then the API picks 8 rows at
-  random and recomputes 64 entries of each on a CPU.
-- **Count the cores.** A timing staircase counts SMs (132 = H100 SXM, 108 = A100) and FP8 is tested by throughput.
-  Heat slows a chip; it can't remove cores.
-- **Two layers, three verdicts.** Chip class comes only from heat-proof probes (cores, FP8): another chip, or wrong
-  answers, is **fail**. The deadline measures delivery: the listed chip with correct answers but too slow is
-  **degraded** (heat, a power cap, sharing), published with its numbers and never counted toward failed. The
-  machine's throttle flags can explain a degraded result; they never decide one.
-- **Performance, like a speed test.** A verified minimum INT8 throughput from the re-graded work, plus measured
-  tensor, memory and host-link throughput, usable memory and stability, each against the listed model's rating,
-  against 37 reference GPUs, and against other checks of the same model (`docs/METRICS.md`).
-- The machine's own health report (NVML, DCGM, burn test) is advisory; it never decides the verdict.
+Work only the listed chip can finish in time, run from inside the renter's rental.
+- **Secret INT8 exam.** A fresh seed; 16,384² INT8 matrices multiplied on the tensor cores (8.8 trillion ops a step)
+  against a deadline on the API's clock. INT8 because its answer is exact, so we grade it bit for bit.
+- **Seal, then spot-check.** The GPU commits a Merkle root of every row; then the API picks 8 random rows and
+  recomputes them on a CPU.
+- **Count the cores.** A timing staircase counts SMs (132 H100 SXM, 114 PCIe, 108 A100); FP8 is timed. Heat slows a
+  chip; it can't remove cores.
+- **Three verdicts.** Wrong chip or wrong answers: **fail**. Right chip, too slow: **degraded**, published with its
+  numbers, never counted toward failed. In time: **pass**.
+- **Performance.** Verified INT8 throughput from the re-graded work, plus measured tensor, memory and link numbers,
+  against the rating, 37 reference GPUs and other checks of the same model (`docs/METRICS.md`). The machine's own
+  health report is advisory.
 
 ### Place: ENSv2
-- **Wildcard resolution:** `Marks` is the resolver of `waterline.eth`, so every `gpu-<id>.<cloud>.waterline.eth`
-  resolves with no registration. Every GPU has a public name for free.
-- **The name tree is the roll-up.** Marks derives each GPU's node from its provider's, so every report also lands on
-  `<cloud>.waterline.eth`, which keeps its own score: GPUs checked, failed right now, degraded, and how many people
-  reported any of them (each counted once). Rename the chip and the provider remembers. Two passes after a GPU's
-  last failure bring it back as `recovered`; the history stays.
-- **Enhanced Access Control:** writing a record takes the REPORTER role from ENSv2's access-control library,
-  scoped per name (a GPU, or a provider for all its GPUs). Today only our API holds it; providers and renters can
-  never write a score. A provider can be granted the NOTE role on its own name, "letting an account edit only
-  certain text records on a name": `waterline.note` (a rebuttal or contact), a voice, never the verdict.
-- **Evidence anchored:** each record carries the hash of the full report (`waterline.report`). Download the report
-  from `/api/reports/{id}/evidence`, hash it, and compare: if one byte changed, it won't match.
+- **Wildcard resolution.** `Marks` resolves every `gpu-<id>.<cloud>.waterline.eth` and `<cloud>.waterline.eth` with
+  no registrations.
+- **The tree is the roll-up.** A GPU's node derives from its provider's, so every report also scores the provider
+  (GPUs checked, failed now, degraded, people who reported, each once). Renaming a chip hides nothing. Two passes
+  after a failure mark a GPU `recovered`.
+- **Enhanced Access Control.** Only the REPORTER role writes scores (today our API; grantable per GPU or provider).
+  A provider's NOTE role is "letting an account edit only certain text records on a name": `waterline.note`, never a
+  score.
+- **Evidence anchored.** `waterline.report` is the hash of the full report; download it, hash it, compare.
 
 ### People: World ID for Agents
-- **World ID for Agents (Human Continuity IdP, dev environment).** The renter logs their agent in once with a
-  device code; World returns a private, stable, pairwise `sub` for our service, checked in our backend (RS256,
-  issuer, audience, `auth_time`). From it the API derives two voter ids for a failure: one per GPU and one per
-  provider, so one person is one voice per GPU and counts once per provider however many GPUs they report.
-- **A failure is an accusation, so it costs something.** Before World is asked, the reporter sees "listed as X ·
-  measures as Y", pastes the listing they rented (URL or text) and accepts that the report is tied to their World ID.
-  Anyone can still file a false one, but the dashboard shows it with the listing in their words and their
-  pseudonymous id, and how many of that provider's GPUs the same person has reported.
-- **Step-up:** renting, passing and degraded results need no World check. Publishing a failure steps up to a fresh
-  device-code approval from the same person (a fresh `auth_time`, same `sub`). Deny or expiry publishes nothing. A GPU is marked failed only when two different people agree.
+- **One person, one voice.** The agent logs in once by device code; World's pairwise `sub`, validated in our backend
+  (RS256, issuer, audience, fresh `auth_time`), gives one voice per GPU and one per provider.
+- **Failures step up.** Passes and degraded results need no World check. A failure needs a fresh approval from the
+  same person; deny or expiry publishes nothing; two different people mark a GPU failed.
+- **Accusations cost something.** The reporter pastes the listing they rented and accepts that the report is tied to
+  their World ID. **Jev reads that listing**: if it contradicts the claim (an A100 listing reported "as H100"), the
+  report stops unless they insist. The dashboard shows the listing, Jev's reading and the pseudonymous reporter.
 
 ### Use: Curvegrid MultiBaas
-- **The history decides, not the LLM.** MultiBaas event queries (grouped by GPU, and by provider) make the agent
-  skip suspect, failed and degraded GPUs and prefer providers with fewer failed GPUs; Jev only reads listing text.
-  On a FAIL, the agent stops paying for that rental.
-- **The agent never holds a key.** Writes go through our API and MultiBaas: MultiBaas builds each transaction
-  (nonce and gas), we check and sign it, MultiBaas submits it, indexes the event and calls our webhook when it lands.
+- **History decides, not an LLM.** Event queries by GPU and by provider make the agent skip suspect, failed and
+  degraded GPUs and prefer providers with fewer failures. Jev only reads listings. On a fail, the agent stops paying.
+- **Writes without handing over a key.** MultiBaas builds each transaction, we check and sign it, MultiBaas submits
+  it, indexes the event and calls our webhook.
 
 ## Principles and limits
 
-- Evidence decides; the machine's claims only inform. Passes carry evidence; failures need verified humans.
-- Two layers. **Measurement** (can one exam mislead?) is defended by exam design: secret seed, sealed answers,
-  API-chosen rows, heat-proof class. **Aggregation** (can one misleading exam become a verdict?) is defended by World,
-  two humans, per-provider dedup, and passes that outrank failures. World doesn't make a measurement ungameable; it
-  makes gaming unamplifiable and attributable.
-- No provider cooperation; the host never writes the score.
-- **Limits:** a host could answer checks on a real H100 while running the job on an A100 (mitigated by random
-  in-job checks; hardware attestation would close it); a modified profiler could report 108 cores on a real H100,
-  which no exam run inside the renter's container can catch (two humans, the provider roll-up and later passes
-  bound it; attestation closes it); a renter picks when to check today; the site is not modelled; no exact
-  serial-number proof yet; real people could be bribed; World is checked in our backend; the demo's "fake H100" is
-  an A100 we listed ourselves.
+- **Evidence decides.** Passes carry evidence; failures need verified humans; the machine's own numbers only inform.
+- **Two layers.** Exam design guards the measurement (secret seed, sealed answers, API-chosen rows, heat-proof chip
+  check). World, two humans and per-provider dedup guard the verdict: gaming can't be amplified, and it's attributable.
+- **No provider cooperation.** The host never writes a score.
+- **Limits.** A host could answer checks on a real H100 and run your job on an A100 (random in-job checks raise the
+  cost; attestation closes it). A modified profiler could report 108 cores on a real H100 (two humans, the roll-up
+  and later passes bound it). The renter picks when to check. No serial-number proof. People can be bribed. World is
+  checked in our backend.
 
 ## What's next
 
-Today one renter verifies one GPU, at a moment the renter picks. Next: checks fire at API-chosen moments inside the
-job, several per rental, so a report is a distribution, not a point. Then every renter's container is a verifier:
-the REPORTER role goes from our one API to many independent verifiers (one role grant per GPU, per provider, or
-for all), with World keeping each a distinct human. The name tree grows a site level
-(`gpu-….tyo1.cloud-b.waterline.eth`, "as listed"), where throttling clusters.
+- Checks at API-chosen moments inside the job, several per rental: a distribution, not a point.
+- Every renter's container a verifier: the REPORTER role granted per GPU, per provider or for all, World keeping
+  each a distinct human.
+- A site level in the name tree (`gpu-….tyo1.cloud-b.waterline.eth`, as listed), where throttling clusters.
+- The listing bound into the evidence, so "listed as" stops being the renter's word.
 
 ## Repo
 
