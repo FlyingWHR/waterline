@@ -63,7 +63,7 @@ Details: `docs/INTERFACES.md` (spec), `docs/METRICS.md` (measurement method), `d
 Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops paying. Pod A and Pod B side by side.
 | Time | Beat | Key line |
 |---|---|---|
-| 0:00 | Problem | "Compute is becoming money. Checking it is hard, gaming it is cheap, and there's no shared record." |
+| 0:00 | Problem | "Compute is becoming a financial asset. Its delivery is still self-reported." |
 | 0:20 | Setup | 4 pods, 2 clouds. "B2 is an A100 I relabelled myself." |
 | 0:30 | Overview | "Proof of delivered compute. Permissionless: any renter checks." |
 | 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
