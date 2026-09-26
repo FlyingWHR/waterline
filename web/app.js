@@ -223,25 +223,25 @@ const GLYPHS = {
 function flowDiagram() {
   const node = (layer, name, what) => h("div", { className: "node c-" + layer }, isoGlyph(GLYPHS[layer]), h("b", {}, name), h("small", {}, what));
   const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
-  const att = (layer, name, what) => h("div", { className: "att c-" + layer }, h("b", {}, name), h("small", {}, what));
+  const att = (layer, name, what, mark) => h("div", { className: "att c-" + layer }, h("b", {}, mark, name), h("small", {}, what));
   return h("div", { className: "panel" },
     h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. World approves failures at the API; MultiBaas indexes Marks' history." },
       h("div", { className: "stage" }, node("people", "Agent", "renter's laptop")),
       wire("starts over SSH"),
       h("div", { className: "stage" }, node("pod", "Profiler", "in the rented pod")),
       wire("seed ⇄ answer", true),
-      h("div", { className: "stage" }, node("api", "Waterline API", "times it, re-checks it"), att("world", "World", "approves failures")),
+      h("div", { className: "stage" }, node("api", "Waterline API", "times it, re-checks it"), att("world", "World", "approves failures", logo("world", ""))),
       wire("records", true),
-      h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history")),
+      h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history", logo("curvegrid", ""))),
       wire("resolves", true),
       h("div", { className: "stage" }, node("ens", "ENS names", "one per GPU"), att("ens", "rolls up to", "its provider's name"))),
     h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
     h("div", { className: "cards partners", "aria-label": "Built on" },
-      tipCard("ens", isoGlyph(GLYPHS.ens), "ENSv2", "Every GPU gets a name",
+      tipCard("ens", logo("ens", "ENS"), "ENSv2", "Every GPU gets a name",
         "Marks resolves gpu-….<provider>.waterline.eth and <provider>.waterline.eth as a wildcard resolver: nothing is registered per GPU. ENSv2 roles decide who writes: the reporter writes records, a provider may write only its own note."),
-      tipCard("world", worldGlyph(), "World ID for Agents", "A person behind every failure",
+      tipCard("world", logo("world", "World"), "World ID for Agents", "A person behind every failure",
         "No failure goes onchain without a person: a fresh World approval per report, or a bounded mandate that lets their agents report. Either way one person is one voice per GPU and per provider, pseudonymous in public."),
-      tipCard("mb", isoGlyph(GLYPHS.index), "Curvegrid MultiBaas", "History agents can query",
+      tipCard("mb", logo("curvegrid", "Curvegrid"), "Curvegrid MultiBaas", "History agents can query",
         "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it directly to skip bad GPUs and providers."),
       tipCard("chain", isoGlyph(GLYPHS.chain), "Ethereum Sepolia", "Where the record lives",
         "Marks, one contract, holds every verdict, the per-GPU and per-provider tallies and the evidence hash of the latest check, and answers the ENS names.")),
@@ -254,21 +254,13 @@ function flowDiagram() {
         "One World ID is one voice on the GPU and on its provider. Two different people mark a GPU failed; a person counts once per provider however many GPUs they report, so renaming a chip doesn't clean the provider.")));
 }
 
+// The sponsors' own marks (web/logos: from ens.domains/brand, world.org/brand, docs.curvegrid.com), unaltered.
+const logo = (file, alt) => h("img", { className: "logo", src: `logos/${file}.svg`, alt, width: 28, height: 28 });
+
 // A card: icon, name, a short line, and the detail on hover or keyboard focus (tap on touch).
 function tipCard(tone, glyph, name, intro, more) {
   return h("div", { className: "tip c-" + tone, tabIndex: 0 },
     glyph, h("b", {}, name), h("span", { className: "intro" }, intro), h("span", { className: "more" }, more));
-}
-function worldGlyph() { // an orb and its orbit
-  const svg = document.createElementNS(SVGNS, "svg");
-  svg.setAttribute("viewBox", "0 0 64 56"); svg.setAttribute("class", "glyph"); svg.setAttribute("aria-hidden", "true");
-  for (const [tag, attrs] of [["circle", { cx: 32, cy: 28, r: 15, class: "front" }], ["ellipse", { cx: 32, cy: 28, rx: 25, ry: 8, class: "ring" }],
-                              ["circle", { cx: 26, cy: 22, r: 5, class: "top" }]]) {
-    const e = document.createElementNS(SVGNS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    svg.append(e);
-  }
-  return svg;
 }
 
 // Perspective wireframe: rows recede to a horizon, amplitude and opacity grow toward the viewer, one mint
