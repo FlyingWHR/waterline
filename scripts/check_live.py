@@ -143,18 +143,14 @@ def checks():
             yield h["store"] == "redis", f"API store: {h['store']}", "Add Redis on Vercel (REDIS_URL), then redeploy."
             yield bool(h["chain"].get("marks")) and str(h["chain"]["marks"]).lower() == str(marks).lower(),\
                 f"API uses Marks {h['chain'].get('marks')}", "Set MARKS_ADDRESS on Vercel to the deployed Marks, then redeploy."
-            yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel."
+            yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_APP_ID, WORLD_RP_ID, WORLD_SIGNING_KEY there (scripts/vercel_env.sh), then redeploy."
         except (httpx.HTTPError, ValueError, KeyError) as e:
             yield False, f"API unreachable at {api} ({type(e).__name__})", "Deploy the API (vercel --prod) and check API_URL."
 
-    iss = (env("WORLD_ISSUER") or "https://sandbox.auth.world.org").rstrip("/")
-    try:
-        keys = httpx.get(iss + "/.well-known/jwks.json", timeout=15).json().get("keys")
-        yield bool(keys), f"World issuer {iss} serves its signing keys", "Check WORLD_ISSUER."
-    except (httpx.HTTPError, ValueError) as e:
-        yield False, f"World issuer {iss} unreachable ({type(e).__name__})", "Check WORLD_ISSUER and the network."
-    yield bool(env("WORLD_CLIENT_ID") and env("WORLD_CLIENT_SECRET")), "World client id and secret set",\
-        "Register the client on the final production domain, then set WORLD_CLIENT_ID / WORLD_CLIENT_SECRET."
+    signer = addr_of("WORLD_SIGNING_KEY")
+    yield bool(env("WORLD_APP_ID") and env("WORLD_RP_ID") and signer),\
+        f"World app {env('WORLD_APP_ID')}, RP {env('WORLD_RP_ID')}, signer {signer} (must match the portal's RP signer)",\
+        "Set WORLD_APP_ID, WORLD_RP_ID and WORLD_SIGNING_KEY in .env (developer.world.org, World ID 4.0 relying party)."
 
 
 def main():

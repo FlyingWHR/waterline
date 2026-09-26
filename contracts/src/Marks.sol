@@ -5,38 +5,75 @@ import {EnhancedAccessControl} from "@ensdomains/contracts-v2/access-control/Enh
 
 /// @title Marks
 /// @notice Stores renter-sourced GPU reports and serves them as ENS text records for *.waterline.eth.
-///         Set as the resolver of waterline.eth, it answers every `gpu-<id>.<cloud>.waterline.eth` name
-///         by wildcard (ENSIP-10), so no GPU needs its own registration.
-///         Who may write a GPU's record is governed by ENSv2's Enhanced Access Control: the REPORTER role,
-///         scoped per GPU name (resource = the name's node; a root grant covers every GPU). Today only the
-///         Waterline API holds it, so a host can't publish its own pass; later the admin can grant it to
-///         independent verifiers, per GPU or for all.
+///         Set as the resolver of waterline.eth, it answers every `gpu-<id>.<cloud>.waterline.eth` name, and every
+///         `<cloud>.waterline.eth` provider name, by wildcard (ENSIP-10), so nothing needs its own registration.
+///
+///         Two layers. Measurement: the chip class comes only from heat-proof probes (core count, FP8), so heat can
+///         make a GPU DEGRADED (right chip, correct answers, deadline missed) but never FAIL. Aggregation: trust is
+///         asymmetric. A pass needs real silicon (the API's timed exam), so any reporter may record one; so may a
+///         degraded result, which carries its numbers and never counts toward failed.
+///         A failure needs real people: a World ID-backed voter per GPU, two distinct humans to mark it failed.
+///         Reputation rolls up the ENS tree: the contract derives a GPU's node from its provider's, so a failure
+///         always lands on `<cloud>.waterline.eth` too, where each human counts once however many GPUs they report.
+///         Renaming a chip gives it a clean GPU record, not a clean provider.
+///
+///         Roles (ENSv2 Enhanced Access Control, resource = a name's node, root grant = every name):
+///         REPORTER writes reports (today only the Waterline API; a grant on a provider node covers its GPUs).
+///         NOTE lets a provider write `waterline.note` on its own provider name: a voice, never the verdict.
 contract Marks is EnhancedAccessControl {
     uint8 public constant PASS = 1;
     uint8 public constant FAIL = 2;
+    uint8 public constant DEGRADED = 3;
     uint32 public constant HUMANS_TO_FAIL = 2;
+    uint32 public constant PASSES_TO_RECOVER = 2;
+    uint256 public constant NOTE_MAX = 280;
     uint256 public constant ROLE_REPORTER = 1 << 0;
+    uint256 public constant ROLE_NOTE = 1 << 4;
     uint256 public constant ROLE_REPORTER_ADMIN = ROLE_REPORTER << 128;
+    uint256 public constant ROLE_NOTE_ADMIN = ROLE_NOTE << 128;
+
+    /// namehash of the parent name (waterline.eth); providers are its children, GPUs its grandchildren.
+    bytes32 public immutable parent;
 
     struct Gpu {
+        bytes32 provider; // node of <cloud>.waterline.eth
         uint8 cls; // last measured class: 0 unknown, 1 H100 SXM, 2 H100 PCIe, 3 A100
         uint16 cores;
         bytes32 fingerprint;
         uint32 passes;
         uint32 fails;
-        uint32 humans; // distinct verified humans who reported a failure
+        uint32 humans; // distinct verified humans who ever reported a failure (history)
+        uint32 active; // humans counting toward status since the last recovery
+        uint32 sinceFail; // passes since the last failure
+        uint32 recoveries;
+        uint32 degraded; // right chip, correct answers, too slow for the deadline (heat, power, sharing)
+        uint8 lastVerdict;
         uint64 lastAt;
         uint32 topsX10; // latest verified INT8 TOPS x 10 (1410.5 TOPS -> 14105)
         uint16 pctBps; // latest verified TOPS as percent of the claimed model's spec x 100 (71.25% -> 7125)
         bytes32 reportHash; // keccak256 of the latest full report (canonical JSON served by the API)
     }
 
+    struct Provider {
+        uint32 gpus; // distinct GPUs with at least one report
+        uint32 failedGpus; // GPUs whose status is failed right now
+        uint32 humans; // distinct humans who reported any of its GPUs (each counts once)
+        uint32 passes;
+        uint32 fails;
+        uint32 degraded;
+        string note; // written by the provider (ROLE_NOTE), shown beside the record, never part of it
+    }
+
     mapping(bytes32 node => Gpu) public gpus;
-    mapping(bytes32 voteKey => bool) public voted; // keccak(node, voterId)
+    mapping(bytes32 node => Provider) public providers;
+    mapping(bytes32 voteKey => bool) public voted; // keccak(node, gpuVoter): one voice per human per GPU, ever
+    mapping(bytes32 voteKey => bool) public providerVoted; // keccak(providerNode, providerVoter)
 
     event Reported(
         bytes32 indexed node,
-        bytes32 voterId,
+        bytes32 indexed provider,
+        bytes32 gpuVoter,
+        bytes32 providerVoter,
         uint8 verdict,
         uint8 cls,
         uint16 cores,
@@ -46,48 +83,54 @@ contract Marks is EnhancedAccessControl {
         uint64 at,
         uint32 passes,
         uint32 fails,
-        uint32 humans,
+        uint32 active,
         bytes32 reportHash
     );
+    event ProviderTally(
+        bytes32 indexed provider, uint32 gpus, uint32 failedGpus, uint32 humans, uint32 passes, uint32 fails, uint64 at
+    );
+    event NoteSet(bytes32 indexed provider, string note);
     error BadVerdict();
     error AlreadyVoted();
+    error NoteTooLong();
     error UnsupportedRecord(bytes4 selector);
 
-    /// @param admin_ may grant and revoke the reporter role (e.g. to add independent verifiers).
-    /// @param reporter_ the Waterline API's account; gets the reporter role for every GPU.
-    constructor(address admin_, address reporter_) {
-        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER_ADMIN, admin_, false);
+    /// @param admin_ may grant and revoke the reporter and note roles.
+    /// @param reporter_ the Waterline API's account; gets the reporter role for every name.
+    /// @param parent_ namehash of waterline.eth.
+    constructor(address admin_, address reporter_, bytes32 parent_) {
+        parent = parent_;
+        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER_ADMIN | ROLE_NOTE_ADMIN, admin_, false);
         _grantRoles(ROOT_RESOURCE, ROLE_REPORTER, reporter_, false);
     }
 
-    /// @notice Record one verified report. Passes carry their own evidence; a failure needs a
-    ///         voter ID (one per verified human per GPU, derived by the API from World ID).
-    ///         topsX10 / pctBps: the report's verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
+    /// @notice Node of `<cloudLabel>.<parent>` and of `<gpuLabel>.<cloudLabel>.<parent>` (labels are keccak256 of the label).
+    function nodes(bytes32 cloudLabel, bytes32 gpuLabel) public view returns (bytes32 provider, bytes32 node) {
+        provider = keccak256(abi.encodePacked(parent, cloudLabel));
+        node = keccak256(abi.encodePacked(provider, gpuLabel));
+    }
+
+    /// @notice Record one verified report. A pass carries its own evidence (voters ignored). A failure needs two voter
+    ///         IDs derived by the API from one World ID proof: one per human per GPU, one per human per provider.
+    ///         topsX10 / pctBps: verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
     ///         reportHash: keccak256 of the full report, so anyone can check the off-chain evidence wasn't edited.
     function record(
-        bytes32 node,
+        bytes32 cloudLabel,
+        bytes32 gpuLabel,
         uint8 verdict,
         uint8 cls,
         uint16 cores,
         bytes32 fingerprint,
-        bytes32 voterId,
+        bytes32 gpuVoter,
+        bytes32 providerVoter,
         uint32 topsX10,
         uint16 pctBps,
         bytes32 reportHash
     ) external {
-        _checkRoles(uint256(node), ROLE_REPORTER, msg.sender);
+        (bytes32 pnode, bytes32 node) = nodes(cloudLabel, gpuLabel);
+        if (!hasRoles(uint256(pnode), ROLE_REPORTER, msg.sender)) _checkRoles(uint256(node), ROLE_REPORTER, msg.sender);
+        _tally(node, pnode, verdict, gpuVoter, providerVoter);
         Gpu storage g = gpus[node];
-        if (verdict == PASS) {
-            g.passes += 1;
-        } else if (verdict == FAIL) {
-            bytes32 key = keccak256(abi.encode(node, voterId));
-            if (voterId == bytes32(0) || voted[key]) revert AlreadyVoted();
-            voted[key] = true;
-            g.fails += 1;
-            g.humans += 1;
-        } else {
-            revert BadVerdict();
-        }
         g.cls = cls;
         g.cores = cores;
         g.fingerprint = fingerprint;
@@ -95,35 +138,140 @@ contract Marks is EnhancedAccessControl {
         g.topsX10 = topsX10;
         g.pctBps = pctBps;
         g.reportHash = reportHash;
+        _emit(node, gpuVoter, providerVoter, verdict);
+    }
+
+    /// @notice A provider's own words on its provider name. Needs ROLE_NOTE on that name (granted by the admin to the
+    ///         provider's account). It can't touch any count or status.
+    function setNote(bytes32 providerNode, string calldata note) external {
+        _checkRoles(uint256(providerNode), ROLE_NOTE, msg.sender);
+        if (bytes(note).length > NOTE_MAX) revert NoteTooLong();
+        providers[providerNode].note = note;
+        emit NoteSet(providerNode, note);
+    }
+
+    /// @dev Counts, votes, recovery and the provider roll-up for one report.
+    function _tally(bytes32 node, bytes32 pnode, uint8 verdict, bytes32 gpuVoter, bytes32 providerVoter) private {
+        Gpu storage g = gpus[node];
+        Provider storage p = providers[pnode];
+        if (g.lastAt == 0) {
+            g.provider = pnode;
+            p.gpus += 1;
+        }
+        bool wasFailed = g.active >= HUMANS_TO_FAIL;
+        if (verdict == PASS) {
+            g.passes += 1;
+            p.passes += 1;
+            g.sinceFail += 1;
+            if (g.active > 0 && g.sinceFail >= PASSES_TO_RECOVER) {
+                g.active = 0;
+                g.recoveries += 1;
+            }
+        } else if (verdict == DEGRADED) {
+            g.degraded += 1; // neither a pass (no recovery credit) nor a failure (no humans, never "failed")
+            p.degraded += 1;
+        } else if (verdict == FAIL) {
+            _vote(node, pnode, gpuVoter, providerVoter);
+            g.fails += 1;
+            p.fails += 1;
+            g.humans += 1;
+            g.active += 1;
+            g.sinceFail = 0;
+        } else {
+            revert BadVerdict();
+        }
+        g.lastVerdict = verdict;
+        bool isFailed = g.active >= HUMANS_TO_FAIL;
+        if (isFailed && !wasFailed) p.failedGpus += 1;
+        if (wasFailed && !isFailed) p.failedGpus -= 1;
+    }
+
+    function _vote(bytes32 node, bytes32 pnode, bytes32 gpuVoter, bytes32 providerVoter) private {
+        bytes32 key = keccak256(abi.encode(node, gpuVoter));
+        if (gpuVoter == bytes32(0) || providerVoter == bytes32(0) || voted[key]) revert AlreadyVoted();
+        voted[key] = true;
+        bytes32 pkey = keccak256(abi.encode(pnode, providerVoter));
+        if (!providerVoted[pkey]) {
+            providerVoted[pkey] = true;
+            providers[pnode].humans += 1;
+        }
+    }
+
+    function _emit(bytes32 node, bytes32 gpuVoter, bytes32 providerVoter, uint8 verdict) private {
+        Gpu storage g = gpus[node];
         emit Reported(
-            node, voterId, verdict, cls, cores, fingerprint, topsX10, pctBps, g.lastAt, g.passes, g.fails, g.humans, reportHash
+            node,
+            g.provider,
+            gpuVoter,
+            providerVoter,
+            verdict,
+            g.cls,
+            g.cores,
+            g.fingerprint,
+            g.topsX10,
+            g.pctBps,
+            g.lastAt,
+            g.passes,
+            g.fails,
+            g.active,
+            g.reportHash
         );
+        Provider storage p = providers[g.provider];
+        emit ProviderTally(g.provider, p.gpus, p.failedGpus, p.humans, p.passes, p.fails, g.lastAt);
     }
 
     // ---- reading -------------------------------------------------------------------------------
 
     function status(bytes32 node) public view returns (string memory) {
         Gpu storage g = gpus[node];
-        if (g.humans >= HUMANS_TO_FAIL) return "failed";
-        if (g.humans == 1) return unicode"suspect · 1 of 2 humans";
+        if (g.active >= HUMANS_TO_FAIL) return "failed";
+        if (g.active == 1) return unicode"suspect · 1 of 2 humans";
+        if (g.lastVerdict == DEGRADED) return "degraded";
+        if (g.recoveries > 0) return "recovered";
         if (g.passes > 0) return "pass";
         return "unknown";
     }
 
+    /// @notice Descriptive, not a verdict: a provider is judged GPU by GPU.
+    function providerStatus(bytes32 pnode) public view returns (string memory) {
+        Provider storage p = providers[pnode];
+        if (p.gpus == 0) return "unknown";
+        return string.concat(
+            _uint(p.failedGpus), " of ", _uint(p.gpus), p.gpus == 1 ? " GPU failed" : " GPUs failed", unicode" · reported by ",
+            _uint(p.humans), p.humans == 1 ? " person" : " people"
+        );
+    }
+
     function text(bytes32 node, string calldata key) public view returns (string memory) {
-        Gpu storage g = gpus[node];
         bytes32 k = keccak256(bytes(key));
+        if (k == keccak256("description")) return "Waterline: renter-verified GPU record";
+        Provider storage p = providers[node];
+        if (p.gpus > 0 || bytes(p.note).length > 0) return _providerText(p, node, k);
+        Gpu storage g = gpus[node];
         if (k == keccak256("waterline.status")) return status(node);
         if (k == keccak256("waterline.class")) return _className(g.cls);
         if (k == keccak256("waterline.cores")) return _uint(g.cores);
         if (k == keccak256("waterline.passes")) return _uint(g.passes);
         if (k == keccak256("waterline.fails")) return _uint(g.fails);
         if (k == keccak256("waterline.humans")) return _uint(g.humans);
+        if (k == keccak256("waterline.recoveries")) return _uint(g.recoveries);
+        if (k == keccak256("waterline.degraded")) return _uint(g.degraded);
         if (k == keccak256("waterline.fingerprint")) return g.lastAt == 0 ? "" : _hex(g.fingerprint);
         if (k == keccak256("waterline.tops")) return g.lastAt == 0 ? "" : _fixed(g.topsX10, 10, 1);
         if (k == keccak256("waterline.pct_of_spec")) return g.lastAt == 0 ? "" : _fixed(g.pctBps, 100, 2);
         if (k == keccak256("waterline.report")) return g.lastAt == 0 ? "" : _hex(g.reportHash);
-        if (k == keccak256("description")) return "Waterline: renter-verified GPU record";
+        return "";
+    }
+
+    function _providerText(Provider storage p, bytes32 node, bytes32 k) private view returns (string memory) {
+        if (k == keccak256("waterline.status")) return providerStatus(node);
+        if (k == keccak256("waterline.gpus")) return _uint(p.gpus);
+        if (k == keccak256("waterline.failed_gpus")) return _uint(p.failedGpus);
+        if (k == keccak256("waterline.humans")) return _uint(p.humans);
+        if (k == keccak256("waterline.passes")) return _uint(p.passes);
+        if (k == keccak256("waterline.fails")) return _uint(p.fails);
+        if (k == keccak256("waterline.degraded")) return _uint(p.degraded);
+        if (k == keccak256("waterline.note")) return p.note;
         return "";
     }
 

@@ -45,7 +45,7 @@ contract EnsForkTest is Test {
 
         address owner = address(this);
         address api = address(0xA91);
-        Marks marks = new Marks(owner, api);
+        Marks marks = new Marks(owner, api, EnsNames.namehash(string.concat(label, ".eth")));
 
         // register <label>.eth with Marks as its resolver
         usdc.mint(owner, 1_000e6);
@@ -60,7 +60,8 @@ contract EnsForkTest is Test {
         string memory name = string.concat("gpu-91c0ab12.cloud-b.", label, ".eth");
         bytes32 node = EnsNames.namehash(name);
         vm.prank(api);
-        marks.record(node, 2, 3, 108, bytes32(uint256(1)), keccak256("human-1"), 6012, 9635, keccak256("report"));
+        marks.record(keccak256("cloud-b"), keccak256("gpu-91c0ab12"), 2, 3, 108, bytes32(uint256(1)), keccak256("human-1"),
+            keccak256("human-1@cloud-b"), 6012, 9635, keccak256("report"));
 
         (bytes memory out, address resolver) =
             ur.resolve(EnsNames.dnsEncode(name), abi.encodeWithSelector(Marks.text.selector, node, "waterline.status"));
@@ -76,5 +77,11 @@ contract EnsForkTest is Test {
             EnsNames.dnsEncode(name), abi.encodeWithSelector(Marks.text.selector, node, "waterline.pct_of_spec")
         );
         assertEq(abi.decode(out, (string)), "96.35");
+
+        // the provider name one level up carries the roll-up, also unregistered
+        string memory pname = string.concat("cloud-b.", label, ".eth");
+        (out,) = ur.resolve(EnsNames.dnsEncode(pname),
+            abi.encodeWithSelector(Marks.text.selector, EnsNames.namehash(pname), "waterline.status"));
+        assertEq(abi.decode(out, (string)), unicode"0 of 1 GPU failed · reported by 1 person");
     }
 }

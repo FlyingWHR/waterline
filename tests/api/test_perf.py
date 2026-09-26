@@ -73,7 +73,8 @@ def test_cohort_leaderboard_and_compare():
 
 
 def test_chain_selector_and_perf_encoding():
-    assert chain.SELECTOR.hex() == chain.keccak(text="record(bytes32,uint8,uint8,uint16,bytes32,bytes32,uint32,uint16,bytes32)")[:4].hex()
+    assert chain.SELECTOR.hex() == chain.keccak(
+        text="record(bytes32,bytes32,uint8,uint8,uint16,bytes32,bytes32,bytes32,uint32,uint16,bytes32)")[:4].hex()
     abi = Path(__file__).parents[2] / "contracts/out/Marks.sol/Marks.json"
     if abi.exists():  # built by `forge build` / `forge test`
         ids = json.loads(abi.read_text())["methodIdentifiers"]
@@ -81,5 +82,6 @@ def test_chain_selector_and_perf_encoding():
     assert chain.encode_perf(1410.54, 71.254) == (14105, 7125)
     assert chain.encode_perf(None, -3) == (0, 0) and chain.encode_perf(1e12, 1e9) == (2**32 - 1, 2**16 - 1)
     chain.DRY_RUN_CALLS.clear()
-    chain.record(b"\1" * 32, 1, 1, 132, b"\2" * 32, b"\3" * 32, 14105, 7125, b"\4" * 32)
-    assert chain.DRY_RUN_CALLS[-1][6:] == (14105, 7125, b"\4" * 32)
+    chain.record("cloud-b", "gpu-1", 1, 1, 132, b"\2" * 32, tops_x10=14105, pct_bps=7125, report_hash=b"\4" * 32)
+    assert chain.DRY_RUN_CALLS[-1][:2] == (chain.keccak(text="cloud-b"), chain.keccak(text="gpu-1"))
+    assert chain.DRY_RUN_CALLS[-1][8:] == (14105, 7125, b"\4" * 32)

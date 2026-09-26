@@ -97,7 +97,7 @@ tr:last-child td{border-bottom:0;}
 td{font-variant-numeric:tabular-nums;}
 td.mono{font-size:12.5px;}
 .pill{display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.08em; padding:2px 9px; border:1px solid currentColor; white-space:nowrap;}
-.st-pass{color:var(--pass);} .st-fail,.st-failed{color:var(--fail);} .st-suspect,.st-pending{color:var(--warn);} .st-unknown{color:var(--muted);}
+.st-pass,.st-recovered{color:var(--pass);} .st-degraded{color:var(--warn);} .st-fail,.st-failed{color:var(--fail);} .st-suspect,.st-pending{color:var(--warn);} .st-unknown{color:var(--muted);}
 .empty,.msg{color:var(--muted); font-size:14px;}
 .err{color:var(--fail);}
 
@@ -318,3 +318,7 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
   .qr{width:156px; height:156px;} .qr img,.qr svg{width:140px; height:140px;}
 }
 @media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto !important; transition:none !important; animation:none !important;} }
+.diagnosis{font-size:clamp(18px,2.4vw,22px); font-weight:300; margin:14px 0 4px; max-width:60ch;}
+.rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px 22px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line2);}
+.rules div{display:grid; gap:4px; align-content:start;} .rules b{font-weight:500;} .rules span{color:var(--muted); font-size:13px;}
+.rules + .sub{margin-top:20px;}

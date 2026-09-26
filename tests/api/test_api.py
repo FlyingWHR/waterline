@@ -58,9 +58,11 @@ def test_honest_cpu_run_passes_and_publishes():
     assert r["verdict"] == "pass" and r["reasons"] == [] and r["measured_class"] == 1
     assert r["published"] is True and r["tx"] is None  # dry-run
     assert r["gpu_name"] == f"{appmod.gpu_label('GPU-1')}.cloud-b.waterline.eth"
-    node, verdict, cls, cores, fp, voter, *_ = chain.DRY_RUN_CALLS[-1]
-    assert "0x" + node.hex() == r["node"] and (verdict, cls, cores) == (1, 1, 132)
-    assert voter == chain.keccak(text=r["report_id"])
+    cloud, gpu, verdict, cls, cores, fp, gv, pv, *_ = chain.DRY_RUN_CALLS[-1]
+    # Marks derives node = keccak(keccak(namehash(waterline.eth), cloud), gpu): the same as the name's namehash
+    pnode = chain.keccak(chain.namehash("waterline.eth") + cloud)
+    assert "0x" + chain.keccak(pnode + gpu).hex() == r["node"] and (verdict, cls, cores) == (1, 1, 132)
+    assert gv == pv == chain.ZERO  # a pass carries no voter
 
 
 def test_lazy_prover_fails():
@@ -74,10 +76,19 @@ def test_single_patched_row_fails():
     assert r["verdict"] == "fail" and len(r["reasons"]) >= 1
 
 
-def test_missed_deadline_fails(monkeypatch):
-    r = run_check(slow=6.0, monkeypatch=monkeypatch)
-    assert r["verdict"] == "fail" and r["reasons"][0].startswith("Answer locked in after 6.")
+def test_right_chip_too_slow_is_degraded_not_fail(monkeypatch):
+    r = run_check(slow=6.0, monkeypatch=monkeypatch)  # heat can slow a chip; it can't change its core count
+    assert r["verdict"] == "degraded" and r["reasons"][0].startswith("Answer locked in after 6.")
     assert r["reasons"][0].endswith("; the deadline was 5.0 s.")
+    assert r["published"] is True and chain.DRY_RUN_CALLS[-1][2] == appmod.DEGRADED  # no human needed
+    assert chain.DRY_RUN_CALLS[-1][6] == chain.ZERO
+    g = next(x for x in client.get("/api/gpus").json()["gpus"] if x["node"] == r["node"])
+    assert g["status"] == "degraded" and g["active"] == 0
+
+
+def test_wrong_chip_that_is_also_slow_is_fail(monkeypatch):
+    r = run_check(uuid="GPU-SLOW-A100", probes=A100, slow=6.0, monkeypatch=monkeypatch)
+    assert r["verdict"] == "fail" and not r["published"]
 
 
 def test_class_mismatch_fails():
@@ -141,9 +152,38 @@ def test_approve_publishes_fail():
     rep = run_check(uuid="GPU-A", claimed=1, probes=A100)
     r = approve(rep["report_id"], login(), "approve").json()
     assert r["status"] == "approved" and r["published"] is True
-    node, verdict, cls, cores, fp, voter, *_ = chain.DRY_RUN_CALLS[-1]
+    cloud, gpu, verdict, cls, cores, fp, gv, pv, *_ = chain.DRY_RUN_CALLS[-1]
     assert (verdict, cls, cores) == (2, 3, 108)
-    assert voter == world.voter_id("human-1", node)
+    node, pnode = bytes.fromhex(rep["node"][2:]), chain.namehash("cloud-b.waterline.eth")
+    assert gv == world.voter_id("human-1", node) and pv == world.voter_id("human-1", pnode)
+
+
+def test_one_human_counts_once_per_provider():
+    tok = login()
+    for uuid in ("GPU-P1", "GPU-P2"):  # a heavy renter reports two bad pods from one cloud
+        rep = run_check(uuid=uuid, claimed=1, probes=A100)
+        assert approve(rep["report_id"], tok, "approve").json()["published"] is True
+    pv = {c[7] for c in chain.DRY_RUN_CALLS}
+    assert len(pv) == 1 and len({c[6] for c in chain.DRY_RUN_CALLS}) == 2  # one provider voice, two GPU voices
+    p = next(x for x in client.get("/api/providers").json()["providers"] if x["name"] == "cloud-b.waterline.eth")
+    assert p["humans"] == 1 and p["fails"] >= 2
+
+
+def test_two_passes_after_failure_recover():
+    rep = run_check(uuid="GPU-R", claimed=1, probes=A100)
+    approve(rep["report_id"], login(), "approve")
+    run_check(uuid="GPU-R")
+    run_check(uuid="GPU-R")
+    g = next(x for x in client.get("/api/gpus").json()["gpus"] if x["node"] == rep["node"])
+    assert g["status"] == "recovered" and g["humans"] == 1
+
+
+def test_fingerprint_change_is_observed_not_judged():
+    first = run_check(uuid="GPU-F")
+    second = run_check(uuid="GPU-F", probes=A100)
+    reps = {r["report_id"]: r for r in client.get("/api/reports").json()}
+    full = client.get(f"/api/reports/{second['report_id']}").json()
+    assert full["fingerprint_changed"] is True and first["report_id"] in reps
 
 
 def test_deny_and_expired_publish_nothing():
@@ -151,13 +191,6 @@ def test_deny_and_expired_publish_nothing():
     tok = login()
     assert approve(rep["report_id"], tok, "deny").json() == {"status": "denied", "published": False}
     assert approve(rep["report_id"], tok, "expire").json() == {"status": "expired", "published": False}
-    assert not chain.DRY_RUN_CALLS
-
-
-def test_other_human_approval_refused():
-    rep = run_check(uuid="GPU-C", claimed=1, probes=A100)
-    r = approve(rep["report_id"], login("human-1"), "approve", sub="human-2").json()
-    assert r["published"] is False and "not the logged-in human" in r["status_text"]
     assert not chain.DRY_RUN_CALLS
 
 
@@ -175,8 +208,8 @@ def test_double_vote_same_human_same_gpu_rejected():
     first = run_check(uuid="GPU-D", claimed=1, probes=A100)
     assert approve(first["report_id"], tok, "approve").json()["published"] is True
     second = run_check(uuid="GPU-D", claimed=1, probes=A100)  # same GPU, new failed check, same human
-    r = approve(second["report_id"], tok, "approve")
-    assert r.status_code == 409 and "already reported" in r.json()["error"]
+    r = approve(second["report_id"], tok, "approve").json()  # live, World refuses the replayed nullifier first
+    assert r["published"] is False and "already reported" in r["status_text"]
     assert len(chain.DRY_RUN_CALLS) == 1
 
 

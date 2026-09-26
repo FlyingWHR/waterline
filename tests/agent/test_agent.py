@@ -57,28 +57,44 @@ def test_namehash():
 
 def test_choose_decides_from_history_only(capsys, monkeypatch, tmp_path):
     names = [f"gpu-{i}.cloud-{c}.waterline.eth" for i, c in [(1, "a"), (2, "a"), (3, "b"), (4, "b"), (5, "b"), (6, "b")]]
-    rows = [{"node": history.namehash(names[0]), "passes": "0", "fails": "2", "humans": "2", "cls": 3},
-            {"node": history.namehash(names[1]), "passes": "3", "fails": "1", "humans": "1", "cls": 3},
-            {"node": history.namehash(names[2]), "passes": "4", "fails": "0", "humans": "0", "cls": 1},
-            {"node": history.namehash(names[5]), "passes": "1", "fails": "0", "humans": "0", "cls": 1}]
+    rows = [{"node": history.namehash(names[0]), "passes": "0", "fails": "2", "active": "2", "cls": 3},
+            {"node": history.namehash(names[1]), "passes": "3", "fails": "1", "active": "1", "cls": 3},
+            {"node": history.namehash(names[2]), "passes": "4", "fails": "0", "active": "0", "cls": 1},
+            {"node": history.namehash(names[5]), "passes": "1", "fails": "0", "active": "0", "cls": 1}]
     hist = {r["node"]: r for r in rows}
     listings = [{"gpu": names[0], "price": 1.0}, {"gpu": names[1].removesuffix(".waterline.eth"), "price": 1.5},
                 {"gpu": names[2], "price": 2.5}, {"gpu": names[3], "price": 9.0}, {"gpu": names[4], "price": 0.5},
                 {"gpu": names[5], "price": 2.0}]
     pick, skipped = history.choose(listings, hist, max_price=5)
     assert pick["gpu"] == names[2] and pick["history"] == "4 passes, no failures"  # more passes beats cheaper
-    assert [w for _, w in skipped] == ["2 failure reports", "1 failure report", "9/h is over your max price of 5/h"]
+    assert [w for _, w in skipped] == ["status failed (2 failure reports)", "status suspect · 1 of 2 humans (1 failure report)",
+                                       "9/h is over your max price of 5/h"]
     pick, _ = history.choose(listings, hist, max_price=2)
     assert pick["gpu"] == names[5]
     assert history.choose(listings, hist, max_price=0.1)[0] is None
 
     f = tmp_path / "listings.json"
     monkeypatch.setattr(history, "fetch", lambda: hist)
+    monkeypatch.setattr(history, "fetch_providers", lambda: {})
     monkeypatch.setattr(listing, "parse_jev", lambda t, k: (_ for _ in ()).throw(AssertionError("no LLM")))
     f.write_text(json.dumps([dict(li, listing="H100 80GB SXM") for li in listings]))
     assert main(["choose", "--listings", str(f), "--max-price", "5"]) == 0
     out = capsys.readouterr().out
-    assert "skipping gpu-2.cloud-a: 1 failure report" in out and "Rent gpu-3.cloud-b at 2.5/h" in out
+    assert "skipping gpu-2.cloud-a: status suspect" in out and "Rent gpu-3.cloud-b at 2.5/h" in out
+
+
+def test_choose_prefers_the_provider_with_fewer_failed_gpus_and_allows_recovered():
+    a, b = "gpu-7.cloud-a.waterline.eth", "gpu-8.cloud-b.waterline.eth"
+    hist = {history.namehash(a): {"passes": "5", "fails": "0", "active": "0"},
+            history.namehash(b): {"passes": "2", "fails": "1", "active": "0"}}  # recovered
+    provs = {history.namehash("cloud-a.waterline.eth"): {"gpus": "4", "failed_gpus": "2"},
+             history.namehash("cloud-b.waterline.eth"): {"gpus": "3", "failed_gpus": "0"}}
+    listings = [{"gpu": a, "price": 1.0}, {"gpu": b, "price": 2.0}]
+    pick, skipped = history.choose(listings, hist, providers=provs)
+    assert pick["gpu"] == b and not skipped  # a renamed-chip-proof provider record outranks a GPU's own passes
+    assert pick["history"] == "2 passes, recovered after 1 failure report"
+    pick, _ = history.choose(listings, hist)
+    assert pick["gpu"] == a
 
 
 def test_stop_cmd_runs_on_fail_before_approval(make_api, env, capsys):
@@ -125,5 +141,13 @@ def test_fetch_sends_multibaas_query(monkeypatch):
     assert seen["url"] == "https://mb.example/api/v0/queries" and seen["auth"] == "Bearer k"
     ev = seen["body"]["events"][0]
     assert seen["body"]["groupBy"] == "node" and ev["eventName"].startswith("Reported(")
-    assert {f["alias"]: f.get("aggregator") for f in ev["select"]}["humans"] == "max"
+    assert {f["alias"]: f.get("aggregator") for f in ev["select"]}["active"] == "last"
     assert rows == {"0xab": {"node": "0xAB", "humans": "0"}}
+
+
+def test_choose_skips_a_degraded_gpu_and_says_why():
+    g = "gpu-9.cloud-c.waterline.eth"
+    hist = {history.namehash(g): {"passes": "3", "fails": "0", "active": "0", "verdict": "3"}}
+    pick, skipped = history.choose([{"gpu": g, "price": 1.0}], hist)
+    assert pick is None and skipped[0][1].startswith("degraded on its last check")
+    assert history.status(hist[history.namehash(g)]) == "degraded"

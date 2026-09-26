@@ -5,6 +5,7 @@ import json
 import time
 
 import httpx
+from eth_utils import keccak
 import pytest
 from eth_account import Account
 from eth_account.typed_transactions import TypedTransaction
@@ -18,7 +19,8 @@ client = TestClient(appmod.app)
 KEY = "0x" + "11" * 32
 REPORTER = Account.from_key(KEY).address
 MARKS = "0x" + "4d" * 20
-ARGS = (b"\1" * 32, 1, 1, 132, b"\2" * 32, b"\3" * 32, 14105, 7125, b"\4" * 32)
+ARGS = ("cloud-b", "gpu-1", 2, 3, 108, b"\2" * 32, b"\3" * 32, b"\5" * 32, 14105, 7125, b"\4" * 32)
+ENCODED = (keccak(text="cloud-b"), keccak(text="gpu-1"), *ARGS[2:])  # Marks.record's args: labels are hashed
 
 
 @pytest.fixture
@@ -58,8 +60,8 @@ def test_record_via_multibaas_signs_and_submits(mb):
     assert compose == "/chains/ethereum/addresses/marks/contracts/marks/methods/record"
     assert status == "/chains/ethereum/status" and submit == "/chains/ethereum/transactions/submit"
     assert hdr["Authorization"] == "Bearer admin-key"
-    assert body == {"args": ["0x" + "01" * 32, "1", "1", "132", "0x" + "02" * 32, "0x" + "03" * 32, "14105", "7125",
-                             "0x" + "04" * 32],
+    assert body == {"args": ["0x" + keccak(text="cloud-b").hex(), "0x" + keccak(text="gpu-1").hex(), "2", "3", "108",
+                             "0x" + "02" * 32, "0x" + "03" * 32, "0x" + "05" * 32, "14105", "7125", "0x" + "04" * 32],
                     "from": REPORTER, "formatInts": "as_strings"}
     raw = bytes.fromhex(sub["signedTx"][2:])
     assert raw[0] == 2  # EIP-1559
@@ -70,7 +72,7 @@ def test_record_via_multibaas_signs_and_submits(mb):
     assert tx == "0x" + bytes(Account.from_key(KEY).sign_transaction({
         "type": 2, "chainId": 11155111, "nonce": 7, "to": chain.to_checksum_address(MARKS), "value": 0, "gas": 90000,
         "maxFeePerGas": 3000000000, "maxPriorityFeePerGas": 1000000,
-        "data": chain.SELECTOR + chain.encode(chain.ARG_TYPES, list(ARGS))}).hash).hex()
+        "data": chain.SELECTOR + chain.encode(chain.ARG_TYPES, list(ENCODED))}).hash).hex()
 
 
 def test_multibaas_errors_are_plain_and_do_not_publish(mb, monkeypatch):

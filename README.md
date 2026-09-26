@@ -1,6 +1,9 @@
 # Waterline
 
-**Your agent proves the H100 you're paying for is really an H100, and the verdict goes on a public record the provider can't edit.**
+**Your agent proves the H100 you're paying for is really an H100 delivering its speed, and the verdict goes on a public record the provider can't edit.**
+
+*Heat can slow a chip but can't remove cores, so chip class is heat-proof. Throughput is reported honestly as
+degraded. And if someone lies about the cores, World makes sure they can only lie once, under a name that remembers.*
 
 ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBaas
 
@@ -18,6 +21,15 @@ and one network found ~400,000 spoofed GPU workers ([io.net](https://x.com/ionet
 Clouds test their own fleets and reviewers audit them now and then
 ([SemiAnalysis ClusterMAX](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)), but the
 renter can't check their own rental, right now.
+
+What renters actually complain about is mostly **degraded delivery**, not counterfeit chips: an H100 host that drops
+from 1,755 MHz to ~345 MHz under load at full price ([matt.sh](https://matt.sh/cloud-gpu-thermal-throttling),
+[Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)), specs
+that don't match the listing, broken NVSwitch, a third of the RAM paid for
+([Vast.ai](https://www.trustpilot.com/review/vast.ai), [RunPod](https://dk.trustpilot.com/review/runpod.io) reviews).
+Marketplaces verify hosts because hosts misreport ([Vast.ai](https://docs.vast.ai/host/understanding-verification)),
+so crude swaps are rare on the big ones; an A100 sold as an H100 is the extreme case, and the one our demo plays
+(we relabelled it ourselves). The complaints live on Trustpilot, where nobody's next rental reads them.
 
 ## Four pillars
 
@@ -37,6 +49,10 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
   random and recomputes 64 entries of each on a CPU.
 - **Count the cores.** A timing staircase counts SMs (132 = H100 SXM, 108 = A100) and FP8 is tested by throughput.
   Heat slows a chip; it can't remove cores.
+- **Two layers, three verdicts.** Chip class comes only from heat-proof probes (cores, FP8): another chip, or wrong
+  answers, is **fail**. The deadline measures delivery: the listed chip with correct answers but too slow is
+  **degraded** (heat, a power cap, sharing), published with its numbers and never counted toward failed. The
+  machine's throttle flags can explain a degraded result; they never decide one.
 - **Performance, like a speed test.** A verified minimum INT8 throughput from the re-graded work, plus measured
   tensor, memory and host-link throughput, usable memory and stability, each against the listed model's rating,
   against 37 reference GPUs, and against other checks of the same model (`docs/METRICS.md`).
@@ -45,36 +61,54 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
 ### Place: ENSv2
 - **Wildcard resolution:** `Marks` is the resolver of `waterline.eth`, so every `gpu-<id>.<cloud>.waterline.eth`
   resolves with no registration. Every GPU has a public name for free.
-- **Enhanced Access Control:** writing a GPU's record takes the REPORTER role from ENSv2's access-control
-  library, scoped per GPU name. Today only our API holds it; providers and renters can never write a score.
+- **The name tree is the roll-up.** Marks derives each GPU's node from its provider's, so every report also lands on
+  `<cloud>.waterline.eth`, which keeps its own score: GPUs checked, failed right now, degraded, and how many people
+  reported any of them (each counted once). Rename the chip and the provider remembers. Two passes after a GPU's
+  last failure bring it back as `recovered`; the history stays.
+- **Enhanced Access Control:** writing a record takes the REPORTER role from ENSv2's access-control library,
+  scoped per name (a GPU, or a provider for all its GPUs). Today only our API holds it; providers and renters can
+  never write a score. A provider can be granted the NOTE role on its own name to add `waterline.note` (a rebuttal
+  or contact): a voice, never the verdict.
 - **Evidence anchored:** each record carries the hash of the full report (`waterline.report`). Download the report
   from `/api/reports/{id}/evidence`, hash it, and compare: if one byte changed, it won't match.
 
 ### People: World ID for Agents
-- **Stable, private, pairwise ID** (World's Human Continuity provider): one identifier per human in our app, no name
-  or email. However many agents someone runs, they get one voice per GPU.
-- **Step-up:** renting and passing need no World check. Publishing a failure steps up to a fresh human approval,
-  checked in our backend. Deny publishes nothing. A GPU is marked failed only when two different people agree.
+- **World ID 4.0 through IDKit, per provider.** A failure approval is a World ID proof for the action
+  `waterline-report-<cloud>`, requested with our RP signature and verified by World's Developer Portal. Its
+  nullifier is private and stable per human per provider, so one proof gives two voter ids: one voice per GPU,
+  and one per provider however many of its GPUs that person reports.
+- **Step-up:** renting, passing and degraded results need no World check. Publishing a failure steps up to a fresh
+  human approval. Deny publishes nothing. A GPU is marked failed only when two different people agree.
 
 ### Use: Curvegrid MultiBaas
-- **The history decides, not the LLM.** A MultiBaas event query (grouped by GPU) makes the agent skip suspect GPUs;
-  Jev only reads listing text. On a FAIL, the agent stops paying for that rental.
+- **The history decides, not the LLM.** MultiBaas event queries (grouped by GPU, and by provider) make the agent
+  skip suspect, failed and degraded GPUs and prefer providers with fewer failed GPUs; Jev only reads listing text.
+  On a FAIL, the agent stops paying for that rental.
 - **The agent never holds a key.** Writes go through our API and MultiBaas: MultiBaas builds each transaction
   (nonce and gas), we check and sign it, MultiBaas submits it, indexes the event and calls our webhook when it lands.
 
 ## Principles and limits
 
 - Evidence decides; the machine's claims only inform. Passes carry evidence; failures need verified humans.
+- Two layers. **Measurement** (can one exam mislead?) is defended by exam design: secret seed, sealed answers,
+  API-chosen rows, heat-proof class. **Aggregation** (can one misleading exam become a verdict?) is defended by World,
+  two humans, per-provider dedup, and passes that outrank failures. World doesn't make a measurement ungameable; it
+  makes gaming unamplifiable and attributable.
 - No provider cooperation; the host never writes the score.
 - **Limits:** a host could answer checks on a real H100 while running the job on an A100 (mitigated by random
-  in-job checks; hardware attestation would close it); no exact serial-number proof yet; real people could be
-  bribed; World is checked in our backend; the demo's "fake H100" is an A100 we listed ourselves.
+  in-job checks; hardware attestation would close it); a modified profiler could report 108 cores on a real H100,
+  which no exam run inside the renter's container can catch (two humans, the provider roll-up and later passes
+  bound it; attestation closes it); a renter picks when to check today; the site is not modelled; no exact
+  serial-number proof yet; real people could be bribed; World is checked in our backend; the demo's "fake H100" is
+  an A100 we listed ourselves.
 
 ## What's next
 
-Today one renter verifies one GPU. Next, every renter's container is a verifier: the REPORTER role goes from our
-one API to many independent verifiers (one role grant per GPU, or for all), with World keeping each a distinct
-human.
+Today one renter verifies one GPU, at a moment the renter picks. Next: checks fire at API-chosen moments inside the
+job, several per rental, so a report is a distribution, not a point. Then every renter's container is a verifier:
+the REPORTER role goes from our one API to many independent verifiers (one role grant per GPU, per provider, or
+for all), with World keeping each a distinct human. The name tree grows a site level
+(`gpu-….tyo1.cloud-b.waterline.eth`, "as listed"), where throttling clusters.
 
 ## Repo
 

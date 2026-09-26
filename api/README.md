@@ -6,7 +6,7 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 |---|---|
 | `app.py` | routes: check start/commit/reveal, World login, report approval, control panel reads (health, reports, gpus), MultiBaas webhook; serves `web/` |
 | `check.py` | sampling (secret, after commit), grading via `core/`, class from probes, GPU label |
-| `world.py` | OIDC device grant, id_token checks (RS256/JWKS, iss, aud, exp, auth_time), agent token, voter id, mock |
+| `world.py` | World ID 4.0 via IDKit: RP-signed requests, proofs checked by the Developer Portal plus our nonce/action/signal binding, agent token, voter id, mock |
 | `chain.py` | ENS namehash, `Marks.record` through MultiBaas (compose, sign locally, submit), else raw JSON-RPC, else dry-run |
 | `store.py` | Redis (`REDIS_URL`) or in-memory store with expiry |
 
@@ -19,8 +19,8 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 | `MB_URL`, `MB_API_KEY`, `REPORTER_KEY` | publishing | write path `multibaas` (wins over `rpc`): MultiBaas composes `record` (fills nonce + gas), the API checks the calldata, signs with `REPORTER_KEY`, MultiBaas submits. `MARKS_ADDRESS` optional here; when set, the composed `to` must match |
 | `MB_MARKS_ALIAS`, `MB_MARKS_LABEL` | publishing, webhook | MultiBaas address alias / contract label of Marks, both default `marks` |
 | `MB_WEBHOOK_SECRET` | `/api/webhooks/multibaas` | unset = every webhook call gets 401 |
-| `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET` | World | client_secret_basic auth |
-| `WORLD_ISSUER` | World | default `https://sandbox.auth.world.org` |
+| `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_SIGNING_KEY` | World | from developer.world.org; the key's address is the RP's registered signer |
+| `WORLD_ENV`, `WORLD_PRESET` | World | default `sandbox`, `selfieCheck` |
 | `AGENT_TOKEN_SECRET` | login | HMAC key for our agent token |
 | `VOTER_SECRET` | approval | `voter_id = HMAC_SHA256(VOTER_SECRET, utf8(sub) ‖ node)` |
 | `WORLD_MOCK=1`, `WORLD_MOCK_DECISION`, `WORLD_MOCK_SUB` | offline | decision `approve` (default) / `deny` / `expire` / `pending` |
@@ -63,7 +63,7 @@ curl -s -XPOST $API/api/check/reveal -H 'content-type: application/json' \
 # -> {report_id, verdict, measured_class, reasons, gpu_name, node, published, tx, via, report_hash}   via: multibaas|rpc|dry-run|null
 curl -s $API/api/reports/<report_id>/evidence   # canonical bytes; keccak256(body) == report_hash == waterline.report
 
-curl -s -XPOST $API/api/world/login/start          # -> {device_id, user_code, verification_uri_complete, expires_in}
+curl -s -XPOST $API/api/world/login/start          # -> {device_id, verification_uri_complete (panel #/world/<id>), expires_in}
 curl -s -XPOST $API/api/world/login/poll -H 'content-type: application/json' -d '{"device_id":"…"}'
 # -> {status:"approved", agent_token}  (the token is returned once)
 curl -s -XPOST $API/api/report/approve/start -H 'content-type: application/json' -d '{"report_id":"…","agent_token":"…"}'

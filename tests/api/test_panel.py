@@ -74,16 +74,17 @@ def test_gpus_from_multibaas(monkeypatch):
 
     def fake_post(url, json, headers, timeout):
         seen.update(url=url, body=json, auth=headers["Authorization"])
-        rows = [{"node": ok["node"], "cls": "1", "cores": "132", "at": "1790000000", "passes": "3", "fails": "2",
-                 "humans": "2"}]
+        rows = [{"node": ok["node"], "provider": "0x" + "ee" * 32, "cls": "1", "cores": "132", "at": "1790000000",
+                 "passes": "3", "fails": "2", "active": "2"}]
         return httpx.Response(200, json={"result": {"rows": rows}}, request=httpx.Request("POST", url))
     monkeypatch.setattr(appmod.httpx, "post", fake_post)
     r = client.get("/api/gpus").json()
     assert seen["url"] == "https://mb.invalid/api/v0/queries" and seen["auth"] == "Bearer admin-key"
     assert seen["body"]["groupBy"] == "node"
     assert r == {"source": "multibaas", "error": None, "gpus": [{
-        "node": ok["node"], "gpu_name": ok["gpu_name"], "cls": 1, "cores": 132, "passes": 3, "fails": 2,
-        "humans": 2, "last_at": 1790000000, "status": "failed"}]}
+        "node": ok["node"], "provider_node": "0x" + "ee" * 32, "last_verdict": 0, "gpu_name": ok["gpu_name"], "cls": 1,
+        "cores": 132,
+        "passes": 3, "fails": 2, "active": 2, "humans": 2, "last_at": 1790000000, "status": "failed"}]}
 
 
 def test_gpus_falls_back_to_local_when_multibaas_is_down(monkeypatch):

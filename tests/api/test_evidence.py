@@ -17,7 +17,7 @@ def test_pass_sends_the_hash_and_evidence_bytes_match():
     r = run_check(uuid="GPU-EV1")
     rep = client.get(f"/api/reports/{r['report_id']}").json()
     h = rep["report_hash"]
-    assert r["report_hash"] == h and chain.DRY_RUN_CALLS[-1][8] == bytes.fromhex(h[2:])
+    assert r["report_hash"] == h and chain.DRY_RUN_CALLS[-1][10] == bytes.fromhex(h[2:])
     ev = evidence(r["report_id"])
     assert "0x" + keccak(ev.content).hex() == h == ev.headers["X-Waterline-Report-Hash"]
     body = json.loads(ev.content)
@@ -33,7 +33,7 @@ def test_hash_is_stable_across_indexing_and_approval():
     appmod.store.put(f"report:{r['report_id']}", rep | {"indexed": True, "indexed_at": 1, "tx": "0xabc"}, 60)
     after = client.get(f"/api/reports/{r['report_id']}").json()
     assert after["published"] and after["report_hash"] == before["report_hash"]
-    assert chain.DRY_RUN_CALLS[-1][8] == bytes.fromhex(before["report_hash"][2:])  # the approved fail carries it
+    assert chain.DRY_RUN_CALLS[-1][10] == bytes.fromhex(before["report_hash"][2:])  # the approved fail carries it
     assert "0x" + keccak(evidence(r["report_id"]).content).hex() == before["report_hash"]
 
 

@@ -21,6 +21,11 @@ interface IETHRegistrar {
     function isAvailable(string calldata) external view returns (bool);
 }
 
+interface IPermissionedRegistry {
+    function setResolver(uint256 anyId, address resolver) external;
+    function getResolver(string calldata label) external view returns (address);
+}
+
 /// Step 1: deploy Marks and commit to the name.
 ///   forge script script/Deploy.s.sol:DeployAndCommit --rpc-url sepolia --broadcast
 /// Step 2 (at least 60 s later): register the name with Marks as its resolver.
@@ -40,6 +45,12 @@ abstract contract Base is Script {
     function label() internal view returns (string memory) {
         return vm.envOr("NAME_LABEL", vm.parseJsonString(cfg(), ".label"));
     }
+
+    /// namehash(<label>.eth)
+    function parentNode() internal view returns (bytes32) {
+        bytes32 eth = keccak256(abi.encodePacked(bytes32(0), keccak256("eth")));
+        return keccak256(abi.encodePacked(eth, keccak256(bytes(label()))));
+    }
 }
 
 contract DeployAndCommit is Base {
@@ -48,7 +59,7 @@ contract DeployAndCommit is Base {
         address owner = vm.addr(key);
         require(registrar().isAvailable(label()), "name is taken: set NAME_LABEL");
         vm.startBroadcast(key);
-        Marks marks = new Marks(owner, vm.envAddress("REPORTER_ADDRESS"));
+        Marks marks = new Marks(owner, vm.envAddress("REPORTER_ADDRESS"), parentNode());
         registrar().commit(
             registrar().makeCommitment(
                 label(), owner, vm.envBytes32("NAME_SECRET"), address(0), address(marks), DURATION, 0
@@ -76,5 +87,30 @@ contract Register is Base {
         registrar().register(label(), owner, vm.envBytes32("NAME_SECRET"), address(0), marks, DURATION, address(usdc), 0);
         vm.stopBroadcast();
         console.log(string.concat(label(), ".eth now resolves through Marks"));
+    }
+}
+
+/// Upgrade an already-registered name: deploy a new Marks and point <label>.eth at it (the owner holds
+/// ROLE_SET_RESOLVER from registration). The previous Marks stays on chain untouched; deployments/sepolia.json keeps
+/// its address as "marks_previous".
+///   forge script script/Deploy.s.sol:Redeploy --rpc-url sepolia --broadcast
+contract Redeploy is Base {
+    function run() external {
+        uint256 key = vm.envUint("DEPLOYER_KEY");
+        address owner = vm.addr(key);
+        IPermissionedRegistry registry = IPermissionedRegistry(vm.parseJsonAddress(cfg(), ".ETHRegistry"));
+        address previous = registry.getResolver(label());
+        vm.startBroadcast(key);
+        Marks marks = new Marks(owner, vm.envAddress("REPORTER_ADDRESS"), parentNode());
+        registry.setResolver(uint256(keccak256(bytes(label()))), address(marks));
+        vm.stopBroadcast();
+        require(registry.getResolver(label()) == address(marks), "resolver not updated");
+        vm.writeJson(
+            string.concat('{"marks":"', vm.toString(address(marks)), '","label":"', label(), '","owner":"', vm.toString(owner),
+                '","marks_previous":"', vm.toString(previous), '"}'),
+            "./deployments/sepolia.json"
+        );
+        console.log("Marks", address(marks));
+        console.log(string.concat(label(), ".eth now resolves through the new Marks"));
     }
 }

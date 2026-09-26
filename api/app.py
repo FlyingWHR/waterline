@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import jwt
 from eth_utils import keccak
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -32,7 +31,7 @@ SESSION_TTL = 3600
 REPORT_TTL = 7 * 24 * 3600
 VOTE_TTL = 365 * 24 * 3600
 FRESH_S = 120
-PASS, FAIL = 1, 2
+PASS, FAIL, DEGRADED = 1, 2, 3
 INDEX, INDEX_MAX = "reports:index", 500
 CHECK_N = 16384
 HEALTH_MAX = 256 * 1024  # bytes of JSON; the health report is advisory, so it is kept small
@@ -64,7 +63,7 @@ def _get(key: str, what: str):
 
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
-MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash"}
+MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter"}
 
 
 def canonical(rep: dict) -> bytes:
@@ -150,20 +149,29 @@ def check_reveal(body: RevealIn):
         raise HTTPException(409, "This session was already revealed.")
 
     p = Params(s["seed"], s["n"], s["steps"])
-    reasons = []
-    if s["elapsed_s"] > s["deadline_s"]:
-        reasons.append(f"Answer locked in after {s['elapsed_s']:.1f} s; the deadline was {s['deadline_s']:.1f} s.")
-    reasons += grade(p, s["root"], s["samples"], body.fingerprints, body.leaf_hashes, body.rows)
-    work_ok = not reasons  # in time and re-graded: only then is the timing a verified number
+    late = [f"Answer locked in after {s['elapsed_s']:.1f} s; the deadline was {s['deadline_s']:.1f} s."] \
+        if s["elapsed_s"] > s["deadline_s"] else []
+    work = grade(p, s["root"], s["samples"], body.fingerprints, body.leaf_hashes, body.rows)
+    work_ok = not work  # re-graded correct: the API-clock timing is a verified number, in time or not
     classification, class_reasons = class_check(s["claimed_class"], s["probes"], body.metrics)
-    reasons += class_reasons
     measured = classify(s["probes"], body.metrics)  # on-chain class code of the best match
+    # Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = fail, which
+    # needs people. Heat, power caps and sharing only slow a chip: right chip, right answers, too slow = degraded,
+    # published with its numbers like a pass, never counted toward failed.
+    reasons = work + class_reasons + late
+    verdict = "fail" if work or class_reasons else "degraded" if late else "pass"
 
     rid = secrets.token_hex(16)
-    name = f"{gpu_label(s['uuid'])}.{s['cloud']}.waterline.eth"
+    label, provider = gpu_label(s["uuid"]), f"{s['cloud']}.waterline.eth"
+    name = f"{label}.{provider}"
     node = chain.namehash(name)
-    rep = {"report_id": rid, "verdict": "fail" if reasons else "pass", "measured_class": measured,
+    prev = next((r for r in _reports(INDEX_MAX) if r["node"] == "0x" + node.hex()), None)
+    fp = s["probes"]["fingerprint"].lower()
+    rep = {"report_id": rid, "verdict": verdict, "measured_class": measured,
            "reasons": reasons, "gpu_name": name, "node": "0x" + node.hex(), "published": False, "tx": None,
+           "gpu_label": label, "provider": provider, "provider_node": "0x" + chain.namehash(provider).hex(),
+           # an observation, never a verdict: the fingerprint is quantised timing, not yet proven stable across runs
+           "fingerprint_changed": bool(prev) and prev.get("fingerprint") != fp,
            "cores": s["probes"]["sms"], "fingerprint": s["probes"]["fingerprint"].lower(),
            "created_at": int(now()), "cloud": s["cloud"], "claimed_class": s["claimed_class"],
            "status_text": "Waiting for a human approval. Nothing is published yet.",
@@ -174,11 +182,14 @@ def check_reveal(body: RevealIn):
            "via": None, "indexed": False, "indexed_at": None}
     rep |= perf_profile(rep, body.metrics, classification)
     rep["report_hash"] = report_hash(rep)  # frozen with the verdict; GET /api/reports/{id}/evidence serves the bytes
-    if not reasons:
+    if verdict != "fail":
         try:
-            rep["tx"] = chain.record(node, PASS, measured, rep["cores"], bytes.fromhex(rep["fingerprint"][2:]),
-                                     keccak(text=rid), *_perf_onchain(rep), bytes.fromhex(rep["report_hash"][2:]))
-            rep |= {"published": True, "status_text": "Published.", "via": chain.write_path()}
+            tops_x10, pct_bps = _perf_onchain(rep)
+            rep["tx"] = chain.record(s["cloud"], label, PASS if verdict == "pass" else DEGRADED, measured, rep["cores"],
+                                     bytes.fromhex(fp[2:]), tops_x10=tops_x10, pct_bps=pct_bps,
+                                     report_hash=bytes.fromhex(rep["report_hash"][2:]))
+            rep |= {"published": True, "via": chain.write_path(), "status_text": "Published." if verdict == "pass"
+                    else "Published as degraded: the right chip, too slow. It never counts toward failed."}
         except chain.ChainError as e:
             rep["status_text"] = "Publishing failed."
             log.error("publishing pass %s failed: %s", rid, e)
@@ -189,7 +200,7 @@ def check_reveal(body: RevealIn):
                                 "published", "tx", "via", "report_hash")}
 
 
-# ---- World: login and approval (device grant) --------------------------------------------------------------
+# ---- World: login and approval (IDKit sessions) ------------------------------------------------------------
 class DeviceIn(BaseModel):
     device_id: str
 
@@ -199,9 +210,14 @@ class ApproveIn(BaseModel):
     agent_token: str
 
 
-def _new_device(extra: dict) -> dict:
+class WorldResultIn(BaseModel):
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+def _new_device(extra: dict, action: str, what: str) -> dict:
     try:
-        d = world.device_start()
+        d = world.device_start(action, what)
     except world.Unavailable:
         raise HTTPException(503, "World is unavailable; try again shortly.")
     did = secrets.token_urlsafe(16)
@@ -221,8 +237,6 @@ def _poll(device_id: str):
         status, claims = world.device_poll(d["device_code"])
     except world.Unavailable:
         raise HTTPException(503, "World is unavailable; this is not an approval. Poll again.")
-    except jwt.PyJWTError:
-        status, claims = "denied", None  # World's answer did not verify
     if status == "slow_down":
         d["interval"] += 5
         status = "pending"
@@ -237,9 +251,26 @@ def _finish(device_id: str, d: dict, result: dict) -> dict:
     return result
 
 
+@app.get("/api/world/session/{wid}")
+def world_session(wid: str):
+    s = world.session_public(wid)
+    if s is None:
+        raise HTTPException(404, "This World request is finished or expired.")
+    return s
+
+
+@app.post("/api/world/session/{wid}/result")
+def world_session_result(wid: str, body: WorldResultIn):
+    try:
+        return {"status": world.session_result(wid, body.result, body.error)}
+    except world.Unavailable:
+        raise HTTPException(503, "World is unavailable; this is not an approval. Try again.")
+
+
 @app.post("/api/world/login/start")
 def login_start():
-    return _new_device({"kind": "login"})
+    # a fresh action per login: World refuses a nullifier replayed on the same action
+    return _new_device({"kind": "login"}, f"waterline-login-{secrets.token_hex(8)}", "Log in to Waterline")
 
 
 @app.post("/api/world/login/poll")
@@ -271,13 +302,17 @@ def _fail_report(report_id: str) -> dict:
 
 @app.post("/api/report/approve/start")
 def approve_start(body: ApproveIn):
-    sub = world.agent_sub(body.agent_token)
-    if sub is None:
+    if world.agent_sub(body.agent_token) is None:
         raise HTTPException(401, "The agent token is invalid or expired; log in again.")
     rep = _fail_report(body.report_id)
-    if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
-        raise HTTPException(409, "This human has already reported this GPU.")
-    return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
+    return _new_device({"kind": "approve", "report_id": body.report_id}, report_action(rep),
+                       f"Report {rep.get('gpu_name') or 'this GPU'} as failed")
+
+
+def report_action(rep: dict) -> str:
+    """One World action per provider: the proof's nullifier is then stable per human per provider, so one approval
+    yields both voter ids (per GPU and per provider). Uniqueness is ours to enforce (Redis + Marks)."""
+    return f"waterline-report-{rep['cloud']}"
 
 
 @app.post("/api/report/approve/poll")
@@ -297,11 +332,10 @@ def approve_poll(body: DeviceIn):
 
     if now() - claims["auth_time"] >= FRESH_S:
         return refuse("The approval was not fresh; approve again.")
-    if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
-        return refuse("The approving human is not the logged-in human.")
     rep = _fail_report(d["report_id"])
     node = bytes.fromhex(rep["node"][2:])
-    vid = world.voter_id(claims["sub"], node)
+    pnode = chain.namehash(f"{rep['cloud']}.waterline.eth")
+    vid, pvid = world.voter_id(claims["sub"], node), world.voter_id(claims["sub"], pnode)
     vote_key, pub_key = f"vote:{vid.hex()}", f"published:{rep['report_id']}"
     if not store.add(vote_key, 1, VOTE_TTL):
         return refuse("This human has already reported this GPU.")
@@ -309,15 +343,16 @@ def approve_poll(body: DeviceIn):
         store.delete(vote_key)
         return refuse("This report is already published.")
     try:
-        tx = chain.record(node, FAIL, rep["measured_class"], rep["cores"], bytes.fromhex(rep["fingerprint"][2:]), vid,
-                          *_perf_onchain(rep), _hash_bytes(rep))
+        tops_x10, pct_bps = _perf_onchain(rep)
+        tx = chain.record(rep["cloud"], rep["gpu_name"].split(".")[0], FAIL, rep["measured_class"], rep["cores"],
+                          bytes.fromhex(rep["fingerprint"][2:]), vid, pvid, tops_x10, pct_bps, _hash_bytes(rep))
     except chain.ChainError as e:
         store.delete(vote_key)
         store.delete(pub_key)
         log.error("publishing fail %s failed: %s", rep["report_id"], e)
         return {"status": "approved", "published": False, "status_text": "Publishing failed; approve again."}
     via = chain.write_path()
-    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via}
+    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex()}
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
     return _finish(body.device_id, d, {"status": "approved", "published": True, "tx": tx, "via": via,
                                        "status_text": "Recorded on Marks."})
@@ -326,26 +361,47 @@ def approve_poll(body: DeviceIn):
 # ---- control panel reads ------------------------------------------------------------------------------------
 SUMMARY = ("report_id", "created_at", "gpu_name", "node", "cloud", "claimed_class", "measured_class", "verdict",
            "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash")
-# Reported(node 0, voterId 1, verdict 2, cls 3, cores 4, fingerprint 5, topsX10 6, pctBps 7, at 8, passes 9,
-#          fails 10, humans 11, reportHash 12): must match contracts/src/Marks.sol (tests/api/test_event_layout.py).
-# Tallies only grow, so max = latest; per-report fields use last.
-REPORTED = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32,bytes32)"
-MB_QUERY = {"events": [{
-    "eventName": REPORTED,
-    "select": [{"type": "input", "inputIndex": i, "alias": a, **({"aggregator": g} if g else {})}
-               for a, i, g in [("node", 0, None), ("cls", 3, "last"), ("cores", 4, "last"), ("tops_x10", 6, "last"),
-                               ("pct_bps", 7, "last"), ("at", 8, "max"), ("passes", 9, "max"), ("fails", 10, "max"),
-                               ("humans", 11, "max")]]}],
+# Reported(node 0, provider 1, gpuVoter 2, providerVoter 3, verdict 4, cls 5, cores 6, fingerprint 7, topsX10 8,
+#          pctBps 9, at 10, passes 11, fails 12, active 13, reportHash 14) and
+# ProviderTally(provider 0, gpus 1, failedGpus 2, humans 3, passes 4, fails 5, at 6):
+# must match contracts/src/Marks.sol (tests/api/test_event_layout.py).
+REPORTED = ("Reported(bytes32,bytes32,bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,"
+            "uint32,bytes32)")
+PROVIDER_TALLY = "ProviderTally(bytes32,uint32,uint32,uint32,uint32,uint32,uint64)"
+
+
+def _mb_select(fields):
+    return [{"type": "input", "inputIndex": i, "alias": a, **({"aggregator": g} if g else {})} for a, i, g in fields]
+
+
+# passes/fails only grow (max = latest); active can drop on recovery, so it takes the latest event's value
+MB_QUERY = {"events": [{"eventName": REPORTED, "select": _mb_select([
+    ("node", 0, None), ("provider", 1, "last"), ("verdict", 4, "last"), ("cls", 5, "last"), ("cores", 6, "last"), ("tops_x10", 8, "last"),
+    ("pct_bps", 9, "last"), ("at", 10, "max"), ("passes", 11, "max"), ("fails", 12, "max"), ("active", 13, "last")])}],
     "groupBy": "node", "orderBy": "at", "order": "DESC"}
+MB_PROVIDER_QUERY = {"events": [{"eventName": PROVIDER_TALLY, "select": _mb_select([
+    ("provider", 0, None), ("gpus", 1, "max"), ("failed_gpus", 2, "last"), ("humans", 3, "max"), ("passes", 4, "max"),
+    ("fails", 5, "max"), ("at", 6, "max")])}], "groupBy": "provider", "orderBy": "at", "order": "DESC"}
 
 
-def gpu_status(humans: int, passes: int) -> str:
-    """Same rule as Marks.text(waterline.status)."""
-    if humans >= 2:
+def gpu_status(active: int, fails: int, passes: int, last_verdict=None) -> str:
+    """Same rule as Marks.status: active humans since the last recovery decide; then a degraded latest check; a GPU
+    that had failures and has no active ones has recovered (two passes after its last failure)."""
+    if active >= 2:
         return "failed"
-    if humans == 1:
+    if active == 1:
         return "suspect · 1 of 2 humans"
+    if last_verdict in (DEGRADED, "degraded"):
+        return "degraded"
+    if fails > 0:
+        return "recovered"
     return "pass" if passes > 0 else "unknown"
+
+
+def provider_status(p: dict) -> str:
+    """Same words as Marks.providerStatus: descriptive, a provider is judged GPU by GPU."""
+    g, h = p["gpus"], p["humans"]
+    return f"{p['failed_gpus']} of {g} GPU{'' if g == 1 else 's'} failed · reported by {h} {'person' if h == 1 else 'people'}"
 
 
 def _reports(limit: int) -> list[dict]:
@@ -367,7 +423,8 @@ def health():
             "chain": {"mode": "live" if live else "dry-run", "write_path": chain.write_path(), "chain_id": 11155111,
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},
-            "world": {"mode": "mock" if world.mock_on() else "live", "issuer": world.issuer()},
+            "world": {"mode": "mock" if world.mock_on() else "live" if world.configured() else "not-configured",
+                      "environment": world.environment(), "app_id": os.environ.get("WORLD_APP_ID") or None},
             "multibaas": {"configured": bool(mb and os.environ.get("MB_API_KEY")), "url": mb or None,
                           "webhook": bool(os.environ.get("MB_WEBHOOK_SECRET"))},
             "ens": {"parent": "waterline.eth", "universal_resolver": _universal_resolver(),
@@ -400,23 +457,66 @@ def _mb_gpus() -> list[dict]:
     r.raise_for_status()
     out = []
     for row in r.json()["result"]["rows"]:
-        node = str(row["node"]).lower()
-        g = {k: int(row.get(k) or 0) for k in ("cls", "cores", "passes", "fails", "humans")}
-        out.append(g | {"node": node if node.startswith("0x") else "0x" + node, "last_at": int(row.get("at") or 0)})
+        g = {k: int(row.get(k) or 0) for k in ("cls", "cores", "passes", "fails", "active")}
+        out.append(g | {"node": _hex0x(row["node"]), "provider_node": _hex0x(row.get("provider") or ""),
+                        "last_verdict": int(row.get("verdict") or 0),
+                        "humans": g["fails"], "last_at": int(row.get("at") or 0)})
     return out
 
 
-def _local_gpus(reps: list[dict]) -> list[dict]:
-    """Mirror of Marks' tallies from our own published reports (each published fail is a distinct human)."""
-    g = {}
-    for r in sorted(reps, key=lambda r: r.get("created_at", 0)):
+def _hex0x(v) -> str:
+    v = str(v).lower()
+    return v if v.startswith("0x") else "0x" + v
+
+
+def _mb_providers() -> list[dict]:
+    r = httpx.post(os.environ["MB_URL"].rstrip("/") + "/api/v0/queries", json=MB_PROVIDER_QUERY, timeout=15,
+                   headers={"Authorization": f"Bearer {os.environ['MB_API_KEY']}"})
+    r.raise_for_status()
+    return [{k: int(row.get(k) or 0) for k in ("gpus", "failed_gpus", "humans", "passes", "fails")}
+            | {"provider_node": _hex0x(row["provider"]), "last_at": int(row.get("at") or 0)}
+            for row in r.json()["result"]["rows"]]
+
+
+def _local_tallies(reps: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Mirror of Marks' GPU and provider tallies from our own published reports, replayed in order (each published
+    fail is a distinct human for its GPU; provider humans come from the per-provider voter ids)."""
+    g, prov = {}, {}
+    for r in sorted(reversed(reps), key=lambda r: r.get("created_at", 0)):  # reps are newest first; ties keep order
         if not r["published"]:
             continue
-        x = g.setdefault(r["node"], {"node": r["node"], "passes": 0, "fails": 0, "humans": 0})
-        x["passes" if r["verdict"] == "pass" else "fails"] += 1
-        x["humans"] += r["verdict"] == "fail"
-        x |= {"cls": r["measured_class"], "cores": r.get("cores"), "last_at": r.get("created_at")}
-    return sorted(g.values(), key=lambda x: x["last_at"] or 0, reverse=True)
+        pnode = r.get("provider_node") or "0x" + chain.namehash(f"{r['cloud']}.waterline.eth").hex()
+        p = prov.setdefault(pnode, {"provider_node": pnode, "gpus": 0, "failed_gpus": 0, "humans": 0, "passes": 0,
+                                    "fails": 0, "degraded": 0, "voters": set()})
+        if r["node"] not in g:
+            p["gpus"] += 1
+        x = g.setdefault(r["node"], {"node": r["node"], "provider_node": pnode, "passes": 0, "fails": 0, "active": 0,
+                                     "degraded": 0, "since_fail": 0})
+        x["last_verdict"] = r["verdict"]
+        was = x["active"] >= 2
+        if r["verdict"] == "pass":
+            x["passes"] += 1
+            p["passes"] += 1
+            x["since_fail"] += 1
+            if x["active"] and x["since_fail"] >= 2:
+                x["active"] = 0
+        elif r["verdict"] == "degraded":
+            x["degraded"] += 1
+            p["degraded"] += 1
+        else:
+            x["fails"] += 1
+            p["fails"] += 1
+            x["active"] += 1
+            x["since_fail"] = 0
+            p["voters"].add(r.get("provider_voter") or r["report_id"])
+        p["failed_gpus"] += (x["active"] >= 2) - was
+        p["humans"] = len(p["voters"])
+        x |= {"cls": r["measured_class"], "cores": r.get("cores"), "last_at": r.get("created_at"), "humans": x["fails"]}
+        p["last_at"] = r.get("created_at")
+    gpus_ = [{k: v for k, v in x.items() if k != "since_fail"} for x in g.values()]
+    provs = [{k: v for k, v in p.items() if k != "voters"} for p in prov.values()]
+    by_time = lambda x: x.get("last_at") or 0  # noqa: E731
+    return sorted(gpus_, key=by_time, reverse=True), sorted(provs, key=by_time, reverse=True)
 
 
 @app.get("/api/gpus")
@@ -429,11 +529,30 @@ def gpus():
         except (httpx.HTTPError, KeyError, ValueError, TypeError) as e:
             log.error("MultiBaas query failed: %s", e)
             error = "MultiBaas did not answer; showing this API's own records."
-    rows = _local_gpus(reps) if rows is None else rows
+    rows = _local_tallies(reps)[0] if rows is None else rows
     names = {r["node"]: r["gpu_name"] for r in reps}
     for x in rows:
-        x |= {"gpu_name": names.get(x["node"]), "status": gpu_status(x["humans"], x["passes"])}
+        x |= {"gpu_name": names.get(x["node"]),
+              "status": gpu_status(x["active"], x["fails"], x["passes"], x.get("last_verdict"))}
     return {"source": source, "error": error, "gpus": rows}
+
+
+@app.get("/api/providers")
+def providers():
+    """Reputation per provider (<cloud>.waterline.eth): each human counts once however many of its GPUs they reported."""
+    reps = _reports(INDEX_MAX)
+    source, error, rows = "local", None, None
+    if os.environ.get("MB_URL") and os.environ.get("MB_API_KEY"):
+        try:
+            rows, source = _mb_providers(), "multibaas"
+        except (httpx.HTTPError, KeyError, ValueError, TypeError) as e:
+            log.error("MultiBaas provider query failed: %s", e)
+            error = "MultiBaas did not answer; showing this API's own records."
+    rows = _local_tallies(reps)[1] if rows is None else rows
+    names = {"0x" + chain.namehash(f"{r['cloud']}.waterline.eth").hex(): f"{r['cloud']}.waterline.eth" for r in reps}
+    for x in rows:
+        x |= {"name": names.get(x["provider_node"]), "status": provider_status(x)}
+    return {"source": source, "error": error, "providers": rows}
 
 
 # ---- MultiBaas webhook: Reported events mark our reports as indexed ------------------------------------------------

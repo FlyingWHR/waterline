@@ -1,10 +1,12 @@
 // Waterline control panel. Plain ES module, no build. Talks only to this origin's /api/*; addresses come from /api/health.
 const VIEM = "https://esm.sh/viem@2.56.9";
 const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
+const IDKIT = "https://cdn.jsdelivr.net/npm/@worldcoin/idkit-core@4.3.0/dist/idkit.global.js"; // loads its WASM beside it
 const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
-const ENS_KEYS = ["status", "class", "cores", "passes", "fails", "humans", "fingerprint"];
+const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "fails", "humans", "recoveries", "fingerprint"];
+const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "humans", "passes", "fails", "note"];
 const TOKEN_KEY = "waterline.agent_token";
 const WRITE_PATH = { multibaas: "MultiBaas", rpc: "RPC", "dry-run": "dry run" };
 const view = document.getElementById("view");
@@ -30,12 +32,25 @@ const S = (tag, attrs = {}, text) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const short = (x) => (x && x.length > 16 ? x.slice(0, 10) + "…" + x.slice(-4) : x || "—");
 const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
+const ago = (ts) => {
+  const m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
 const cls = (c) => CLASSES[c] ?? "unknown";
 const scan = (kind, x) => (x ? h("a", { href: `${SCAN}/${kind}/${x}`, target: "_blank", rel: "noopener", className: "mono" }, short(x)) : null);
 const txLink = (tx, published) => scan("tx", tx) || h("span", { className: "sub" }, published ? "dry-run, no tx" : "—");
 const pill = (text, kind) => h("span", { className: "pill st-" + (kind || String(text).split(" ")[0]) }, text);
 const verdictPill = (r) =>
-  r.verdict === "pass" ? pill("pass") : r.published ? pill("fail · published", "fail") : pill("fail · awaiting approval", "pending");
+  r.verdict === "pass" ? pill("pass") : r.verdict === "degraded" ? pill("degraded · published", "degraded")
+    : r.published ? pill("fail · published", "fail") : pill("fail · awaiting approval", "pending");
+// Why a right chip ran slow, from the machine's own telemetry: it explains a degraded check, it never decides one.
+function slowCause(hr) {
+  const seen = hr?.burn?.reasons_seen || [];
+  if (seen.some((x) => /thermal|HW slowdown/.test(x))) return "thermal throttling";
+  if (seen.some((x) => /power/.test(x))) return "a power limit";
+  if (hr?.device?.mig === "enabled") return "a MIG slice of a shared card";
+  return null;
+}
 const needsApproval = (r) => r.verdict === "fail" && !r.published;
 const token = {
   get() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } },
@@ -67,7 +82,7 @@ const table = (cols, rows) => {
 };
 
 // ---- router ------------------------------------------------------------------------------------------------
-const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"],
+const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], world: [worldPage, "World"],
   leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
@@ -100,28 +115,29 @@ async function overview() {
   requestAnimationFrame(() => terrain(canvas));
   const count = (st) => g.gpus.filter((x) => x.status.startsWith(st)).length;
   const c = hl.chain;
+  const sum = (k) => g.gpus.reduce((n, x) => n + (x[k] || 0), 0);
+  const checksN = sum("passes") + sum("fails"), humansN = sum("humans");
+  const lastGpu = [...g.gpus].sort((a, b) => (b.last_at || 0) - (a.last_at || 0))[0];
+  const lastTx = reps.find((r) => r.tx), lastIdx = reps.find((r) => r.indexed_at);
   const tile = (layer, label, big, ...small) =>
     h("div", { className: "tile c-" + layer }, h("div", { className: "label" }, h("i", { className: "dot" }), label), h("b", {}, big), ...small.map((s) => h("span", {}, s)));
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  // only what has happened: a tile appears once there is something real to show
+  const proof = [
+    checksN && tile("chain", "On the record", plural(checksN, "check"), lastTx ? h("span", {}, "Latest ", scan("tx", lastTx.tx), " · ", ago(lastTx.created_at)) : null),
+    lastGpu?.gpu_name && tile("ens", "Named on ENS", lastGpu.gpu_name, h("span", {}, pill(lastGpu.status), " ", h("a", { href: "#/gpus" }, "look it up →"))),
+    humansN && tile("world", "Approved with World ID", plural(humansN, "failure report"), "Each one approved by a person before it went public."),
+    lastIdx && tile("mb", "Indexed by MultiBaas", ago(lastIdx.indexed_at), h("a", { href: `#/check/${lastIdx.report_id}` }, lastIdx.gpu_name || "the latest check")),
+  ].filter(Boolean);
   return [
-    h("div", { className: "hero" }, canvas, h("div", { className: "kicker" }, "Ethereum Sepolia · ENS · World · MultiBaas"),
+    h("div", { className: "hero" }, canvas, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
       h("h1", {}, "Waterline"),
-      h("p", { className: "lede" }, "What every rented GPU really is, checked by the people who rent it. The record lives on the GPU's ENS name, which the host can't edit.")),
+      h("p", { className: "lede" }, "Whether a rented GPU is the chip on the listing and delivers its speed, checked by the people who rent it. The record lives on the GPU's ENS name and rolls up to its provider's, where the host can't edit it.")),
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
-    section("System", null, h("div", { className: "tiles" },
-      tile("api", "API", "Online", hl.store === "redis" ? "Store: Redis" : "Store: memory (this process only)"),
-      tile("chain", "Chain", c.mode === "live" ? "Live" : "Dry run", `Sepolia · chain ${c.chain_id}`, `Writes via ${WRITE_PATH[c.write_path] || c.write_path}`,
-        c.marks ? h("span", {}, "Marks ", scan("address", c.marks)) : "Marks address not set: reports are logged, not sent"),
-      tile("chain", "Reporter", c.reporter_balance_eth == null ? "—" : `${c.reporter_balance_eth.toFixed(4)} ETH`,
-        c.reporter ? h("span", {}, "Account ", scan("address", c.reporter)) : "No reporter account set",
-        c.mode === "live" && c.reporter_balance_eth == null ? "Balance unknown: the RPC did not answer" : null),
-      tile("world", "World", hl.world.mode === "mock" ? "Mock" : "Live", hl.world.mode === "mock" ? "Local stand-in, no real humans" : hl.world.issuer),
-      tile("mb", "MultiBaas", hl.multibaas.configured ? "Configured" : "Not configured",
-        hl.multibaas.configured ? hl.multibaas.url : "GPU table uses this API's own records",
-        hl.multibaas.webhook ? "Webhook: configured" : "Webhook: not configured (reports won't show as indexed)"),
-      tile("ens", "ENS", hl.ens.parent, hl.ens.universal_resolver ? h("span", {}, "Universal resolver ", scan("address", hl.ens.universal_resolver)) : "Universal resolver not set"))),
-    section("GPUs on record", g.source === "multibaas" ? "from MultiBaas" : "from this API", h("div", { className: "nums" },
+    ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
+    ...(g.gpus.length ? [section("GPUs on record", g.source === "multibaas" ? "from MultiBaas" : "from this API", h("div", { className: "nums" },
       ...[["Checked", g.gpus.length, ""], ["Pass", count("pass"), "st-pass"], ["Suspect", count("suspect"), "st-suspect"], ["Failed", count("failed"), "st-failed"]]
-        .map(([l, n, k]) => h("div", { className: "num" }, h("span", { className: "label" }, l), h("b", { className: k }, String(n)))))),
+        .map(([l, n, k]) => h("div", { className: "num" }, h("span", { className: "label" }, l), h("b", { className: k }, String(n))))))] : []),
     section("Recent checks", null, reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to see one here."),
       h("p", {}, h("a", { href: "#/checks" }, "All checks →"))),
   ];
@@ -133,7 +149,7 @@ function flowDiagram() {
   const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
   const att = (layer, name, what) => h("div", { className: "att c-" + layer }, h("b", {}, name), h("small", {}, what));
   return h("div", { className: "panel" },
-    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name. World approves failures at the API; MultiBaas indexes Marks' history." },
+    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. World approves failures at the API; MultiBaas indexes Marks' history." },
       h("div", { className: "stage" }, node("people", "Agent", "renter's laptop")),
       wire("starts over SSH"),
       h("div", { className: "stage" }, node("pod", "Profiler", "in the rented pod")),
@@ -142,9 +158,14 @@ function flowDiagram() {
       wire("records", true),
       h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history")),
       wire("resolves", true),
-      h("div", { className: "stage" }, node("ens", "ENS name", "gpu-….waterline.eth"))),
-    h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "partner attached to a step")),
-    h("p", { className: "sub" }, "Your agent starts the profiler inside your pod. The API gives it a fresh puzzle and a deadline, then re-checks a random slice of the answer. A pass goes straight to Marks and shows on the GPU's ENS name; a failure waits for a person to approve it with World. MultiBaas indexes every report so agents can skip bad GPUs."));
+      h("div", { className: "stage" }, node("ens", "ENS names", "gpu-….cloud-b.waterline.eth"), att("ens", "rolls up to", "cloud-b.waterline.eth"))),
+    h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
+    h("div", { className: "rules" },
+      h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Only the listed chip at its speed finishes the exam in time. Nobody can fake that, so a pass publishes at once.")),
+      h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat can slow a chip but can't remove cores. Another chip is a fail; the right chip running slow is degraded, published with its numbers.")),
+      h("div", {}, h("b", { className: "st-fail" }, "A failure needs real people."), h("span", {}, "A renter could sabotage their own exam, so a failure publishes only with a World ID approval, and two different people mark a GPU failed.")),
+      h("div", {}, h("b", {}, "Reputation rolls up."), h("span", {}, "Every failure also lands on the provider's name, where each person counts once. A new name for a chip is not a clean provider."))),
+    h("p", { className: "sub" }, "Your agent starts the profiler inside your pod. The API gives it a fresh puzzle and a deadline, then re-checks a random slice of the answer and reads the core count. That tells the three cases apart: the listed chip at speed, the listed chip delivering too little, or another chip. MultiBaas indexes every report so agents can skip bad GPUs and bad providers."));
 }
 
 // Perspective wireframe: rows recede to a horizon, amplitude and opacity grow toward the viewer, one mint
@@ -199,20 +220,29 @@ function terrain(canvas) {
 
 // ---- GPUs --------------------------------------------------------------------------------------------------
 async function gpus() {
-  const g = await api("/api/gpus");
+  const [g, pv] = await Promise.all([api("/api/gpus"), api("/api/providers").catch(() => ({ providers: [] }))]);
   const [form, out, run] = ensLookup();
+  const look = (name) => { run(name); form.scrollIntoView({ block: "center" }); };
+  const prows = pv.providers.map((x) => h("tr", {},
+    h("td", { className: "mono", title: x.provider_node }, x.name || short(x.provider_node)),
+    h("td", {}, String(x.gpus)), h("td", { className: x.failed_gpus ? "st-fail" : "" }, String(x.failed_gpus)),
+    h("td", {}, String(x.humans)), h("td", {}, String(x.passes)), h("td", {}, String(x.fails)),
+    h("td", {}, x.name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.name) }, "Look up") : null)));
   const rows = g.gpus.map((x) => h("tr", {},
     h("td", { className: "mono", title: x.node }, x.gpu_name || short(x.node)),
     h("td", {}, cls(x.cls)), h("td", {}, String(x.cores ?? "—")), h("td", {}, String(x.passes)), h("td", {}, String(x.fails)),
     h("td", {}, String(x.humans)), h("td", {}, pill(x.status)), h("td", {}, when(x.last_at)),
-    h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => { run(x.gpu_name); form.scrollIntoView({ block: "center" }); } }, "Look up") : null)));
+    h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.gpu_name) }, "Look up") : null)));
   return [
-    head("GPUs", "GPU health", h("p", { className: "sub" }, "One row per GPU on the public record. A failure needs two different people before the GPU shows as failed.")),
+    head("GPUs", "GPU health", h("p", { className: "sub" }, "One row per GPU on the public record. A failure needs two different people before the GPU shows as failed; two passes after its last failure bring it back as recovered.")),
+    ...(prows.length ? [section("Providers", "each person counts once per provider",
+      h("p", { className: "sub" }, "Every GPU name sits under its provider's name, so failures roll up: a provider can give a chip a new name, not itself a clean record. A provider can add a note to its own name; it can't change a number."),
+      table(["Provider", "GPUs", "Failed now", "People", "Passes", "Fails", ""], prows))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
       rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Fails", "People", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
-    section("Look up a GPU on ENS", "read live from Sepolia", h("p", { className: "sub" }, "Type a GPU name. Its record is read through the ENS universal resolver, straight from the chain."), form, out),
+    section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "Type a GPU name or a provider name (like cloud-b). The record is read through the ENS universal resolver, straight from the chain."), form, out),
   ];
 }
 
@@ -275,22 +305,29 @@ function ensLookup(initial = "") {
     out.replaceChildren(h("p", { className: "msg" }, `Reading ${name} from Sepolia…`));
     try {
       const { text, n } = await ensReader(name);
-      const vals = await Promise.all(ENS_KEYS.map((k) => text("waterline." + k)));
-      if (!vals.some(Boolean)) {
-        out.replaceChildren(h("p", { className: "msg" }, `No record for ${n} yet. Nobody has published a check of this GPU, or Marks is not its resolver yet.`));
+      const isProvider = n.split(".").length === 3; // <cloud>.waterline.eth
+      const keys = isProvider ? PROVIDER_KEYS : ENS_KEYS;
+      const vals = await Promise.all(keys.map((k) => text("waterline." + k)));
+      const r = Object.fromEntries(keys.map((k, i) => [k, vals[i] || ""]));
+      if (!vals.some(Boolean) || r.status === "unknown") {
+        out.replaceChildren(h("p", { className: "msg" }, `No record for ${n} yet. Nobody has published a check ${isProvider ? "of this provider's GPUs" : "of this GPU"}, or Marks is not its resolver yet.`));
         return;
       }
-      const r = Object.fromEntries(ENS_KEYS.map((k, i) => [k, vals[i] || ""]));
       const row = (k, v) => [h("dt", {}, k), h("dd", {}, v || "—")];
-      out.replaceChildren(h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record"), h("div", { className: "nm" }, n), pill(r.status || "unknown"),
-        h("dl", { className: "kv" }, row("Measured as", r.class), row("Cores", r.cores), row("Passed checks", r.passes || "0"),
-          row("Failure reports", r.fails || "0"), row("People who reported it", r.humans || "0"), row("Timing fingerprint", r.fingerprint))));
+      out.replaceChildren(isProvider
+        ? h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record · provider"), h("div", { className: "nm" }, n), h("p", {}, r.status),
+          h("dl", { className: "kv" }, row("GPUs checked", r.gpus), row("Failed right now", r.failed_gpus || "0"), row("People who reported", r.humans || "0"),
+            row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"), row("Provider's note", r.note ? `“${r.note}” (written by the provider, not part of the record)` : "")))
+        : h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record"), h("div", { className: "nm" }, n), pill(r.status || "unknown"),
+          h("dl", { className: "kv" }, row("Measured as", r.class), row("Cores", r.cores), row("Of its rating", r.pct_of_spec ? `${r.pct_of_spec}%` : ""),
+            row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"), row("People who reported it", r.humans || "0"),
+            row("Recoveries", r.recoveries || "0"), row("Timing fingerprint", r.fingerprint))));
     } catch (e) {
       out.replaceChildren(h("p", { className: "err" }, `Couldn't read ${name}: ${e.shortMessage || e.message}`));
     }
   };
   const form = h("form", { className: "inline", onsubmit: (e) => { e.preventDefault(); run(input.value); } },
-    h("div", { className: "field" }, h("label", { className: "label", htmlFor: "ens-name" }, "GPU name"), input),
+    h("div", { className: "field" }, h("label", { className: "label", htmlFor: "ens-name" }, "GPU or provider name"), input),
     h("button", { type: "submit", className: "btn primary" }, "Look up"));
   return [form, out, run];
 }
@@ -334,9 +371,17 @@ async function checkDetail(id) {
   const spec = (k, v) => h("div", {}, h("b", {}, v), h("span", {}, k));
   const listed = cls(r.claimed_class);
   const pct = r.pct_of_spec;
+  // the three cases renters meet: the listed chip at speed, the listed chip delivering too little, another chip
+  const rating = pct == null ? "" : `${num(pct)}% of its rating`;
+  const diagnosis = r.claimed_class !== r.measured_class ? `Different chip: listed as ${listed}, measures as ${cls(r.measured_class)}.`
+    : over ? `Right chip, delivering too little: it missed the deadline${rating ? ` at ${rating}` : ""}. ${slowCause(r.health) ? `The machine reports ${slowCause(r.health)} (reported, not verified).` : "The machine reports no cause; sharing or a power cap are common ones."}`
+    : r.verdict === "pass" ? `Right chip, done in time${rating ? `, delivering ${rating}` : ""}.`
+    : "Right chip, but its answer didn't check out.";
   return [
     head("Check " + short(r.report_id), r.gpu_name || "Unknown GPU",
-      h("div", { className: "verdict " + (r.verdict === "pass" ? "st-pass" : "st-fail") }, r.verdict),
+      h("div", { className: "verdict st-" + r.verdict }, r.verdict),
+      h("p", { className: "diagnosis" }, diagnosis),
+      r.fingerprint_changed ? h("p", { className: "sub" }, "Its per-core timing fingerprint differs from this GPU's previous check. That is noted, not judged: it can mean a different card behind the same name.") : null,
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
       needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve with World")) : null),
     h("section", { className: "test" },
@@ -766,9 +811,11 @@ async function about() {
     "Each output row is reduced to a fingerprint, and all fingerprints are hashed into one Merkle root.",
     "The GPU sends the root. Only then does the API pick 8 rows at random and recompute them on its CPU.",
     "Probes measure the core-count staircase, FP8 support, clock and memory speed. They decide the hardware class.",
-    "Verdict: pass if the work checks out, in time, on the class the listing promised. Otherwise fail.",
-    "A pass is published at once. A failure needs a fresh approval from a person through World.",
+    "Verdict, in two layers. Class comes only from heat-proof probes (cores, FP8): another chip, or wrong answers, is a fail. The deadline measures delivery: the right chip with right answers but too slow is degraded, never a fail.",
+    "A pass or a degraded result is published at once, with its numbers. A failure needs a fresh approval from a person through World.",
     "One person gets one voice per GPU. It takes two different people to mark a GPU as failed.",
+    "The same approval also counts once for the GPU's provider (cloud-b.waterline.eth), however many of its GPUs that person reports.",
+    "Two passes after a GPU's last failure bring it back as recovered; its history stays public.",
   ];
   return [
     head("Settings", "Configuration and how it works"),
@@ -777,15 +824,18 @@ async function about() {
         kv(["Store", hl.store], ["Chain mode", hl.chain.mode], ["Chain id", String(hl.chain.chain_id)], ["Marks", scan("address", hl.chain.marks) || "not set"],
           ["Reporter", scan("address", hl.chain.reporter) || "not set"], ["Reporter balance", hl.chain.reporter_balance_eth == null ? "—" : `${hl.chain.reporter_balance_eth} ETH`])),
       h("div", { className: "block" }, h("div", { className: "label" }, "Partners"),
-        kv(["World", `${hl.world.mode} · ${hl.world.issuer}`], ["MultiBaas", hl.multibaas.configured ? hl.multibaas.url : "not configured"],
-          ["ENS parent", hl.ens.parent], ["Universal resolver", scan("address", hl.ens.universal_resolver) || "not set"], ["Public RPC (ENS reads)", hl.ens.rpc])),
+        kv(["World", `${hl.world.mode} · ${hl.world.environment} · ${hl.world.app_id || "no app"}`], ["MultiBaas", hl.multibaas.configured ? hl.multibaas.url : "not configured"],
+          ["MultiBaas webhook", hl.multibaas.webhook ? "configured" : "not configured"], ["ENS parent", hl.ens.parent], ["Universal resolver", scan("address", hl.ens.universal_resolver) || "not set"], ["Public RPC (ENS reads)", hl.ens.rpc])),
       h("div", { className: "block" }, h("div", { className: "label" }, "This browser"),
         h("p", { className: "sub" }, token.get() ? "You are logged in with World here. The login is kept in this browser only." : "Not logged in with World in this browser."),
         h("div", {}, forget)))),
     section("How a check works", null, h("ol", { className: "how" }, steps.map((s) => h("li", {}, h("span", {}, s))))),
     section("What the statuses mean", null, kv(["pass", "At least one check passed and nobody has reported it."],
       ["suspect · 1 of 2 humans", "One person approved a failure report."], ["failed", "Two different people approved failure reports."],
-      ["unknown", "No published check yet."])),
+      ["degraded", "Its latest check found the listed chip with correct answers, but too slow for the deadline: heat, a power cap or sharing. Published with its numbers; never counts toward failed."],
+      ["recovered", "It had failure reports, then passed two checks after the last one. The reports stay in its history, and the people who made them can't report it again."],
+      ["unknown", "No published check yet."],
+      ["provider (cloud-b.waterline.eth)", "How many of its GPUs are failed right now and how many people reported any of them, each person once. Descriptive only: GPUs are judged one by one."])),
   ];
 }
 
@@ -797,28 +847,55 @@ const say = (text, tone = "", ...extra) => { const s = $w("status"); s.className
 $w("close").addEventListener("click", () => dlg.close());
 dlg.addEventListener("close", () => { flow++; route(false); }); // cancels any polling and refreshes the page
 
-async function showCode(d) {
-  $w("usercode").textContent = d.user_code;
-  $w("link").href = d.verification_uri_complete;
-  $w("code").hidden = false;
-  const box = $w("qr");
+async function qrInto(box, text) {
   box.replaceChildren();
+  box.hidden = false;
   try {
     const { default: qrcode } = await import(QRLIB);
     const q = qrcode(0, "M");
-    q.addData(d.verification_uri_complete);
+    q.addData(text);
     q.make();
     box.append(h("img", { src: q.createDataURL(4, 0), alt: "" }));
   } catch {
-    box.hidden = true; // the link and the code still work
+    box.hidden = true; // the link still works
   }
 }
 
-// Device grant: show code + QR, poll until the person decides. Returns the final poll answer, or null if closed.
+let idkitP;
+const loadIdkit = () => idkitP ||= new Promise((ok, bad) => {
+  const s = h("script", { src: IDKIT });
+  s.onload = () => ok(globalThis.IDKit);
+  s.onerror = () => { idkitP = null; s.remove(); bad(new Error("Couldn't load World's IDKit.")); };
+  document.head.append(s);
+});
+
+// One World ID proof: the API signed the request; IDKit shows the QR, the phone answers, and the API checks the
+// proof with World before anything counts. Returns the API's status, or null (mock World / closed / expired).
+async function worldProof(wid, show, alive) {
+  let s;
+  try { s = await api(`/api/world/session/${encodeURIComponent(wid)}`); } catch (e) { if (e.status === 404) return null; throw e; }
+  const IDKit = await loadIdkit();
+  const req = await IDKit.request({ app_id: s.app_id, action: s.action, rp_context: s.rp_context, action_description: s.what,
+    allow_legacy_proofs: false, environment: s.environment }).preset(IDKit[s.preset]({ signal: s.signal }));
+  await show(req.connectorURI);
+  const done = await req.pollUntilCompletion({ pollInterval: 2000, timeout: Math.max(1000, s.rp_context.expires_at * 1000 - Date.now()) });
+  if (!alive()) return null;
+  const r = await api(`/api/world/session/${encodeURIComponent(wid)}/result`, done.success ? { result: done.result } : { error: done.error });
+  return r.status;
+}
+
+async function showCode(uri) {
+  $w("link").href = uri;
+  $w("code").hidden = false;
+  await qrInto($w("qr"), uri);
+}
+
+// Start a World request, run IDKit for it, poll the API until it has an answer. Returns the final poll answer, or null if closed.
 async function device(startPath, body, pollPath, my, hint) {
   const d = await api(startPath, body);
-  await showCode(d);
   say(hint + " Waiting for World…");
+  worldProof(d.verification_uri_complete.split("#/world/")[1], showCode, () => my === flow)
+    .catch((e) => { if (my === flow) say(e.message, "bad"); });
   const until = Date.now() + d.expires_in * 1000;
   while (Date.now() < until) {
     await sleep(2000);
@@ -837,17 +914,38 @@ async function device(startPath, body, pollPath, my, hint) {
   return { status: "expired" };
 }
 
+// #/world/<id>: the page the agent's link opens. Same proof as the dialog; the agent in the terminal picks up the answer.
+async function worldPage(wid) {
+  const box = h("div", { className: "qr", "aria-hidden": "true", hidden: true });
+  const link = h("a", { target: "_blank", rel: "noopener", hidden: true }, "Open in the World ID app");
+  const status = h("p", { className: "status", role: "status", "aria-live": "polite" }, "Preparing the World request…");
+  const my = nav;
+  const words = { approved: ["Verified by World. Go back to your terminal.", "good"], denied: ["Denied. Nothing will be published.", "bad"],
+    failed: ["World did not accept this proof. Nothing will be published.", "bad"], expired: ["This request expired.", "bad"] };
+  worldProof(wid, async (uri) => {
+    link.href = uri; link.hidden = false;
+    await qrInto(box, uri);
+    status.textContent = "Scan the code with the World ID app, then approve or deny there.";
+  }, () => my === nav).then((st) => {
+    const [text, tone] = words[st] || ["This World request is finished or expired.", "bad"];
+    box.hidden = link.hidden = true;
+    status.className = "status " + tone; status.textContent = text;
+  }).catch((e) => { status.className = "status bad"; status.textContent = e.message; });
+  return [head("World", "Approve with World", h("p", { className: "sub" }, "Your agent asked for a World ID proof. It counts only after the Waterline API has checked it with World.")),
+    h("div", { className: "codebox" }, box, h("div", { className: "codeinfo" }, link)), status];
+}
+
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
-  $w("what").textContent = `Failure report for ${rep.gpu_name}. It goes on the public record only if you approve it in World App now.`;
+  $w("what").textContent = `Failure report for ${rep.gpu_name}. It goes on the public record only if you approve it in the World ID app now.`;
   say("");
   dlg.showModal();
   try {
     let tok = token.get();
     if (!tok) {
       $w("title").textContent = "Log in with World";
-      const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "First, log in: scan the code with World App or open the link.");
+      const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "First, log in: scan the code with the World ID app.");
       if (!r) return;
       if (r.status !== "approved") return say(`Login ${r.status}. Nothing was published.`, "bad");
       token.set((tok = r.agent_token));
@@ -856,7 +954,7 @@ async function approveFlow(rep) {
     let r;
     try {
       r = await device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok }, "/api/report/approve/poll", my,
-        "Approve this failure report: scan the code with World App or open the link.");
+        "Approve this failure report: scan the code with the World ID app.");
     } catch (e) {
       if (e.status !== 401) throw e;
       token.set(null);

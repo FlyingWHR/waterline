@@ -36,7 +36,7 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   in  `{ "session_id", "fingerprints": {"<step>": [uint64 as strings…]}, "leaf_hashes": {"<step>": hex}, "rows": {"<step>:<row>": [int…]}, "health"?: {…} }`
   `health` is optional, advisory, at most 256 KB of JSON (else 413). Stored with the report, stamped
   `"grade": "reported by the machine"`, never graded: it can't change the verdict.
-  out `{ "report_id", "verdict": "pass"|"fail", "measured_class": int, "reasons": [str], "gpu_name", "node", "published": bool, "tx": str|null, "via", "report_hash" }`
+  out `{ "report_id", "verdict": "pass"|"degraded"|"fail", "measured_class": int, "reasons": [str], "gpu_name", "node", "published": bool, "tx": str|null, "via", "report_hash" }`
   Checks: deadline, leaf hashes, root recomputed from leaf hashes, row fingerprints, 64 spot entries per row
   (columns from secret randomness), class from probes (sms 132 + fp8 -> 1, sms 114 + fp8 -> 2, sms 108 & !fp8 -> 3).
   Verdict fail if any check fails OR measured class != claimed class.
@@ -45,30 +45,48 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   A **pass is published immediately** (Marks.record). A fail is stored as pending, `published: false`.
 `POST /api/world/login/start` -> `{ "device_id", "user_code", "verification_uri_complete", "expires_in" }`
 `POST /api/world/login/poll` in `{ "device_id" }` -> `{ "status": "pending"|"approved"|"denied"|"expired", "agent_token"? }`
-`POST /api/report/approve/start` in `{ "report_id", "agent_token" }` -> same shape as login/start (fresh device grant)
+`POST /api/report/approve/start` in `{ "report_id", "agent_token" }` -> same shape as login/start (fresh World request)
 `POST /api/report/approve/poll` in `{ "device_id" }` ->
   `{ "status": "pending"|"approved"|"denied"|"expired", "published"?: bool, "tx"?: str, "status_text"?: str }`
   On approve: check `auth_time` is fresh (< 120 s), same human as the agent token, compute
-  `voter_id = HMAC_SHA256(VOTER_SECRET, sub || node)`; call Marks.record(fail). Denied/expired: nothing published.
-World: OIDC device grant against `WORLD_ISSUER` (default `https://sandbox.auth.world.org`), endpoints
-`/api/v1/device_authorization`, `/api/v1/token`, JWKS `/.well-known/jwks.json`, scope `openid`, RS256 id_token.
-Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,
+  `gpuVoter = HMAC_SHA256(VOTER_SECRET, nullifier || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, nullifier ||
+  providerNode)`; call Marks.record(fail). Denied/expired: nothing published.
+World: ID 4.0 through IDKit. The API signs each request (RP signature, `WORLD_SIGNING_KEY`); the panel at
+`verification_uri_complete` (`#/world/<id>`) reads `GET /api/world/session/<id>`, runs IDKit (QR -> World ID app) and
+posts `POST /api/world/session/<id>/result` `{result}` or `{error}`; the API forwards the proof to
+`POST https://developer.world.org/api/v4/verify/{rp_id}` and checks nonce, action, environment and signal itself.
+Actions: `waterline-login-<random>` per login, `waterline-report-<cloud>` per provider (one proof -> a per-GPU and a
+per-provider voter id).
+Env: `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_SIGNING_KEY`, `WORLD_ENV`, `WORLD_PRESET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,
 `MARKS_ADDRESS`, `REDIS_URL`. `WORLD_MOCK=1` enables a local mock IdP (approve/deny via env or a test hook) for tests.
 
 ## Marks contract (contracts/, Solidity ^0.8.25, Foundry)
 ```
-record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId, uint32 topsX10, uint16 pctBps, bytes32 reportHash)  onlyReporter
-  pass: passes++ ; fail: require voterId != 0 and not used for this node; fails++, humans++
-event Reported(bytes32 indexed node, bytes32 voterId, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint,
-               uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes, uint32 fails, uint32 humans, bytes32 reportHash)
+constructor(address admin, address reporter, bytes32 parent)   parent = namehash(waterline.eth)
+record(bytes32 cloudLabel, bytes32 gpuLabel, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint,
+       bytes32 gpuVoter, bytes32 providerVoter, uint32 topsX10, uint16 pctBps, bytes32 reportHash)
+  provider = keccak(parent, cloudLabel), node = keccak(provider, gpuLabel): a GPU always rolls up to its provider.
+  Needs ROLE_REPORTER on node, or on provider (covers all its GPUs), or root.
+  1 pass: passes++, sinceFail++ (2 since the last fail with active > 0 -> active = 0, recoveries++)
+  2 fail: both voters != 0; gpuVoter once per node ever; providerVoter counted once per provider; fails++, humans++, active++
+  3 degraded: degraded++ (right chip, correct answers, too slow: no voter, no recovery credit, never "failed")
+setNote(bytes32 providerNode, string note)   ROLE_NOTE on providerNode; <= 280 bytes; changes no count
+event Reported(bytes32 indexed node, bytes32 indexed provider, bytes32 gpuVoter, bytes32 providerVoter, uint8 verdict,
+               uint8 cls, uint16 cores, bytes32 fingerprint, uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes,
+               uint32 fails, uint32 active, bytes32 reportHash)
+event ProviderTally(bytes32 indexed provider, uint32 gpus, uint32 failedGpus, uint32 humans, uint32 passes, uint32 fails, uint64 at)
+event NoteSet(bytes32 indexed provider, string note)
 text(bytes32 node, string key) view -> string
-  keys: waterline.class ("H100 SXM"…), waterline.cores, waterline.fingerprint (0x hex), waterline.passes,
-        waterline.fails, waterline.humans, waterline.report (0x hex of the latest reportHash), waterline.status ("unknown"|"pass"|"suspect · 1 of 2 humans"|"failed")
+  GPU keys: waterline.status, .class, .cores, .fingerprint, .passes, .fails, .humans, .recoveries, .degraded, .tops,
+            .pct_of_spec, .report (0x hex of the latest reportHash)
+  provider keys (<cloud>.waterline.eth): waterline.status ("1 of 3 GPUs failed · reported by 2 people"), .gpus,
+            .failed_gpus, .humans, .passes, .fails, .degraded, .note
 resolve(bytes dnsName, bytes data) -> bytes   (ENSIP-10; handles text(bytes32,string) and addr(bytes32) -> zero)
-supportsInterface: 0x01ffc9a7, 0x9061b923 (IExtendedResolver), 0x59d1d43c (text)
-grantRoles(uint256(node), ROLE_REPORTER, account) / grantRootRoles(ROLE_REPORTER, account)  admin only (ENSv2 EnhancedAccessControl); unauthorized record() reverts EACUnauthorizedAccountRoles
+supportsInterface: 0x01ffc9a7, 0x9061b923 (IExtendedResolver), 0x59d1d43c (text), IEnhancedAccessControl
+grantRoles(uint256(node), ROLE_REPORTER|ROLE_NOTE, account) / grantRootRoles(...)  admin only (ENSv2 EnhancedAccessControl)
 ```
-Status rule: humans >= 2 -> failed; humans == 1 -> suspect; passes > 0 -> pass; else unknown.
+GPU status: active >= 2 -> failed; active == 1 -> suspect · 1 of 2 humans; last verdict degraded -> degraded;
+fails > 0 -> recovered; passes > 0 -> pass; else unknown.
 Class shown on the name is the last measured class.
 
 ## Profiler (prover/, runs in the rented pod)
@@ -104,6 +122,7 @@ The web app lives in `web/` and is served by the API at `/` (same origin, no COR
 New read endpoints (JSON):
 - `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, world: {mode: "live"|"mock", issuer}, multibaas: {configured: bool, url, webhook: bool (MB_WEBHOOK_SECRET set)}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
   (`universal_resolver` from `ENS_UNIVERSAL_RESOLVER`, else `contracts/ens.sepolia.json` when present; `rpc` = `PUBLIC_SEPOLIA_RPC`, default publicnode; `SEPOLIA_RPC` is never shown because it may carry a key.)
+- `GET /api/providers` -> `{ source, error, providers: [{ provider_node, name, gpus, failed_gpus, humans, passes, fails, degraded, status }] }` (MultiBaas `ProviderTally`, else this API's own replay).
 - `GET /api/reports?limit=50` -> `[{ report_id, created_at, gpu_name, node, cloud, claimed_class, measured_class, verdict, published, tx, status_text }]` newest first (API keeps an index of recent report ids in the store).
 - `GET /api/reports/{id}` -> full report: the above + `probes`, `staircase` (map of blocks -> ms, if sent), `elapsed_s`, `deadline_s`, `samples`, `reasons`, `n`, `steps`, `health` (or null), and throughput against the listed class:
   `ops_total = 2 * n^3 * steps` (INT8 ops asked for), `effective_tops = ops_total / elapsed_s / 1e12`,
