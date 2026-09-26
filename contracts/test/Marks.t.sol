@@ -31,6 +31,25 @@ contract MarksTest is Test {
         marks.setClassNames(codes, names);
     }
 
+    function test_every_check_has_its_own_name_under_the_gpu() public {
+        bytes32 gpu = keccak256("gpu-checks");
+        vm.prank(api);
+        marks.record(cloudB, gpu, 1, 1, 132, fp, 0, 0, 14105, 7125, keccak256("report-1"));
+        vm.prank(api);
+        marks.record(cloudB, gpu, 3, 1, 132, fp, 0, 0, 9000, 4548, keccak256("report-2"));
+        (, bytes32 node) = marks.nodes(cloudB, gpu);
+        assertEq(marks.text(node, "waterline.checks"), "2");
+        bytes32 c1 = marks.checkNode(node, 1);
+        bytes32 c2 = marks.checkNode(node, 2);
+        assertEq(c1, keccak256(abi.encodePacked(node, keccak256("1")))); // namehash("1." + the GPU's name)
+        assertEq(marks.text(c1, "waterline.verdict"), "pass");
+        assertEq(marks.text(c1, "waterline.pct_of_spec"), "71.25");
+        assertEq(marks.text(c2, "waterline.verdict"), "degraded");
+        assertEq(marks.text(c2, "waterline.class"), "H100 SXM");
+        assertEq(marks.text(c2, "waterline.report"), marks.text(node, "waterline.report")); // the latest is the last check
+        assertEq(marks.text(marks.checkNode(node, 3), "waterline.verdict"), ""); // no third check yet
+    }
+
     function test_class_names_are_admin_set_and_unknown_otherwise() public {
         bytes32 gpu = keccak256("gpu-h200");
         vm.prank(api);

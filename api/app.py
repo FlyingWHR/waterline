@@ -70,7 +70,7 @@ def _get(key: str, what: str):
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
 MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
-           "listing_reads_as", "approved_at", "approved_via", "mandate_id", "mandate_expires_at"}
+           "listing_reads_as", "approved_at", "approved_via", "mandate_id", "mandate_expires_at", "check_no", "check_name"}
 
 
 def canonical(rep: dict) -> bytes:
@@ -200,7 +200,7 @@ def check_reveal(body: RevealIn):
             rep["tx"] = chain.record(s["cloud"], label, PASS if verdict == "pass" else DEGRADED, measured, rep["cores"],
                                      bytes.fromhex(fp[2:]), tops_x10=tops_x10, pct_bps=pct_bps,
                                      report_hash=bytes.fromhex(rep["report_hash"][2:]))
-            rep |= {"published": True, "via": chain.write_path(), "status_text": "Published." if verdict == "pass"
+            rep |= _check_name(rep) | {"published": True, "via": chain.write_path(), "status_text": "Published." if verdict == "pass"
                     else "Published as degraded: the right chip, too slow. It never counts toward failed."}
         except chain.ChainError as e:
             rep["status_text"] = "Publishing failed."
@@ -279,6 +279,14 @@ def login_poll(body: DeviceIn):
     if status != "approved":
         return _finish(body.device_id, d, {"status": status})
     return _finish(body.device_id, d, {"status": "approved", "agent_token": world.make_agent_token(claims["sub"])})
+
+
+def _check_name(rep: dict) -> dict:
+    """The name Marks gives this published check: <n>.<gpu name>, n counting this GPU's checks on the live contract."""
+    key = f"checkno:{(os.environ.get('MARKS_ADDRESS') or 'dry').lower()}:{rep['node']}"
+    n = (store.get(key) or 0) + 1  # ponytail: read-modify-write; two publishes of one GPU in the same instant could share n
+    store.put(key, n, REPORT_TTL)
+    return {"check_no": n, "check_name": f"{n}.{rep['gpu_name']}"}
 
 
 def _hash_bytes(rep: dict) -> bytes:
@@ -374,7 +382,7 @@ def _publish_fail(rep: dict, sub: str, extra: dict) -> dict:
         return {"status": "approved", "published": False, "retry": True, "status_text": "Publishing failed; try again."}
     via = chain.write_path()
     rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex(),
-            "approved_at": int(now())} | extra
+            "approved_at": int(now())} | extra | _check_name(rep)
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
     return {"status": "approved", "published": True, "tx": tx, "via": via, "status_text": "Recorded on Marks."}
 
@@ -482,7 +490,7 @@ def report_auto(body: AutoIn):
 
 
 # ---- control panel reads ------------------------------------------------------------------------------------
-SUMMARY = ("report_id", "created_at", "gpu_name", "uuid", "node", "cloud", "claimed_class", "measured_class", "verdict",
+SUMMARY = ("report_id", "created_at", "gpu_name", "check_name", "uuid", "node", "cloud", "claimed_class", "measured_class", "verdict",
            "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash", "series", "seq",
            "pct_of_spec")
 # Reported(node 0, provider 1, gpuVoter 2, providerVoter 3, verdict 4, cls 5, cores 6, fingerprint 7, topsX10 8,
@@ -492,6 +500,15 @@ SUMMARY = ("report_id", "created_at", "gpu_name", "uuid", "node", "cloud", "clai
 REPORTED = ("Reported(bytes32,bytes32,bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,"
             "uint32,bytes32)")
 PROVIDER_TALLY = "ProviderTally(bytes32,uint32,uint32,uint32,uint32,uint32,uint64)"
+
+
+def _only_marks(query: dict) -> dict:
+    """Event queries match by event name across every contract MultiBaas knows (older Marks included): keep the live one."""
+    addr = (os.environ.get("MARKS_ADDRESS") or "").lower()
+    if not addr:
+        return query
+    return query | {"events": [e | {"filter": {"rule": "and", "children": [
+        {"operator": "Equal", "value": addr, "fieldType": "contract_address"}]}} for e in query["events"]]}
 
 
 def _mb_select(fields):
@@ -609,7 +626,7 @@ def evidence(report_id: str):
 
 
 def _mb_gpus() -> list[dict]:
-    r = httpx.post(os.environ["MB_URL"].rstrip("/") + "/api/v0/queries", json=MB_QUERY, timeout=15,
+    r = httpx.post(os.environ["MB_URL"].rstrip("/") + "/api/v0/queries", json=_only_marks(MB_QUERY), timeout=15,
                    headers={"Authorization": f"Bearer {os.environ['MB_API_KEY']}"})
     r.raise_for_status()
     out = []
@@ -634,7 +651,7 @@ def _hex0x(v) -> str:
 
 
 def _mb_providers() -> list[dict]:
-    r = httpx.post(os.environ["MB_URL"].rstrip("/") + "/api/v0/queries", json=MB_PROVIDER_QUERY, timeout=15,
+    r = httpx.post(os.environ["MB_URL"].rstrip("/") + "/api/v0/queries", json=_only_marks(MB_PROVIDER_QUERY), timeout=15,
                    headers={"Authorization": f"Bearer {os.environ['MB_API_KEY']}"})
     r.raise_for_status()
     return [{k: int(row.get(k) or 0) for k in ("gpus", "failed_gpus", "humans", "passes", "fails")}

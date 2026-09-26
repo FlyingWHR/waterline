@@ -347,3 +347,13 @@ def test_suspicious_failures_are_flagged_not_blocked():
     assert kinds == {"listing_no_gpu", "card_listed_twice"}
     row = next(r for r in client.get("/api/reports").json() if r["report_id"] == rep["report_id"])
     assert len(row["flags"]) == 2
+
+
+def test_each_published_check_is_named_under_its_gpu(monkeypatch):
+    monkeypatch.setenv("MARKS_ADDRESS", "0x" + "ab" * 20)
+    a, b = run_check(uuid="GPU-NAMES"), run_check(uuid="GPU-NAMES")
+    ra, rb = (client.get(f"/api/reports/{r['report_id']}").json() for r in (a, b))
+    assert ra["check_name"] == "1." + a["gpu_name"] and rb["check_name"] == "2." + b["gpu_name"]
+    assert client.get(f"/api/reports/{a['report_id']}/evidence").status_code == 200  # the name isn't part of the evidence
+    q = appmod._only_marks(appmod.MB_QUERY)["events"][0]["filter"]["children"][0]
+    assert q == {"operator": "Equal", "value": "0x" + "ab" * 20, "fieldType": "contract_address"}

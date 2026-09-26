@@ -58,6 +58,10 @@ def status(row):
 def _post(query, mb_url, key, group):
     mb_url = (mb_url or os.environ["MB_URL"]).rstrip("/")
     key = key or os.environ["MB_API_KEY"]
+    addr = (os.environ.get("MARKS_ADDRESS") or "").lower()
+    if addr:  # only the live Marks: event queries otherwise match older deployments too
+        query = query | {"events": [e | {"filter": {"rule": "and", "children": [
+            {"operator": "Equal", "value": addr, "fieldType": "contract_address"}]}} for e in query["events"]]}
     req = urllib.request.Request(f"{mb_url}/api/v0/queries", data=json.dumps(query).encode(),
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as r:

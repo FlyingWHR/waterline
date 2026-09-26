@@ -75,6 +75,9 @@ record(bytes32 cloudLabel, bytes32 gpuLabel, uint8 verdict, uint8 cls, uint16 co
   2 fail: both voters != 0; gpuVoter once per node ever; providerVoter counted once per provider; fails++, humans++, active++
   3 degraded: degraded++ (right chip, correct answers, too slow: no voter, no recovery credit, never "failed")
 setNote(bytes32 providerNode, string note)   ROLE_NOTE on providerNode; <= 280 bytes; changes no count
+Each published check: node = keccak(gpuNode, keccak("<n>")), i.e. namehash("<n>." + GPU name); checkNode(gpuNode, n).
+  Keys on a check name: waterline.verdict (pass|fail|degraded), class, cores, tops, pct_of_spec, at, report, gpu.
+  The GPU name adds waterline.checks. The API stores check_no / check_name on the report when it publishes.
 setClassNames(uint8[] codes, string[] names)  ROLE_CLASSES at the root (admin); names waterline.class; changes no count.
                                              Codes and names: core/gpu_classes.json (append only). GET /api/gpu-classes serves it.
 event Reported(bytes32 indexed node, bytes32 indexed provider, bytes32 gpuVoter, bytes32 providerVoter, uint8 verdict,

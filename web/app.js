@@ -5,7 +5,8 @@ const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" }; // filled from /api/gpu-classes at boot
 let GPU_TABLE = [];
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
-const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "humans", "recoveries", "fingerprint", "report"];
+const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "humans", "recoveries", "fingerprint", "report", "checks"];
+const CHECK_KEYS = ["verdict", "class", "cores", "tops", "pct_of_spec", "at", "report"];
 const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "humans", "passes", "fails", "note"];
 const TOKEN_KEY = "waterline.agent_token";
 const WRITE_PATH = { multibaas: "MultiBaas", rpc: "RPC", "dry-run": "dry run" };
@@ -373,10 +374,34 @@ function nameTree(pv, gpus, look) {
 
 // #/name/<name>: the page of one ENS name, a GPU or a provider. The facts are read live from ENS; history and the
 // subtree come from the API. The record itself stays raw onchain; this is its human view.
+// A single check's own name, <n>.gpu-….<provider>.waterline.eth: read live from ENS, like its GPU and provider.
+async function checkNamePage(n) {
+  const gpu = n.split(".").slice(1).join(".");
+  const box = h("div", { className: "namefacts" }, h("p", { className: "sub" }, "Reading the record from Sepolia…"));
+  const statusBox = h("div", { className: "namestatus" });
+  const slow = new Promise((_, no) => setTimeout(() => no(new Error("Sepolia didn't answer in 15 s; reload to try again")), 15000));
+  Promise.race([ensReader(n).then(async ({ text }) => Object.fromEntries(await Promise.all(CHECK_KEYS.map(async (k) => [k, (await text("waterline." + k)) || ""])))), slow]).then((v) => {
+    if (!v.verdict) { box.replaceChildren(h("p", { className: "sub" }, `No check at ${n} yet.`)); return; }
+    statusBox.replaceChildren(pill(v.verdict));
+    const tile = (k, val) => h("div", {}, h("b", {}, val || "—"), h("span", {}, k));
+    box.replaceChildren(h("div", { className: "specline" }, tile("measured as", v.class), tile("cores", v.cores), tile("TOPS", v.tops),
+      tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("when", v.at && when(+v.at))),
+      h("p", { className: "sub small" }, "Report hash ", h("a", { href: `#/r/${v.report}`, className: "mono", title: "Open the check this hash commits to" }, short(v.report)),
+        " · the downloaded report must hash to it"));
+  }).catch((e) => box.replaceChildren(h("p", { className: "err" }, e.message)));
+  return [
+    head("ENS name · check", h("span", { className: "mono namehead" }, n), statusBox,
+      h("p", { className: "sub" }, "One check, with its own name under its GPU. Nothing was registered: the Marks contract answers for every name below waterline.eth.")),
+    section("The record", "read live from ENS", box),
+    section("Its GPU", null, h("p", {}, h("a", { href: `#/name/${gpu}`, className: "mono" }, gpu), h("span", { className: "sub" }, " · every check of this card, its status and its provider"))),
+  ];
+}
+
 async function namePage(full) {
   const hl = await getHealth();
   const n = String(full || "").toLowerCase();
   if (!n.endsWith("." + hl.ens.parent)) throw new Error(`Not a name under ${hl.ens.parent}.`);
+  if (n.split(".").length === 5) return checkNamePage(n);
   const isProvider = n.split(".").length === 3;
   const [g, pv, reps] = await Promise.all([api("/api/gpus"), api("/api/providers").catch(() => ({ providers: [] })), api("/api/reports?limit=500")]);
   const mine = reps.filter((r) => isProvider ? r.gpu_name?.endsWith("." + n) : r.gpu_name === n);
@@ -391,7 +416,7 @@ async function namePage(full) {
     const tile = (k, val) => h("div", {}, h("b", {}, val || "0"), h("span", {}, k));
     facts.replaceChildren(h("div", { className: "specline" }, ...(isProvider
       ? [tile("GPUs", v.gpus), tile("failed now", v.failed_gpus), tile("people who reported", v.humans), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails)]
-      : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("people", v.humans), tile("recoveries", v.recoveries)])),
+      : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("people", v.humans), tile("recoveries", v.recoveries), tile("checks", v.checks)])),
       isProvider && v.note ? h("p", { className: "quote" }, `“${v.note}” `, h("span", { className: "sub" }, "the provider's note: its words, not part of the record")) : null,
       !isProvider && v.fingerprint ? h("p", { className: "sub small" }, "Timing fingerprint ", h("span", { className: "mono" }, short(v.fingerprint)), " · report hash ", v.report ? h("a", { href: `#/r/${v.report}`, className: "mono", title: "Open the check this hash commits to" }, short(v.report)) : "—", mine[0] ? h("span", {}, " · ", h("a", { href: `#/check/${mine[0].report_id}` }, "verify it on the latest check")) : null) : null);
   }).catch((e) => facts.replaceChildren(h("p", { className: "err" }, `Couldn't read ${n} from ENS: ${e.shortMessage || e.message}`)));
@@ -522,7 +547,7 @@ async function byHash(hash) {
 function checksTable(reps) {
   return table(["When", "GPU", "Listed as", "Measured as", "Verdict", "Tx", "Indexed", ""], reps.map((r) => h("tr", {},
     h("td", {}, when(r.created_at)),
-    h("td", {}, h("a", { href: `#/check/${r.report_id}`, className: "mono", title: "Open this check" }, r.gpu_name || r.report_id)),
+    h("td", {}, h("a", { href: `#/check/${r.report_id}`, className: "mono", title: r.check_name ? `${r.check_name}: open this check` : "Open this check" }, r.check_name || r.gpu_name || r.report_id)),
     h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r), seriesTag(r), flagTag(r)),
     h("td", {}, txLink(r.tx, r.published)),
     h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
@@ -591,6 +616,7 @@ async function checkDetail(id) {
       h("div", { className: "block" }, h("div", { className: "label" }, "Why"),
         r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "All checks passed: done in time, and the hardware matches the listing."),
         kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
+          ...(r.check_name ? [["ENS name", h("a", { href: `#/name/${r.check_name}`, className: "mono", title: "This check's own ENS name, read live" }, r.check_name)]] : []),
           ...(r.uuid ? [["Card", h("span", { className: "mono", title: "NVIDIA UUID, as the host's driver reports it; the GPU's name is its first 8 hex digits" }, r.uuid)]] : []),
           ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
           ...(r.listing_reads_as ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : r.listing_reads_as.class ? "st-pass" : "st-degraded" },

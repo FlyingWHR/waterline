@@ -56,7 +56,22 @@ contract Marks is EnhancedAccessControl {
         uint32 topsX10; // latest verified INT8 TOPS x 10 (1410.5 TOPS -> 14105)
         uint16 pctBps; // latest verified TOPS as percent of the claimed model's spec x 100 (71.25% -> 7125)
         bytes32 reportHash; // keccak256 of the latest full report (canonical JSON served by the API)
+        uint32 checkCount; // published checks; check n resolves as <n>.<gpu name>
     }
+
+    /// One published check, at <n>.gpu-….<provider>.waterline.eth (node = keccak(gpuNode, keccak("<n>"))).
+    struct Check {
+        bytes32 gpu;
+        uint8 verdict;
+        uint8 cls;
+        uint16 cores;
+        uint32 topsX10;
+        uint16 pctBps;
+        uint64 at;
+        bytes32 reportHash;
+    }
+
+    mapping(bytes32 => Check) public checks;
 
     struct Provider {
         uint32 gpus; // distinct GPUs with at least one report
@@ -144,7 +159,20 @@ contract Marks is EnhancedAccessControl {
         g.topsX10 = topsX10;
         g.pctBps = pctBps;
         g.reportHash = reportHash;
+        _check(node, g, verdict);
         _emit(node, gpuVoter, providerVoter, verdict);
+    }
+
+    /// @dev Every published check gets its own name under the GPU: 1.gpu-…, 2.gpu-…, … (wildcard, no registration).
+    function _check(bytes32 node, Gpu storage g, uint8 verdict) private {
+        uint32 n = ++g.checkCount;
+        bytes32 cnode = checkNode(node, n);
+        checks[cnode] = Check(node, verdict, g.cls, g.cores, g.topsX10, g.pctBps, g.lastAt, g.reportHash);
+    }
+
+    /// @notice Node of check n of a GPU: namehash("<n>." + the GPU's name).
+    function checkNode(bytes32 gpuNode, uint32 n) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(gpuNode, keccak256(bytes(_uint(n)))));
     }
 
     /// @notice A provider's own words on its provider name. Needs ROLE_NOTE on that name (granted by the admin to the
@@ -263,7 +291,10 @@ contract Marks is EnhancedAccessControl {
         if (k == keccak256("description")) return "Waterline: renter-verified GPU record";
         Provider storage p = providers[node];
         if (p.gpus > 0 || bytes(p.note).length > 0) return _providerText(p, node, k);
+        Check storage c = checks[node];
+        if (c.at != 0) return _checkText(c, k);
         Gpu storage g = gpus[node];
+        if (k == keccak256("waterline.checks")) return _uint(g.checkCount);
         if (k == keccak256("waterline.status")) return status(node);
         if (k == keccak256("waterline.class")) return _className(g.cls);
         if (k == keccak256("waterline.cores")) return _uint(g.cores);
@@ -276,6 +307,18 @@ contract Marks is EnhancedAccessControl {
         if (k == keccak256("waterline.tops")) return g.lastAt == 0 ? "" : _fixed(g.topsX10, 10, 1);
         if (k == keccak256("waterline.pct_of_spec")) return g.lastAt == 0 ? "" : _fixed(g.pctBps, 100, 2);
         if (k == keccak256("waterline.report")) return g.lastAt == 0 ? "" : _hex(g.reportHash);
+        return "";
+    }
+
+    function _checkText(Check storage c, bytes32 k) private view returns (string memory) {
+        if (k == keccak256("waterline.verdict")) return c.verdict == PASS ? "pass" : c.verdict == FAIL ? "fail" : "degraded";
+        if (k == keccak256("waterline.class")) return _className(c.cls);
+        if (k == keccak256("waterline.cores")) return _uint(c.cores);
+        if (k == keccak256("waterline.tops")) return _fixed(c.topsX10, 10, 1);
+        if (k == keccak256("waterline.pct_of_spec")) return _fixed(c.pctBps, 100, 2);
+        if (k == keccak256("waterline.at")) return _uint(c.at);
+        if (k == keccak256("waterline.report")) return _hex(c.reportHash);
+        if (k == keccak256("waterline.gpu")) return _hex(c.gpu);
         return "";
     }
 

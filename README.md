@@ -11,7 +11,7 @@ ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENSv2 · World ID for Agents · Curv
 | **Live app** | https://waterline-eth.vercel.app |
 | **Demo video** | [link] |
 | **Try it on a rented GPU** | `curl -fsSL waterline-eth.vercel.app/run \| python3 - <provider> <gpu>` |
-| **Contract** | `Marks` [`0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8`](https://sepolia.etherscan.io/address/0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8) on Sepolia, resolver for `*.waterline.eth` |
+| **Contract** | `Marks` [`0x5E26AD29CBfCD7F0193d8950672f048621a604c4`](https://sepolia.etherscan.io/address/0x5E26AD29CBfCD7F0193d8950672f048621a604c4) on Sepolia, resolver for `*.waterline.eth` |
 
 ## One-sentence summary
 
@@ -101,8 +101,10 @@ flowchart LR
   each check; a fingerprint change is shown, never judged.
 
 ### Place: ENSv2
-- **Wildcard resolution.** `Marks` is the ENSIP-10 resolver for `waterline.eth`: every `gpu-<id>.<provider>.waterline.eth`
-  and `<provider>.waterline.eth` resolves with no registration. Text records: `waterline.status`, `class`, `cores`,
+- **Wildcard resolution, three levels.** `Marks` is the ENSIP-10 resolver for `waterline.eth`: every
+  `<provider>.waterline.eth`, `gpu-<id>.<provider>.waterline.eth` and each check, `<n>.gpu-<id>.<provider>.waterline.eth`,
+  resolves with no registration. A check's name answers `waterline.verdict`, `class`, `cores`, `tops`, `pct_of_spec`,
+  `at` and its own `report` hash; the GPU answers `waterline.checks` (how many). Text records: `waterline.status`, `class`, `cores`,
   `pct_of_spec`, `passes`, `degraded`, `fails`, `humans`, `recoveries`, `fingerprint`, `report`; providers add `gpus`,
   `failed_gpus`, `note`.
 - **The tree is the roll-up.** A GPU's node derives from its provider's, so every report also scores the provider
@@ -160,10 +162,10 @@ model), **World ID** (your session and mandate). Every GPU and provider name has
 
 | | |
 |---|---|
-| `Marks` (resolver + record) | [`0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8`](https://sepolia.etherscan.io/address/0x02D4Bd37B5C0Bef47C2DD92c784906178e19A8d8) |
+| `Marks` (resolver + record) | [`0x5E26AD29CBfCD7F0193d8950672f048621a604c4`](https://sepolia.etherscan.io/address/0x5E26AD29CBfCD7F0193d8950672f048621a604c4) |
 | ENS name | `waterline.eth` on ENSv2 (Sepolia), resolver = Marks |
 | Reporter (API) | [`0xA0B0dCe3c40499f7554c1835766B555D73A15C10`](https://sepolia.etherscan.io/address/0xA0B0dCe3c40499f7554c1835766B555D73A15C10) |
-| MultiBaas | contract alias `marks3`, webhook to `/api/webhooks/multibaas` |
+| MultiBaas | contract alias `marks4`, webhook to `/api/webhooks/multibaas` |
 | API + panel | Vercel (FastAPI) + Redis |
 
 `scripts/check_live.py` checks the whole stack (RPC, roles, ENS resolution, MultiBaas link and webhook, API, World).
@@ -247,7 +249,7 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
   gave us "indexed" confirmation for free; event queries grouped by GPU and by provider replaced a backend database.
 - **Challenges:** the free plan's 100-block look-back means you must link a contract right after deploying it, or
   history is lost. Re-deploying a contract version hit a 409 on the existing address alias; we linked it under a new
-  alias (`marks3`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
+  alias (`marks4`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
 - **A surprise:** event queries returned `bytes32` fields as lists of byte values (`"[253, 55, …]"`) instead
   of hex after a new contract version, while the webhook still sent hex; we now decode both.
 - **Feedback:** the MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits

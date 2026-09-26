@@ -87,5 +87,13 @@ contract EnsForkTest is Test {
         (out,) = ur.resolve(EnsNames.dnsEncode(pname),
             abi.encodeWithSelector(Marks.text.selector, EnsNames.namehash(pname), "waterline.status"));
         assertEq(abi.decode(out, (string)), unicode"0 of 1 GPU failed · reported by 1 person");
+
+        // each check is a name one level below its GPU: 1.gpu-….cloud-b.<label>.eth, also unregistered
+        string memory cname = string.concat("1.", name);
+        (out,) = ur.resolve(EnsNames.dnsEncode(cname),
+            abi.encodeWithSelector(Marks.text.selector, EnsNames.namehash(cname), "waterline.verdict"));
+        assertEq(abi.decode(out, (string)), "fail");
+        (out,) = ur.resolve(EnsNames.dnsEncode(name), abi.encodeWithSelector(Marks.text.selector, node, "waterline.checks"));
+        assertEq(abi.decode(out, (string)), "1");
     }
 }
