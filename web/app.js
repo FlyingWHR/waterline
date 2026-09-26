@@ -129,14 +129,16 @@ async function overview() {
     lastIdx && tile("mb", "Indexed by MultiBaas", ago(lastIdx.indexed_at), h("a", { href: `#/check/${lastIdx.report_id}` }, lastIdx.gpu_name || "the latest check")),
   ].filter(Boolean);
   return [
-    h("div", { className: "hero" }, canvas, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
-      h("h1", {}, "Waterline"),
-      h("p", { className: "lede" }, "Whether a rented GPU is the chip on the listing and delivers its speed, checked by the people who rent it. The record lives on the GPU's ENS name and rolls up to its provider's, where the host can't edit it.")),
-    oneLine(),
+    h("div", { className: "hero" }, canvas,
+      h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of delivered GPU compute"),
+        h("h1", {}, "Waterline"),
+        h("p", { className: "lede" }, "Whether a rented GPU is the chip on the listing and delivers its speed, checked by the people who rent it. The record lives on the GPU's ENS name and rolls up to its provider's, where the host can't edit it.")),
+      oneLine()),
     section("How a check works", "one principle: work only the claimed chip can finish in time", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
     ...(g.gpus.length ? [section("GPUs on record", g.source === "multibaas" ? "from MultiBaas" : "from this API", h("div", { className: "nums" },
-      ...[["Checked", g.gpus.length, ""], ["Pass", count("pass"), "st-pass"], ["Suspect", count("suspect"), "st-suspect"], ["Failed", count("failed"), "st-failed"]]
+      ...[["Checked", g.gpus.length, ""], ["Pass", count("pass") + count("recovered"), "st-pass"], ["Degraded", count("degraded"), "st-degraded"],
+        ["Suspect", count("suspect"), "st-suspect"], ["Failed", count("failed"), "st-failed"]]
         .map(([l, n, k]) => h("div", { className: "num" }, h("span", { className: "label" }, l), h("b", { className: k }, String(n))))))] : []),
     section("Recent checks", null, reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to see one here."),
       h("p", {}, h("a", { href: "#/checks" }, "All checks →"))),
@@ -149,9 +151,10 @@ function oneLine() {
   const copy = h("button", { type: "button", className: "btn sm", onclick: async () => {
     try { await navigator.clipboard.writeText(cmd); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
   } }, "Copy");
-  return section("Check your GPU", "one line, in the rented pod",
-    h("div", { className: "oneline" }, h("code", {}, cmd), copy),
-    h("p", { className: "sub" }, "Replace cloud-b with your provider and h100 with what the listing promises (h100, h100-pcie or a100). The check runs from memory and leaves nothing on the pod. A pass or a degraded result is published at once; a failure prints a link where you approve it with World."));
+  return h("div", { className: "try" },
+    h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
+    h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"), h("code", {}, cmd)),
+    h("p", { className: "sub small" }, "Your provider, then what the listing promises: h100, h100-pcie or a100. Runs from memory and leaves nothing on the pod. A pass or a degraded result publishes at once; a failure prints a link to approve it with World."));
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.
@@ -169,8 +172,14 @@ function flowDiagram() {
       wire("records", true),
       h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history")),
       wire("resolves", true),
-      h("div", { className: "stage" }, node("ens", "ENS names", "gpu-….cloud-b.waterline.eth"), att("ens", "rolls up to", "cloud-b.waterline.eth"))),
+      h("div", { className: "stage" }, node("ens", "ENS names", "one per GPU"), att("ens", "rolls up to", "its provider's name"))),
     h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
+    h("div", { className: "partners", "aria-label": "Built on" },
+      ...[["ens", "ENSv2", "the place: a name per GPU and per provider, and the roles that decide who may write"],
+          ["world", "World ID for Agents", "the people: a failure goes public only with a fresh human approval"],
+          ["mb", "Curvegrid MultiBaas", "the memory: every report indexed, so agents skip bad GPUs and providers"],
+          ["chain", "Ethereum Sepolia", "the record: Marks stores it and resolves the names"]]
+        .map(([c, name, role]) => h("div", { className: "partner c-" + c }, h("b", {}, name), h("span", {}, role)))),
     h("div", { className: "rules" },
       h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Only the listed chip at its speed finishes the exam in time. Nobody can fake that, so a pass publishes at once.")),
       h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat can slow a chip but can't remove cores. Another chip is a fail; the right chip running slow is degraded, published with its numbers.")),
