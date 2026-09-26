@@ -217,6 +217,7 @@ const GLYPHS = {
   api: [[-10, -8, 0, 20, 16, 5], [-10, -8, 7, 20, 16, 5], [-10, -8, 14, 20, 16, 5]], // a server stack
   chain: [[-15, -2, 0, 12, 12, 12], [2, -11, 0, 12, 12, 12]], // two linked blocks
   ens: [[-4, -14, 12, 8, 8, 7], [-12, 0, 0, 8, 8, 7], [4, 0, 0, 8, 8, 7]], // a name and its children
+  index: [[-12, -8, 0, 22, 14, 3], [-10, -8, 5, 22, 14, 3], [-8, -8, 10, 22, 14, 3], [-6, -8, 15, 22, 14, 3]], // an index: pages of history
 };
 
 function flowDiagram() {
@@ -235,17 +236,39 @@ function flowDiagram() {
       wire("resolves", true),
       h("div", { className: "stage" }, node("ens", "ENS names", "one per GPU"), att("ens", "rolls up to", "its provider's name"))),
     h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
-    h("div", { className: "partners", "aria-label": "Built on" },
-      ...[["ens", "ENSv2", "the namespace: an onchain name per GPU and per provider; roles decide who writes"],
-          ["world", "World ID for Agents", "sybil resistance: no failure goes onchain without a fresh human approval"],
-          ["mb", "Curvegrid MultiBaas", "the index: every verdict queryable, so agents skip bad GPUs and providers"],
-          ["chain", "Ethereum Sepolia", "the ledger: Marks holds every verdict and resolves the names"]]
-        .map(([c, name, role]) => h("div", { className: "partner c-" + c }, h("b", {}, name), h("span", {}, role)))),
-    h("div", { className: "rules" },
-      h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Correct answers, re-graded by us, on time: that takes real work on real silicon, so passes publish at once.")),
-      h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat slows a chip but can't remove cores. A wrong chip fails; the right chip running slow is degraded.")),
-      h("div", { className: "wide" }, h("b", { className: "st-fail" }, "A failure needs people, and it rolls up."), h("span", {}, "One World ID approval is a voice on the GPU and on its provider. Two people mark a GPU failed; a person counts once per provider, however many GPUs they report. Renaming a chip doesn't clean the provider."))),
-    h("p", { className: "sub" }, "The API sends a fresh puzzle and a deadline, re-grades a random slice of the answer, and counts the cores. That separates three cases: the right chip at speed, the right chip too slow, another chip."));
+    h("div", { className: "cards partners", "aria-label": "Built on" },
+      tipCard("ens", isoGlyph(GLYPHS.ens), "ENSv2", "Every GPU gets a name",
+        "Marks resolves gpu-….<provider>.waterline.eth and <provider>.waterline.eth as a wildcard resolver: nothing is registered per GPU. ENSv2 roles decide who writes: the reporter writes records, a provider may write only its own note."),
+      tipCard("world", worldGlyph(), "World ID for Agents", "A person behind every failure",
+        "No failure goes onchain without a person: a fresh World approval per report, or a bounded mandate that lets their agents report. Either way one person is one voice per GPU and per provider, pseudonymous in public."),
+      tipCard("mb", isoGlyph(GLYPHS.index), "Curvegrid MultiBaas", "History agents can query",
+        "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it directly to skip bad GPUs and providers."),
+      tipCard("chain", isoGlyph(GLYPHS.chain), "Ethereum Sepolia", "Where the record lives",
+        "Marks, one contract, holds every verdict, the per-GPU and per-provider tallies and the evidence hash of the latest check, and answers the ENS names.")),
+    h("div", { className: "cards rules" },
+      tipCard("pass", null, "A pass needs real silicon", "Passes publish at once",
+        "Correct answers, re-graded by us on a random slice, inside the deadline: that takes the work itself on a real GPU, so a pass needs no one's approval."),
+      tipCard("degraded", null, "Chip class is heat-proof", "Slow is degraded, not failed",
+        "Heat, power caps and sharing slow a chip but can't remove cores or FP8. A wrong chip fails; the right chip running slow is degraded, published with its numbers."),
+      tipCard("fail", null, "A failure needs people, and rolls up", "Two people mark a GPU failed",
+        "One World ID is one voice on the GPU and on its provider. Two different people mark a GPU failed; a person counts once per provider however many GPUs they report, so renaming a chip doesn't clean the provider.")));
+}
+
+// A card: icon, name, a short line, and the detail on hover or keyboard focus (tap on touch).
+function tipCard(tone, glyph, name, intro, more) {
+  return h("div", { className: "tip c-" + tone, tabIndex: 0 },
+    glyph, h("b", {}, name), h("span", { className: "intro" }, intro), h("span", { className: "more" }, more));
+}
+function worldGlyph() { // an orb and its orbit
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 64 56"); svg.setAttribute("class", "glyph"); svg.setAttribute("aria-hidden", "true");
+  for (const [tag, attrs] of [["circle", { cx: 32, cy: 28, r: 15, class: "front" }], ["ellipse", { cx: 32, cy: 28, rx: 25, ry: 8, class: "ring" }],
+                              ["circle", { cx: 26, cy: 22, r: 5, class: "top" }]]) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    svg.append(e);
+  }
+  return svg;
 }
 
 // Perspective wireframe: rows recede to a horizon, amplitude and opacity grow toward the viewer, one mint
