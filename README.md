@@ -2,7 +2,7 @@
 
 # Waterline
 
-**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each check is recorded onchain under the GPU's ENS name.
+**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Every check settles onchain to the GPU's own ENS name, readable by any wallet, app or agent.
 
 *Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
 need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
@@ -151,7 +151,7 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
   calldata, signs it locally, and submits it through MultiBaas. (MultiBaas's concurrent nonce management needs its
   hosted wallets; our reporter signs locally, so we publish one report at a time.)
 - **Indexer:** event indexing of `Marks.Reported`; event queries grouped by GPU power the agent's choice and the
-  control panel's health table and leaderboard. `Marks` emits running totals so queries only need `last`/`max`.
+  control panel's GPU list, name tree and Providers page. `Marks` emits running totals so queries only need `last`/`max`.
 - **Listener:** a webhook on `Reported` confirms each report was indexed; the control panel shows it.
 - **Provider roll-up:** a second event query on `ProviderTally`, grouped by provider, ranks clouds for the agent.
 

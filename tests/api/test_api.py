@@ -270,3 +270,14 @@ def test_ens_report_hash_finds_the_check():
     found = client.get(f"/api/reports/by-hash/{r['report_hash'].upper().replace('0X', '0x')}")
     assert found.status_code == 200 and found.json()["report_id"] == r["report_id"]
     assert client.get("/api/reports/by-hash/0x" + "00" * 32).status_code == 404
+
+
+def test_known_providers_are_advisory():
+    from core import providers
+    assert providers.listed("lambda") and not providers.listed("cloud-b")
+    assert providers.suggest("run-pod") == "runpod" and providers.suggest("Vast-AI") == "vastai"
+    assert providers.suggest("cloud-b") is None
+    assert any(p["slug"] == "coreweave" for p in client.get("/api/providers/known").json())
+    run_check(uuid="GPU-unlisted")  # an unlisted name is still recorded, just marked
+    rows = client.get("/api/providers").json()["providers"]
+    assert any(p["name"] == "cloud-b.waterline.eth" and p["listed"] is False for p in rows)

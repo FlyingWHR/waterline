@@ -54,7 +54,7 @@ api/        Vercel Python + Upstash Redis: exam, verdict, classification, World 
             MultiBaas webhook listener, compare / leaderboard endpoints, serves web/
 contracts/  Marks: report store + ENSIP-10 wildcard resolver for *.waterline.eth + ENSv2 Enhanced Access Control
 web/        control panel: Overview, GPUs, Checks (Approve with World), Check detail (performance, vs models,
-            vs same model, health), Leaderboard, Models, Settings
+            vs same model, health), Providers (roll-up + by model), Models, Settings
 core/       challenge maths, frozen vectors, gpu_specs.json (37 models)
 ```
 Details: `docs/INTERFACES.md` (spec), `docs/METRICS.md` (measurement method), `docs/GPU_REFERENCE.md` (specs + sources).

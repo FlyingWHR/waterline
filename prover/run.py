@@ -200,6 +200,11 @@ def main(argv=None):
         backend, n, steps = Gpu(), a.n, a.steps
     if not a.no_mark:
         mark()
+        from core import providers
+        if not providers.listed(a.cloud):
+            hint = providers.suggest(a.cloud)
+            log(paint(AMBER, f"  · {a.cloud} isn't a known provider name; it is recorded as typed"
+                             + (f" (did you mean {hint}?)" if hint and hint != a.cloud else "")))
     try:
         rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds, a.series, a.seq)
     except ApiError as e:

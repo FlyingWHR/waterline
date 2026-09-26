@@ -22,6 +22,7 @@ from core.challenge import Params
 from core.specs import MODELS
 
 from core import listing as listings
+from core import providers as providers_known
 
 from . import chain, world
 from . import perf
@@ -562,6 +563,12 @@ def gpus():
     return {"source": source, "error": error, "gpus": rows}
 
 
+@app.get("/api/providers/known")
+def known_providers():
+    """The standard provider labels (core/providers.json), for pickers. Advisory: any name is still accepted."""
+    return providers_known.KNOWN
+
+
 @app.get("/api/providers")
 def providers():
     """Reputation per provider (<cloud>.waterline.eth): each human counts once however many of its GPUs they reported."""
@@ -576,7 +583,8 @@ def providers():
     rows = _local_tallies(reps)[1] if rows is None else rows
     names = {"0x" + chain.namehash(f"{r['cloud']}.waterline.eth").hex(): f"{r['cloud']}.waterline.eth" for r in reps}
     for x in rows:
-        x |= {"name": names.get(x["provider_node"]), "status": provider_status(x)}
+        name = names.get(x["provider_node"])
+        x |= {"name": name, "status": provider_status(x), "listed": bool(name) and providers_known.listed(name.split(".")[0])}
     return {"source": source, "error": error, "providers": rows}
 
 
@@ -746,7 +754,7 @@ def bundle():
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for pkg in ("core", "prover"):
                 for f in sorted((_ROOT / pkg).glob("*")):
-                    if f.suffix == ".py" or f.name == "gpu_specs.json":
+                    if f.suffix == ".py" or f.name in ("gpu_specs.json", "providers.json"):
                         z.write(f, f"{pkg}/{f.name}")
         _BUNDLE["zip"] = buf.getvalue()
     return Response(_BUNDLE["zip"], media_type="application/zip")

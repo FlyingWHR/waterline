@@ -146,7 +146,7 @@ def checks():
             import io
             import zipfile
             names = set(zipfile.ZipFile(io.BytesIO(httpx.get(api + "/api/bundle", timeout=30).content)).namelist())
-            need = {"core/challenge.py", "core/listing.py", "core/gpu_specs.json", "prover/run.py", "prover/gpu.py"}
+            need = {"core/challenge.py", "core/listing.py", "core/gpu_specs.json", "core/providers.json", "prover/run.py", "prover/gpu.py"}
             yield need <= names, f"One-liner bundle carries the profiler ({len(names)} files)", \
                 f"Missing from /api/bundle: {sorted(need - names)}. Check .vercelignore and vercel.json excludeFiles."
             yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_CLIENT_ID and WORLD_CLIENT_SECRET there, then redeploy."

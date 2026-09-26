@@ -82,13 +82,13 @@ const table = (cols, rows) => {
 
 // ---- router ------------------------------------------------------------------------------------------------
 const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
-  leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
+  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = { check: "checks", r: "checks", models: "leaderboard", name: "gpus" }[name] || (name in routes ? name : "");
+  const tab = { check: "checks", r: "checks", models: "providers", leaderboard: "providers", name: "gpus" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
@@ -132,7 +132,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas,
       h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of Delivered Compute"),
         h("h1", {}, "Waterline"),
-        h("p", { className: "lede" }, "Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each check is recorded onchain under the GPU's ENS name.")),
+        h("p", { className: "lede" }, "Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Every check settles onchain to the GPU's own ENS name, readable by any wallet, app or agent.")),
       oneLine()),
     section("How a check works", "sealed work, a deadline, a core count", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
@@ -149,7 +149,10 @@ async function overview() {
 function oneLine() {
   // the two variables are fields inside the command: your provider's name, and the GPU the listing promises
   const cloud = h("input", { id: "ol-cloud", className: "var", placeholder: "cloud", spellcheck: false, autocomplete: "off",
-    "aria-label": "Your provider's name, e.g. cloud-b", size: 7, oninput: () => { cloud.size = Math.max(5, cloud.value.length || 7); } });
+    "aria-label": "Your provider's name, e.g. lambda", size: 7, oninput: () => { cloud.size = Math.max(5, cloud.value.length || 7); } });
+  const known = h("datalist", { id: "ol-providers" }); // suggestions only: any name is accepted
+  cloud.setAttribute("list", "ol-providers"); // input.list is read-only, so not through h()
+  api("/api/providers/known").then((ps) => known.replaceChildren(...ps.map((p) => h("option", { value: p.slug }, p.name)))).catch(() => {});
   const gpu = h("select", { id: "ol-gpu", className: "var", "aria-label": "The GPU the listing promises" },
     ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
   const cmd = () => `curl -fsSL ${location.host}/run | python3 - ${cloud.value.trim().toLowerCase() || "<cloud>"} ${gpu.value}`;
@@ -160,7 +163,7 @@ function oneLine() {
   return h("div", { className: "try" },
     h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
     h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"),
-      h("code", {}, `curl -fsSL ${location.host}/run | python3 - `, cloud, " ", h("span", { className: "pick" }, gpu))),
+      h("code", {}, `curl -fsSL ${location.host}/run | python3 - `, cloud, " ", h("span", { className: "pick" }, gpu)), known),
     h("p", { className: "sub small" }, "Fill in your provider and the GPU its listing promises. Runs from memory; nothing stays on the pod."));
 }
 
@@ -867,14 +870,26 @@ function perfSection(r, cmp) {
 }
 
 // ---- leaderboard and reference models ------------------------------------------------------------------------
-const subtabs = (cur) => h("nav", { className: "subtabs", "aria-label": "Leaderboard views" },
-  ...[["#/leaderboard", "By cloud"], ["#/models", "Reference models"]].map(([href, t]) => h("a", { href, "aria-current": href === cur ? "page" : null }, t)));
+const subtabs = (cur) => h("nav", { className: "subtabs", "aria-label": "Provider views" },
+  ...[["#/providers", "Providers"], ["#/models", "Reference models"]].map(([href, t]) => h("a", { href, "aria-current": href === cur ? "page" : null }, t)));
 
-async function leaderboard(arg) {
-  const lb = await api("/api/leaderboard");
+// Providers: the roll-up of every <cloud>.waterline.eth, then how each one's GPUs of one model performed.
+async function providersView(arg) {
+  const [lb, pv, g] = await Promise.all([api("/api/leaderboard"), api("/api/providers").catch(() => ({ providers: [] })), api("/api/gpus").catch(() => ({ gpus: [] }))]);
+  const pcts = new Map();
+  for (const x of g.gpus) if (x.pct_of_spec != null) pcts.set(x.provider_node, [...(pcts.get(x.provider_node) || []), x.pct_of_spec]);
+  const median = (xs) => { xs = [...(xs || [])].sort((a, b) => a - b); return xs.length ? xs[(xs.length - 1) >> 1] : null; };
+  const failedShare = (p) => (p.gpus ? p.failed_gpus / p.gpus : 0);
+  const provs = [...pv.providers].sort((a, b) => failedShare(a) - failedShare(b) || (median(pcts.get(b.provider_node)) ?? 0) - (median(pcts.get(a.provider_node)) ?? 0));
+  const rollup = provs.map((p) => h("tr", {},
+    h("td", {}, p.name ? h("a", { href: `#/name/${p.name}`, className: "mono", title: "Its page: the record read live from ENS" }, p.name) : h("span", { className: "mono" }, short(p.provider_node)),
+      p.listed === false ? h("span", { className: "stag", title: "Not on our list of known providers: the name is whatever the renter typed" }, "unlisted") : null),
+    h("td", {}, String(p.gpus ?? 0)), h("td", {}, h("span", { className: p.failed_gpus ? "st-fail" : "" }, String(p.failed_gpus ?? 0))),
+    h("td", {}, String(p.humans ?? 0)), h("td", {}, String(p.passes ?? 0)), h("td", {}, String(p.degraded ?? 0)), h("td", {}, String(p.fails ?? 0)),
+    h("td", {}, median(pcts.get(p.provider_node)) == null ? "—" : `${num(median(pcts.get(p.provider_node)))}%`)));
   const model = arg || lb.models[0]?.id, info = lb.models.find((m) => m.id === model);
   const rows = lb.rows.filter((x) => x.model === model), ranked = rows.filter((x) => !x.few), few = rows.filter((x) => x.few);
-  const pick = h("select", { id: "lb-model", onchange: (e) => (location.hash = `#/leaderboard/${e.target.value}`) },
+  const pick = h("select", { id: "lb-model", onchange: (e) => (location.hash = `#/providers/${e.target.value}`) },
     lb.models.map((m) => h("option", { value: m.id, selected: m.id === model }, `${m.name} · ${m.n} check${m.n > 1 ? "s" : ""}`)));
   const range = (r, u) => (r && r[0] !== r[1] ? h("small", { className: "sub" }, ` ${fmt(r[0])}–${fmt(r[1])}${u}`) : null);
   const tr = (x) => h("tr", { className: x.few ? "few" : "" },
@@ -884,11 +899,14 @@ async function leaderboard(arg) {
     h("td", {}, x.median_tops == null ? "—" : h("span", {}, `${fmt(x.median_tops)} TOPS`, range(x.tops_range, ""), h("small", { className: "sub" }, ` · n = ${x.n_verified}`))),
     h("td", {}, x.median_pct_of_spec == null ? "—" : h("span", {}, `${fmt(x.median_pct_of_spec)}%`, range(x.pct_range, "%"))),
     h("td", {}, h("span", {}, `${Math.round(100 * x.pass_rate)}%`, h("small", { className: "sub" }, ` ${Math.round(x.pass_rate * x.n)} of ${x.n}`))));
-  const cols = ["Rank", "Cloud", "Checks", "Median verified INT8 (range · n)", "Median % of rating (range)", "Pass rate"];
+  const cols = ["Rank", "Provider", "Checks", "Median verified INT8 (range · n)", "Median % of rating (range)", "Pass rate"];
   return [
-    head("Leaderboard", "Clouds, by what their GPUs deliver", subtabs("#/leaderboard"),
-      h("p", { className: "sub" }, "How each cloud's GPUs of one listed model performed. Only verified numbers rank: work the API re-graded and timed itself.")),
-    section(info ? info.name : "No checks yet", info ? `${info.n} checks across ${rows.length} cloud${rows.length === 1 ? "" : "s"}` : null,
+    head("Providers", "Every provider on record, and what its GPUs deliver", subtabs("#/providers"),
+      h("p", { className: "sub" }, "Each provider is an ENS name, <cloud>.waterline.eth, and its GPUs are named under it. Its record is the roll-up of theirs: a person counts once however many of its GPUs they report.")),
+    section("All providers", pv.source === "multibaas" ? "source: MultiBaas (ProviderTally events on Marks)" : "source: this API's own records",
+      rollup.length ? table(["Provider", "GPUs", "Failed now", "People", "Passes", "Degraded", "Fails", "Median % of rating"], rollup)
+        : h("p", { className: "empty" }, "No provider is on the record yet.")),
+    section(info ? `By model · ${info.name}` : "By model", info ? `${info.n} checks across ${rows.length} provider${rows.length === 1 ? "" : "s"}` : null,
       lb.models.length ? h("div", { className: "field narrow" }, h("label", { className: "label", htmlFor: "lb-model" }, "Listed model"), pick) : null,
       ranked.length ? table(cols, ranked.map(tr)) : rows.length ? h("p", { className: "empty" }, `No cloud has ${lb.min_n} checks of this model yet, so none is ranked.`) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to start the board."),
       few.length ? h("details", { className: "fewbox", open: !ranked.length }, h("summary", {}, `${few.length} cloud${few.length > 1 ? "s" : ""} with fewer than ${lb.min_n} checks, not ranked`),
@@ -909,7 +927,7 @@ async function modelsView() {
     h("td", {}, ...dense(m, "int8_tops")), h("td", {}, ...dense(m, "bf16_tflops")), h("td", {}, ...dense(m, "fp8_tflops")),
     h("td", {}, m.sources.map((u, i) => h("a", { href: u, target: "_blank", rel: "noopener", className: "src", title: u }, `[${i + 1}]`)))));
   return [
-    head("Leaderboard", "Reference models", subtabs("#/models"),
+    head("Providers", "Reference models", subtabs("#/models"),
       h("p", { className: "sub" }, `${d.models.length} reference models from vendor datasheets (${d.generated}). Dense throughput; sparse-only figures are halved.`)),
     section("Spec table", `${d.models.length} models · ${d.confusable_pairs.length} look-alike pairs`,
       table(["Model", "SMs", "FP8", "Memory", "Bandwidth", "INT8 TOPS", "BF16 TFLOPS", "FP8 TFLOPS", "Sources"], rows),
