@@ -376,6 +376,7 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 /* the one-liner's variables: fields set inside the command */
 .oneline .var{font:inherit; color:var(--accent); background:transparent; border:0; border-bottom:1px dashed var(--accent); padding:0 2px; border-radius:0;}
 .oneline .var::placeholder{color:var(--muted);}
+.oneline select.var:invalid, .oneline select.var option[disabled]{color:var(--muted);}
 .oneline select.var{cursor:pointer; appearance:none; padding-right:2px;}
 .oneline .var:focus-visible{outline:1px solid var(--accent); outline-offset:2px;}
 .oneline select.var option{background:var(--deep); color:var(--ink);}

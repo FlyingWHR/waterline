@@ -147,24 +147,32 @@ async function overview() {
 
 // The one-line check a renter pastes into the rented pod's terminal. Nothing of ours is written to the pod.
 function oneLine() {
-  // the two variables are fields inside the command: your provider's name, and the GPU the listing promises
-  const cloud = h("input", { id: "ol-cloud", className: "var", placeholder: "cloud", spellcheck: false, autocomplete: "off",
-    "aria-label": "Your provider's name, e.g. lambda", size: 7, oninput: () => { cloud.size = Math.max(5, cloud.value.length || 7); } });
-  const known = h("datalist", { id: "ol-providers" }); // suggestions only: any name is accepted
-  cloud.setAttribute("list", "ol-providers"); // input.list is read-only, so not through h()
-  api("/api/providers/known").then((ps) => known.replaceChildren(...ps.map((p) => h("option", { value: p.slug }, p.name)))).catch(() => {});
-  const gpu = h("select", { id: "ol-gpu", className: "var", "aria-label": "The GPU the listing promises" },
-    ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
-  const cmd = () => `curl -fsSL ${location.host}/run | python3 - ${cloud.value.trim().toLowerCase() || "<cloud>"} ${gpu.value}`;
+  // the two variables are pickers inside the command: the provider (known names, or type your own) and the listed GPU
+  const fit = (el, text) => { el.style.width = `${Math.max(4, text.length) + 2.2}ch`; };
+  const pickCloud = h("select", { id: "ol-cloud", className: "var", required: true, "aria-label": "Your provider",
+    onchange: () => { if (pickCloud.value === "other") { pickCloud.replaceWith(other); other.focus(); } else fit(pickCloud, pickCloud.value); } },
+    h("option", { value: "", disabled: true, selected: true }, "provider"));
+  const other = h("input", { id: "ol-cloud-other", className: "var", placeholder: "your-provider", spellcheck: false, autocomplete: "off",
+    "aria-label": "Your provider's name, lowercase", oninput: () => fit(other, other.value || other.placeholder) });
+  fit(pickCloud, "provider"); fit(other, other.placeholder);
+  api("/api/providers/known").then((ps) => pickCloud.append(
+    ...["cloud", "marketplace"].map((k) => h("optgroup", { label: k === "cloud" ? "GPU clouds" : "Marketplaces (the host is a third party)" },
+      ps.filter((p) => p.kind === k).map((p) => h("option", { value: p.slug, title: p.name }, p.slug)))),
+    h("option", { value: "other" }, "other…"))).catch(() => pickCloud.replaceWith(other));
+  const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => fit(gpu, gpu.value) },
+    h("option", { value: "", disabled: true, selected: true }, "gpu"), ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
+  fit(gpu, "gpu");
+  const cloudValue = () => (other.isConnected ? other.value.trim().toLowerCase() : pickCloud.value);
   const copy = h("button", { type: "button", className: "btn sm", onclick: async () => {
-    if (!cloud.value.trim()) { cloud.focus(); copy.textContent = "Name your provider first"; return; }
-    try { await navigator.clipboard.writeText(cmd()); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
+    const [c, g] = [cloudValue(), gpu.value];
+    if (!c || !g) { (!c ? (other.isConnected ? other : pickCloud) : gpu).focus(); copy.textContent = !c ? "Pick your provider" : "Pick the GPU"; return; }
+    try { await navigator.clipboard.writeText(`curl -fsSL ${location.host}/run | python3 - ${c} ${g}`); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
   } }, "Copy");
   return h("div", { className: "try" },
     h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
     h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"),
-      h("code", {}, `curl -fsSL ${location.host}/run | python3 - `, cloud, " ", h("span", { className: "pick" }, gpu)), known),
-    h("p", { className: "sub small" }, "Fill in your provider and the GPU its listing promises. Runs from memory; nothing stays on the pod."));
+      h("code", {}, `curl -fsSL ${location.host}/run | python3 - `, h("span", { className: "pick" }, pickCloud), " ", h("span", { className: "pick" }, gpu))),
+    h("p", { className: "sub small" }, "Pick your provider and the GPU its listing promises. Runs from memory; nothing stays on the pod."));
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.
