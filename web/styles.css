@@ -7,7 +7,8 @@
   --gridc:rgba(120,175,195,.055); --gridc2:rgba(120,175,195,.09);
   --accent:#5fe3b9; --accent-soft:rgba(95,227,185,.10);
   --pass:#5fe3b9; --fail:#ff7b6b; --warn:#f2c14e;
-  --pod:#f2a65a; --api:#a996ff; --chain:#6f9bff; --ens:#0080bc; --world:#f6f6f6; --mb:#ee2121; --ens-ink:#5fb3dc; /* ENS blue lifted for text on the dark ground */
+  --pod:#f2a65a; --api:#a996ff; --chain:#9aa6c8; --ens:#2f9bdc; --world:#d9dee2; --mb:#f0443a; --ens-ink:#6cbbe8;
+  /* sponsor hues tuned for the dark UI; their logos keep the exact brand colours */
   --ens-fill:rgba(0,128,188,.1); --world-fill:rgba(246,246,246,.06);
   --display:"Hanken Grotesk","Helvetica Neue",Helvetica,Arial,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
@@ -437,3 +438,5 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .tip .logo{grid-row:span 2; width:34px; height:34px; object-fit:contain; margin:0 4px;}
 .flow .att .logo{width:15px; height:15px; vertical-align:-2px; margin-right:7px;}
 .tip b{color:color-mix(in srgb, var(--c) 72%, #ffffff);} /* the brand hue, lifted enough to read on the dark ground */
+/* World's outline softer than pure white, so it sits with the other attachments */
+.flow .att.c-world{border-color:color-mix(in srgb, var(--world) 55%, transparent);}

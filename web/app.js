@@ -108,7 +108,14 @@ async function route(focus) {
 }
 addEventListener("hashchange", () => (dlg.open ? dlg.close() : route(true))); // closing the dialog re-routes
 // class names first (every table and pill uses them); a failed load keeps the three built in
-api("/api/gpu-classes").then((t) => { GPU_TABLE = t; for (const c of t) CLASSES[c.code] = c.name; }).catch(() => {}).finally(() => route(false));
+const useClasses = (t) => { GPU_TABLE = t; for (const c of t) CLASSES[c.code] = c.name; };
+try { const t = JSON.parse(localStorage.getItem("waterline.gpu_classes") || "null"); if (t) useClasses(t); } catch { /* private mode */ }
+const classesReady = api("/api/gpu-classes").then((t) => {
+  useClasses(t);
+  try { localStorage.setItem("waterline.gpu_classes", JSON.stringify(t)); } catch { /* private mode */ }
+}).catch(() => {});
+// first paint waits at most 800 ms for the table (a cold API can take seconds); a cached copy paints at once
+(GPU_TABLE.length ? Promise.resolve() : Promise.race([classesReady, sleep(800)])).then(() => route(false));
 
 // ---- overview ----------------------------------------------------------------------------------------------
 async function overview() {
@@ -129,7 +136,7 @@ async function overview() {
     checksN && tile("chain", "On the record", plural(checksN, "check"), lastTx ? h("span", {}, "Latest ", scan("tx", lastTx.tx), " · ", ago(lastTx.created_at)) : null),
     lastGpu?.gpu_name && tile("ens", "Named on ENS", lastGpu.gpu_name, h("span", {}, pill(lastGpu.status), " ", h("a", { href: "#/gpus" }, "look it up →"))),
     humansN && tile("world", "Approved with World ID", plural(humansN, "failure report"), "Each one approved by a person before it went public."),
-    lastIdx && tile("mb", "Indexed by MultiBaas", ago(lastIdx.indexed_at), h("a", { href: `#/check/${lastIdx.report_id}` }, lastIdx.gpu_name || "the latest check")),
+    lastIdx && tile("pass", "Indexed by MultiBaas", ago(lastIdx.indexed_at), h("a", { href: `#/check/${lastIdx.report_id}` }, lastIdx.gpu_name || "the latest check")),
   ].filter(Boolean);
   return [
     h("div", { className: "hero" }, canvas,
