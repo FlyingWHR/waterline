@@ -150,24 +150,28 @@ function oneLine() {
   // the two variables are pickers inside the command: the provider (known names, or type your own) and the listed GPU
   const fit = (el, text) => { el.style.width = `${Math.max(4, text.length) + 2.2}ch`; };
   const pickCloud = h("select", { id: "ol-cloud", className: "var", required: true, "aria-label": "Your provider",
-    onchange: () => { if (pickCloud.value === "other") { pickCloud.replaceWith(other); other.focus(); } else fit(pickCloud, pickCloud.value); } },
+    onchange: () => { reset(); if (pickCloud.value === "other") { pickCloud.replaceWith(other); other.focus(); } else fit(pickCloud, pickCloud.value); } },
     h("option", { value: "", disabled: true, selected: true }, "provider"));
   const other = h("input", { id: "ol-cloud-other", className: "var", placeholder: "your-provider", spellcheck: false, autocomplete: "off",
-    "aria-label": "Your provider's name, lowercase", oninput: () => fit(other, other.value || other.placeholder) });
+    "aria-label": "Your provider's name, lowercase", oninput: () => { fit(other, other.value || other.placeholder); reset(); },
+    // left empty: back to the list (when it loaded)
+    onblur: () => { if (other.isConnected && !other.value.trim() && pickCloud.options.length > 1) { pickCloud.value = ""; fit(pickCloud, "provider"); other.replaceWith(pickCloud); } } });
   fit(pickCloud, "provider"); fit(other, other.placeholder);
   api("/api/providers/known").then((ps) => pickCloud.append(
     ...["cloud", "marketplace"].map((k) => h("optgroup", { label: k === "cloud" ? "GPU clouds" : "Marketplaces (the host is a third party)" },
       ps.filter((p) => p.kind === k).map((p) => h("option", { value: p.slug, title: p.name }, p.slug)))),
     h("option", { value: "other" }, "other…"))).catch(() => pickCloud.replaceWith(other));
-  const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => fit(gpu, gpu.value) },
+  const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => { fit(gpu, gpu.value); reset(); } },
     h("option", { value: "", disabled: true, selected: true }, "gpu"), ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
   fit(gpu, "gpu");
-  const cloudValue = () => (other.isConnected ? other.value.trim().toLowerCase() : pickCloud.value);
+  // a typed name becomes a valid label: lowercase, a-z 0-9 and hyphens (what the API accepts)
+  const cloudValue = () => (other.isConnected ? other.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) : pickCloud.value);
   const copy = h("button", { type: "button", className: "btn sm", onclick: async () => {
     const [c, g] = [cloudValue(), gpu.value];
     if (!c || !g) { (!c ? (other.isConnected ? other : pickCloud) : gpu).focus(); copy.textContent = !c ? "Pick your provider" : "Pick the GPU"; return; }
     try { await navigator.clipboard.writeText(`curl -fsSL ${location.host}/run | python3 - ${c} ${g}`); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
   } }, "Copy");
+  function reset() { copy.textContent = "Copy"; }
   return h("div", { className: "try" },
     h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
     h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"),
