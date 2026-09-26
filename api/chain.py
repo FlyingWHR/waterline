@@ -9,7 +9,9 @@ from eth_account import Account
 from eth_utils import keccak, to_checksum_address
 
 log = logging.getLogger("waterline.chain")
-SELECTOR = keccak(text="record(bytes32,uint8,uint8,uint16,bytes32,bytes32)")[:4]
+SIGNATURE = "record(bytes32,uint8,uint8,uint16,bytes32,bytes32,uint32,uint16)"
+SELECTOR = keccak(text=SIGNATURE)[:4]
+ARG_TYPES = ["bytes32", "uint8", "uint8", "uint16", "bytes32", "bytes32", "uint32", "uint16"]
 DRY_RUN_CALLS = []  # dry-run record() calls, newest last (tests read this)
 
 
@@ -20,6 +22,12 @@ def namehash(name: str) -> bytes:
         for label in reversed(name.split(".")):
             node = keccak(node + keccak(text=label))
     return node
+
+
+def encode_perf(tops, pct):
+    """(topsX10, pctBps) for Marks.record from verified TOPS and percent of spec; None -> 0, clamped to the uint range."""
+    clamp = lambda x, scale, hi: 0 if x is None else max(0, min(hi, round(x * scale)))  # noqa: E731
+    return clamp(tops, 10, 2**32 - 1), clamp(pct, 100, 2**16 - 1)
 
 
 class ChainError(Exception):
@@ -57,16 +65,18 @@ def balance_eth(address):
         return None
 
 
-def record(node: bytes, verdict: int, cls: int, cores: int, fingerprint: bytes, voter_id: bytes):
-    """Marks.record(...). Returns the tx hash (0x hex), or None in dry-run. Raises ChainError on failure."""
-    args = (node, verdict, cls, cores, fingerprint, voter_id)
+def record(node: bytes, verdict: int, cls: int, cores: int, fingerprint: bytes, voter_id: bytes,
+           tops_x10: int = 0, pct_bps: int = 0):
+    """Marks.record(...). tops_x10 / pct_bps from encode_perf. Returns the tx hash (0x hex), or None in dry-run.
+    Raises ChainError on failure."""
+    args = (node, verdict, cls, cores, fingerprint, voter_id, tops_x10, pct_bps)
     addr, key, rpc = (os.environ.get(k) for k in ("MARKS_ADDRESS", "REPORTER_KEY", "SEPOLIA_RPC"))
     if not (addr and key and rpc):
         DRY_RUN_CALLS.append(args)
-        log.info("dry-run Marks.record node=0x%s verdict=%d cls=%d cores=%d fp=0x%s voter=0x%s",
-                 node.hex(), verdict, cls, cores, fingerprint.hex(), voter_id.hex())
+        log.info("dry-run Marks.record node=0x%s verdict=%d cls=%d cores=%d fp=0x%s voter=0x%s tops_x10=%d pct_bps=%d",
+                 node.hex(), verdict, cls, cores, fingerprint.hex(), voter_id.hex(), tops_x10, pct_bps)
         return None
-    data = SELECTOR + encode(["bytes32", "uint8", "uint8", "uint16", "bytes32", "bytes32"], list(args))
+    data = SELECTOR + encode(ARG_TYPES, list(args))
     acct = Account.from_key(key)
     try:
         tx = {"from": acct.address, "to": to_checksum_address(addr), "data": "0x" + data.hex(), "value": 0}

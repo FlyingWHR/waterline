@@ -55,10 +55,10 @@ Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECR
 
 ## Marks contract (contracts/, Solidity ^0.8.25, Foundry)
 ```
-record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId)  onlyReporter
+record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId, uint32 topsX10, uint16 pctBps)  onlyReporter
   pass: passes++ ; fail: require voterId != 0 and not used for this node; fails++, humans++
 event Reported(bytes32 indexed node, bytes32 voterId, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint,
-               uint64 at, uint32 passes, uint32 fails, uint32 humans)
+               uint32 topsX10, uint16 pctBps, uint64 at, uint32 passes, uint32 fails, uint32 humans)
 text(bytes32 node, string key) view -> string
   keys: waterline.class ("H100 SXM"…), waterline.cores, waterline.fingerprint (0x hex), waterline.passes,
         waterline.fails, waterline.humans, waterline.status ("unknown"|"pass"|"suspect · 1 of 2 humans"|"failed")
@@ -112,3 +112,36 @@ New read endpoints (JSON):
 Commit `probes` may include optional `staircase: {"64": ms, ...}` which the API stores with the report. The profiler always sends it (CPU mode: synthetic, step at the simulated SM count).
 Report `status_text`: "Published." / "Publishing failed." / "Waiting for a human approval. Nothing is published yet." / "Recorded on Marks.".
 The approval endpoints stay as they are; the web app uses the agent token from the World login done in the browser (stored in localStorage only as a convenience; the agent CLI keeps its own).
+
+## Performance profile (Ookla-style) — shared data model
+Every metric is an object: `{ "value": float|null, "unit": str, "method": str, "trust": "verified"|"measured"|"reported",
+"n": int, "median": float, "p10": float, "p90": float, "cv": float, "spec": float|null, "pct_of_spec": float|null,
+"spec_source": str|null, "expected_pct": [lo, hi]|null, "flag": null|"low"|"high"|"unstable" }`.
+Trust grades: **verified** = computed from work the API re-graded and timed on its own clock (can't be inflated);
+**measured** = timed by our code in the pod with CUDA events (a malicious driver could, in principle, lie);
+**reported** = read from the driver/NVML (fakeable).
+
+Report field `metrics` (profiler sends the measured ones in the reveal; the API adds the verified ones):
+| key | unit | trust | method (see docs/METRICS.md) |
+|---|---|---|---|
+| `int8_tops_verified` | TOPS | verified | ops_total / API-clock seconds from start to commit (lower bound; includes generation + network) |
+| `int8_tops` | TOPS | measured | torch._int_mm n=8192, CUDA events, warm-up 5, median of 20 |
+| `bf16_tflops` | TFLOPS | measured | torch.matmul BF16 n=8192, same timing |
+| `fp8_tflops` | TFLOPS | measured | torch._scaled_mm e4m3, same timing; null + `supported:false` when it errors |
+| `hbm_copy_tbs` / `hbm_read_tbs` | TB/s | measured | device copy and read-reduction over ≥ 4 GiB (≫ L2), L2 flushed between trials |
+| `h2d_gbs` / `d2h_gbs` | GB/s | measured | pinned host memory, 1 GiB transfers |
+| `launch_us` | µs | measured | empty-kernel round trip, median of 1000 |
+| `mem_alloc_gib` | GiB | measured | largest allocation actually written and read back (catches 40 GB sold as 80 GB) |
+| `sm_count` | SMs | measured | staircase, sweep 32..256 blocks, independent of the driver's reported count |
+| `stability_cv` | % | measured | coefficient of variation of per-second BF16 throughput over the burn |
+Plus `classification`: `{ "best_match": model_id, "candidates": [{"id", "distance", "why"}], "claimed": model_id,
+"consistent": bool }` using `core/gpu_specs.json` (features: sm_count, fp8 supported, mem_alloc_gib, hbm bandwidth,
+int8/fp8 throughput ratios; confusable pairs reported as ambiguous rather than guessed).
+
+Comparison endpoints:
+- `GET /api/compare/{report_id}` -> `{ vs_spec: {metric: pct}, vs_models: [{id, name, metric values from spec}],
+  cohort: {model_id, n, percentiles: {metric: pct_rank}} | {n, note: "not enough checks yet"} }` (cohort = same
+  best_match model; percentiles only when n >= 5).
+- `GET /api/leaderboard?model=` -> per (model, cloud): n, median `int8_tops_verified`, median pct_of_spec, pass rate.
+Chain: `Marks.record` gains `uint32 topsX10` (verified INT8 TOPS × 10) and `uint16 pctBps` (pct of spec × 100);
+text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries both.

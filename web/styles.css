@@ -168,6 +168,72 @@ svg.spark .curve{fill:none; stroke:var(--pod); stroke-width:1.5;}
 svg.spark circle{fill:var(--pod);}
 svg.spark .mean{stroke:var(--dim); stroke-dasharray:2 4;}
 
+/* performance profile: solid panel, so it reads as the check's own numbers (the health report stays dashed) */
+section.perf{background:var(--panel); border:1px solid var(--line2); padding:24px; margin:24px 0; position:relative;}
+section.perf::before{content:""; position:absolute; left:-1px; top:-1px; width:14px; height:14px; border-left:1px solid var(--accent); border-top:1px solid var(--accent);}
+section.perf{grid-template-columns:minmax(0,1fr);}
+.headline{display:grid; gap:8px;}
+.headline .pill{white-space:normal;}
+.headline .big{font-size:clamp(28px,4vw,40px);}
+.headline .big small{font-family:var(--display); font-size:clamp(15px,1.8vw,19px); color:var(--body2);}
+.pill.trust{letter-spacing:.14em; text-transform:uppercase; font-size:10px; padding:1px 7px;}
+.trust-verified{color:var(--accent);} .trust-measured{color:var(--ens);} .trust-reported{color:var(--warn);} .trust-unknown{color:var(--muted);}
+td.numc{font-family:var(--mono); font-size:14px;}
+td.note{white-space:normal; min-width:22ch; max-width:40ch; font-size:13px;}
+tr.flagged td:first-child{box-shadow:inset 2px 0 0 var(--warn); padding-left:10px;}
+.spread{display:grid; gap:3px; min-width:110px;}
+.spread small,.pctv small,.stripw small{font-family:var(--mono); font-size:11px; color:var(--muted);}
+.rbar{position:relative; height:8px; width:110px; border-left:1px solid var(--line); border-right:1px solid var(--line);}
+.rbar::before{content:""; position:absolute; left:0; right:0; top:50%; border-top:1px solid var(--line2);}
+.rbar i{position:absolute; top:1px; bottom:1px; background:rgba(79,214,238,.35);}
+.rbar b{position:absolute; top:-2px; bottom:-2px; width:2px; margin-left:-1px; background:var(--ink);}
+.pct{display:flex; align-items:center; gap:10px;}
+.pbar{position:relative; height:8px; width:120px; flex:none; background:var(--line2);}
+.pbar .band{position:absolute; top:-3px; bottom:-3px; background:rgba(95,227,185,.16); border-left:1px solid rgba(95,227,185,.5); border-right:1px solid rgba(95,227,185,.5);}
+.pbar i{position:absolute; left:0; top:2px; bottom:2px; background:var(--accent);}
+.pbar.warn i{background:var(--warn);}
+.pbar em{position:absolute; top:-5px; bottom:-5px; border-left:1px solid var(--muted);}
+.pctv{font-family:var(--mono); font-size:13px; white-space:nowrap;}
+details.methods,details.fewbox{border-top:1px solid var(--line2); padding-top:10px;}
+details summary{cursor:pointer; font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted);}
+details summary:hover{color:var(--ink);}
+details[open] summary{margin-bottom:12px;}
+details.methods dl.kv{font-family:var(--display); font-size:13.5px; max-width:110ch;}
+details.methods .small{margin-top:10px;}
+svg.scatter,svg.strip{display:block; width:100%; height:auto; font-family:var(--mono);}
+svg.scatter .ax{font-size:10.5px; fill:var(--muted);}
+svg.scatter .grid,svg.strip .grid{stroke:var(--line2);}
+svg.scatter .pt,svg.strip .pt{fill:var(--dim);}
+svg.scatter .pt.best{fill:var(--ens);}
+svg.scatter .ring{fill:none; stroke:var(--accent); stroke-width:1.5;}
+svg.scatter .me{fill:var(--pod);}
+svg.scatter .lbl{font-size:11px; fill:var(--body2);}
+svg.scatter .lbl.claimed{fill:var(--accent);}
+svg.scatter .lbl.me-l{fill:var(--pod);}
+svg.strip{max-width:320px;}
+svg.strip .mine{fill:var(--pod); stroke:var(--bg); stroke-width:1.5;}
+.sw-me{display:inline-block; width:9px; height:9px; background:var(--pod); transform:rotate(45deg);}
+.sw-ring{display:inline-block; width:12px; height:12px; border:1.5px solid var(--accent); border-radius:50%;}
+.sw-pt,.sw-best{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--dim);}
+.sw-best{background:var(--ens);}
+ol.cands{margin:0; padding-left:20px; display:grid; gap:8px; max-width:70ch;}
+ol.cands li{font-size:14px;}
+ol.cands .dist{font-family:var(--mono); font-size:11px; color:var(--dim);}
+ul.cohort{margin:0; padding:0; list-style:none; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px 28px;}
+ul.cohort li{display:grid; gap:6px; border-top:1px solid var(--line2); padding-top:10px;}
+.stripw{display:grid; gap:2px;}
+
+/* leaderboard and reference models */
+.subtabs{display:flex; gap:2px; flex-wrap:wrap;}
+.subtabs a{font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); padding:6px 12px; border:1px solid var(--line2);}
+.subtabs a[aria-current="page"]{color:var(--accent); border-color:var(--accent);}
+.field.narrow{flex:none; max-width:420px;}
+select{font-family:var(--mono); font-size:13.5px; padding:9px 10px; border:1px solid var(--line); background:var(--deep); color:var(--ink); max-width:100%;}
+select:focus-visible{border-color:var(--accent); outline-offset:0;}
+tr.few td{color:var(--muted);}
+abbr.unv{color:var(--warn); text-decoration:none; margin-left:2px; cursor:help;}
+a.src{font-family:var(--mono); font-size:12px; margin-right:6px;}
+
 /* how a check works: nodes and wires; a row on wide screens, a column on phones */
 .flow{display:flex; align-items:flex-start;}
 .flow .stage{flex:1 1 0; min-width:0; display:grid; gap:28px;}
@@ -225,8 +291,16 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
   .hero{padding:48px 0 190px;}
   .hero canvas{left:-16px; right:-16px; width:calc(100% + 32px); height:175px;}
   section.advisory{padding:16px;}
+  section.perf{padding:16px;}
+  td.note{max-width:none; min-width:0;}
+  .spread{justify-items:end;}
+  .pct{justify-content:flex-end; min-width:0;}
+  .pbar{width:72px;}
+  .pctv{white-space:normal; text-align:right;}
+  .field.narrow{max-width:none; width:100%;}
+  select{width:100%;}
   .tabs{margin-left:0; width:100%;}
-  .tabs a{padding:6px 8px; letter-spacing:.16em;}
+  .tabs a{padding:6px 6px; letter-spacing:.1em;}
   .brand small{display:none;}
   .panel{padding:16px;}
   /* tables become label/value stacks so every action stays on screen */

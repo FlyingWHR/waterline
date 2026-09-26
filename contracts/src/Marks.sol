@@ -19,6 +19,8 @@ contract Marks {
         uint32 fails;
         uint32 humans; // distinct verified humans who reported a failure
         uint64 lastAt;
+        uint32 topsX10; // latest verified INT8 TOPS x 10 (1410.5 TOPS -> 14105)
+        uint16 pctBps; // latest verified TOPS as percent of the claimed model's spec x 100 (71.25% -> 7125)
     }
 
     address public admin;
@@ -33,6 +35,8 @@ contract Marks {
         uint8 cls,
         uint16 cores,
         bytes32 fingerprint,
+        uint32 topsX10,
+        uint16 pctBps,
         uint64 at,
         uint32 passes,
         uint32 fails,
@@ -59,9 +63,17 @@ contract Marks {
 
     /// @notice Record one verified report. Passes carry their own evidence; a failure needs a
     ///         voter ID (one per verified human per GPU, derived by the API from World ID).
-    function record(bytes32 node, uint8 verdict, uint8 cls, uint16 cores, bytes32 fingerprint, bytes32 voterId)
-        external
-    {
+    ///         topsX10 / pctBps: the report's verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
+    function record(
+        bytes32 node,
+        uint8 verdict,
+        uint8 cls,
+        uint16 cores,
+        bytes32 fingerprint,
+        bytes32 voterId,
+        uint32 topsX10,
+        uint16 pctBps
+    ) external {
         if (msg.sender != reporter) revert NotReporter();
         Gpu storage g = gpus[node];
         if (verdict == PASS) {
@@ -79,7 +91,11 @@ contract Marks {
         g.cores = cores;
         g.fingerprint = fingerprint;
         g.lastAt = uint64(block.timestamp);
-        emit Reported(node, voterId, verdict, cls, cores, fingerprint, g.lastAt, g.passes, g.fails, g.humans);
+        g.topsX10 = topsX10;
+        g.pctBps = pctBps;
+        emit Reported(
+            node, voterId, verdict, cls, cores, fingerprint, topsX10, pctBps, g.lastAt, g.passes, g.fails, g.humans
+        );
     }
 
     // ---- reading -------------------------------------------------------------------------------
@@ -102,6 +118,8 @@ contract Marks {
         if (k == keccak256("waterline.fails")) return _uint(g.fails);
         if (k == keccak256("waterline.humans")) return _uint(g.humans);
         if (k == keccak256("waterline.fingerprint")) return g.lastAt == 0 ? "" : _hex(g.fingerprint);
+        if (k == keccak256("waterline.tops")) return g.lastAt == 0 ? "" : _fixed(g.topsX10, 10, 1);
+        if (k == keccak256("waterline.pct_of_spec")) return g.lastAt == 0 ? "" : _fixed(g.pctBps, 100, 2);
         if (k == keccak256("description")) return "Waterline: renter-verified GPU record";
         return "";
     }
@@ -146,6 +164,14 @@ contract Marks {
         bytes memory out = new bytes(b.length - i);
         for (uint256 j; j < out.length; ++j) out[j] = b[i + j];
         return string(out);
+    }
+
+    /// @dev v / scale with `decimals` digits after the point: _fixed(14105, 10, 1) = "1410.5", _fixed(7105, 100, 2) = "71.05".
+    function _fixed(uint256 v, uint256 scale, uint256 decimals) private pure returns (string memory) {
+        bytes memory frac = bytes(_uint(scale + v % scale)); // leading "1" keeps the zero padding
+        bytes memory out = new bytes(decimals);
+        for (uint256 i; i < decimals; ++i) out[i] = frac[i + 1];
+        return string.concat(_uint(v / scale), ".", string(out));
     }
 
     function _hex(bytes32 v) private pure returns (string memory) {

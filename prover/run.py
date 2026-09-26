@@ -8,10 +8,12 @@ Probes run first (they are not part of the timed work). Then: start -> compute e
 stderr. Writes result.json (probes, staircase timings in ms, API result) for the agent and the web chart.
 The staircase (blocks -> ms) also goes to the API as probes.staircase, for the web chart.
 After commit (the deadline clock has stopped) it collects a health report (prover/health.py: NVML, a sustained
-burn, DCGM; CPU mode: simulated) and sends it with the reveal. The API stores it; it never affects the verdict.
+burn, DCGM; CPU mode: simulated) and the performance profile (prover/perf.py, docs/METRICS.md; CPU mode:
+simulated from core/gpu_specs.json) and sends both with the reveal.
 """
 import argparse
 import hashlib
+import secrets
 import json
 import sys
 import time
@@ -19,7 +21,9 @@ import urllib.error
 import urllib.request
 
 from core.challenge import Params, fingerprint_rows, leaf_hash, merkle_root, product
+from core.specs import MODELS
 from prover import health
+from prover.metrics import sim_staircase, simulate
 
 
 class ApiError(Exception):
@@ -44,25 +48,32 @@ def log(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
-# SM counts per class, used only to fake probes in CPU mode.
-FP8_BY_SMS = {132: True, 114: True, 108: False}
+# CPU mode: which model an SM count plays (108 plays the A100 40GB, like health.simulated)
+MODEL_BY_SMS = {132: "h100-sxm", 114: "h100-pcie", 108: "a100-sxm-40"}
 
 
 class Cpu:
-    """core/ maths on the CPU. Probes are fixed test values; the staircase is synthetic (seconds, like the GPU's)."""
+    """core/ maths on the CPU. Probes and metrics are simulated from the model's specs; the staircase is synthetic
+    (seconds, like the GPU's)."""
 
-    def __init__(self, sms=132, uuid=None):
-        self.sms = sms
+    def __init__(self, sms=132, uuid=None, model=None):
+        self.model = model or MODEL_BY_SMS.get(sms) or next((k for k, m in MODELS.items() if m["sms"] == sms), None)
+        self.sms = MODELS[model]["sms"] if model else sms
         self.uuid = uuid or "GPU-00000000-0000-4000-8000-00000000c0de"
+        self.sim_seed = uuid or secrets.token_hex(4)
 
     def probes(self):
-        # time ~ ceil(k / sms) waves of ~5 ms, plus a little deterministic jitter so the chart looks measured
-        stair = {k: 0.005 * -(-k // self.sms) + 0.00002 * ((k * 37) % 7) for k in range(64, 161)}
-        return {"sms": self.sms, "fp8": FP8_BY_SMS.get(self.sms, False), "clock_ghz": 1.98, "bw_tbs": 3.35,
-                "fingerprint": "0x" + hashlib.sha256(f"cpu-{self.sms}".encode()).hexdigest()}, stair
+        m = MODELS.get(self.model, {})
+        return {"sms": self.sms, "fp8": bool(m.get("fp8")), "clock_ghz": 1.98,
+                "bw_tbs": round(0.86 * m.get("bw_tbs", 3.35), 3),
+                "fingerprint": "0x" + hashlib.sha256(f"cpu-{self.sms}".encode()).hexdigest()}, sim_staircase(self.sms)
 
     def health(self, burn_seconds):
         return health.simulated(self.sms, burn_seconds)
+
+    def metrics(self, budget_s, per_second=None):
+        # each simulated run is a different card: vary the per-GPU offset like real silicon does
+        return simulate(self.model, per_second, seed=self.sim_seed) if self.model else {}
 
     def fingerprints(self, p):
         return [fingerprint_rows(product(p, s), p.fp_key) for s in range(p.steps)]
@@ -75,7 +86,7 @@ class Cpu:
         return out
 
 
-def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10):
+def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60):
     """Full check against the API. Returns (api_result, local_result)."""
     log("probing hardware ...")
     probes, stair = backend.probes()
@@ -105,21 +116,30 @@ def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10):
     samples = [(int(x[0]), int(x[1])) for x in cm["samples"]]
     log(f"committed; API saw {cm['elapsed_s']}s; revealing {len(samples)} rows")
 
+    rows = backend.rows(p, samples)
     log(f"health report: {burn_seconds}s burn ...")
     try:
         hr = backend.health(burn_seconds)
     except Exception as e:  # advisory: never let it break the check
         hr = {"grade": health.GRADE, "source": "error", "notes": [f"{type(e).__name__}: {str(e)[:200]}"]}
+    metrics = {}
+    if perf_seconds > 0:
+        log(f"performance profile (budget {perf_seconds}s) ...")
+        try:
+            metrics = backend.metrics(perf_seconds, ((hr or {}).get("burn") or {}).get("per_second"))
+        except Exception as e:  # advisory too
+            log(f"performance profile failed: {type(e).__name__}: {str(e)[:200]}")
     rv = post(api, "/api/check/reveal", {
         "session_id": st["session_id"],
         "fingerprints": {str(s): [str(int(v)) for v in fps[s]] for s in sorted({s for s, _ in samples})},
         "leaf_hashes": {str(i): h for i, h in enumerate(leaves)},
-        "rows": backend.rows(p, samples),
+        "rows": rows,
         "health": hr,
+        **({"metrics": metrics} if metrics else {}),
     })
     local = {"uuid": backend.uuid, "cloud": cloud, "claimed_class": claimed, "n": p.n, "steps": p.steps,
              "compute_s": round(compute_s, 4), "elapsed_s": cm["elapsed_s"], "probes": probes,
-             "staircase": stair_ms, "health": hr, "result": rv}
+             "staircase": stair_ms, "health": hr, "metrics": metrics, "result": rv}
     return rv, local
 
 
@@ -130,20 +150,23 @@ def main(argv=None):
     ap.add_argument("--claimed", type=int, required=True)
     ap.add_argument("--cpu", action="store_true", help="no GPU: core/ maths and fixed test probes")
     ap.add_argument("--sms", type=int, default=132, help="CPU mode: SM count to report (108 plays an A100)")
+    ap.add_argument("--model", choices=sorted(MODELS), help="CPU mode: model to simulate (overrides --sms)")
     ap.add_argument("--uuid", help="CPU mode: fake GPU UUID")
     ap.add_argument("--n", type=int)
     ap.add_argument("--steps", type=int)
     ap.add_argument("--burn-seconds", type=int, default=10, help="health report: sustained burn length (0 skips it)")
+    ap.add_argument("--perf-seconds", type=int, default=60,
+                    help="performance profile time budget, run after commit (0 skips it)")
     ap.add_argument("--out", default="result.json")
     a = ap.parse_args(argv)
 
     if a.cpu:
-        backend, n, steps = Cpu(a.sms, a.uuid), a.n or 64, a.steps or 4
+        backend, n, steps = Cpu(a.sms, a.uuid, a.model), a.n or 64, a.steps or 4
     else:
         from prover.gpu import Gpu  # lazy: CuPy/torch only exist on the pod
         backend, n, steps = Gpu(), a.n, a.steps
     try:
-        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds)
+        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds)
     except ApiError as e:
         log(f"error: {e}")
         return 2

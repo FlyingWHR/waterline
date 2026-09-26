@@ -58,7 +58,7 @@ def test_honest_cpu_run_passes_and_publishes():
     assert r["verdict"] == "pass" and r["reasons"] == [] and r["measured_class"] == 1
     assert r["published"] is True and r["tx"] is None  # dry-run
     assert r["gpu_name"] == f"{appmod.gpu_label('GPU-1')}.cloud-b.waterline.eth"
-    node, verdict, cls, cores, fp, voter = chain.DRY_RUN_CALLS[-1]
+    node, verdict, cls, cores, fp, voter, *_ = chain.DRY_RUN_CALLS[-1]
     assert "0x" + node.hex() == r["node"] and (verdict, cls, cores) == (1, 1, 132)
     assert voter == chain.keccak(text=r["report_id"])
 
@@ -83,7 +83,7 @@ def test_missed_deadline_fails(monkeypatch):
 def test_class_mismatch_fails():
     r = run_check(claimed=1, probes=A100)  # an A100 sold as H100 SXM
     assert r["verdict"] == "fail" and r["measured_class"] == 3
-    assert r["reasons"] == ["Measured as A100 (108 SMs, no FP8), listed as H100 SXM."]
+    assert r["reasons"] == ["Measured as A100 SXM4 80GB (108 SMs, no FP8, 1.90 TB/s), listed as H100 SXM."]
 
 
 def test_throughput_against_listed_class():
@@ -141,7 +141,7 @@ def test_approve_publishes_fail():
     rep = run_check(uuid="GPU-A", claimed=1, probes=A100)
     r = approve(rep["report_id"], login(), "approve").json()
     assert r["status"] == "approved" and r["published"] is True
-    node, verdict, cls, cores, fp, voter = chain.DRY_RUN_CALLS[-1]
+    node, verdict, cls, cores, fp, voter, *_ = chain.DRY_RUN_CALLS[-1]
     assert (verdict, cls, cores) == (2, 3, 108)
     assert voter == world.voter_id("human-1", node)
 

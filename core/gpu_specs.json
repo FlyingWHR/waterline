@@ -290,12 +290,12 @@
       ],
       "derived_from_sparse": true,
       "unverified": [
-        "sms",
-        "mem_gb",
         "dense.int8_tops",
+        "mem_gb",
+        "sms",
         "tdp_w"
       ],
-      "note": "INT8 tensor throughput cut sharply on Blackwell Ultra (HGX page: INT8 3 POPS for 8 GPUs vs 72 POPS on HGX B200); 188 = 3000/8/2 assuming the figure is sparse. SM count: NVIDIA's MPS blog says 148 SMs 'on DGX B200 and B300'; third-party sources claim 160 (full die). Memory: 288 GB physical, HGX total 2.1 TB (about 262-270 GB visible per GPU)."
+      "note": "INT8 tensor throughput cut sharply on Blackwell Ultra (HGX page: INT8 3 POPS for 8 GPUs vs 72 POPS on HGX B200); 188 = 3000/8/2 assuming the figure is sparse. SM count: NVIDIA's MPS blog says 148 SMs 'on DGX B200 and B300'; third-party sources claim 160 (full die). Memory: 288 GB physical, HGX total 2.1 TB (about 262-270 GB visible per GPU). INT8 derived from one rack total; GB300 below B300 looks inconsistent. Measure, don't trust."
     },
     {
       "id": "gb200",
@@ -367,10 +367,11 @@
       ],
       "derived_from_sparse": true,
       "unverified": [
-        "sms",
-        "mem_gb"
+        "dense.int8_tops",
+        "mem_gb",
+        "sms"
       ],
-      "note": "Per-GPU = NVL72 totals / 72 (tensor figures sparse, halved). NVIDIA says 'up to 160 SMs'; enabled count per SKU not published."
+      "note": "Per-GPU = NVL72 totals / 72 (tensor figures sparse, halved). NVIDIA says 'up to 160 SMs'; enabled count per SKU not published. INT8 derived from one rack total; GB300 below B300 looks inconsistent. Measure, don't trust."
     },
     {
       "id": "a100-sxm-80",
@@ -1275,6 +1276,80 @@
       "derived_from_sparse": false,
       "unverified": [],
       "note": "sms = CUs. Each XCD has 36 CUs, 32 active (CDNA 4 whitepaper)."
+    },
+    {
+      "id": "v100-sxm2-16",
+      "name": "V100 SXM2 16/16GB",
+      "vendor": "NVIDIA",
+      "arch": "Volta",
+      "die": "GV100",
+      "cc": "7.0",
+      "sms": 80,
+      "full_die_sms": 84,
+      "tensor_gen": 1,
+      "mem_gb": 16,
+      "mem_type": "HBM2",
+      "bw_tbs": 0.9,
+      "dense": {
+        "int8_tops": null,
+        "fp8_tflops": null,
+        "bf16_tflops": null,
+        "fp32_tflops": 15.7,
+        "fp4_tflops": null,
+        "fp16_tflops": 125
+      },
+      "fp8": false,
+      "tdp_w": 300,
+      "form": "SXM2",
+      "interconnect": "NVLink 2, 300 GB/s",
+      "rental_rank": 12,
+      "rental_evidence": "getdeploying: V100 20 providers; Vast.ai 203 GPUs idle (largest idle pool, cheap); AWS p3 (legacy)",
+      "sources": [
+        "https://images.nvidia.com/content/technologies/volta/pdf/volta-v100-datasheet-update-us-1165301-r5.pdf"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "cc",
+        "full_die_sms"
+      ],
+      "note": "No INT8/BF16/FP8 tensor support (first-gen tensor cores are FP16 only; INT8 only via DP4A). A 16 GB variant exists. 16 GB variant; same die, clocks and bandwidth as the 32 GB part."
+    },
+    {
+      "id": "v100-pcie-16",
+      "name": "V100 PCIe 16/16GB",
+      "vendor": "NVIDIA",
+      "arch": "Volta",
+      "die": "GV100",
+      "cc": "7.0",
+      "sms": 80,
+      "full_die_sms": 84,
+      "tensor_gen": 1,
+      "mem_gb": 16,
+      "mem_type": "HBM2",
+      "bw_tbs": 0.9,
+      "dense": {
+        "int8_tops": null,
+        "fp8_tflops": null,
+        "bf16_tflops": null,
+        "fp32_tflops": 14,
+        "fp4_tflops": null,
+        "fp16_tflops": 112
+      },
+      "fp8": false,
+      "tdp_w": 250,
+      "form": "PCIe",
+      "interconnect": "PCIe Gen3 x16",
+      "rental_rank": 12,
+      "rental_evidence": "see v100-sxm2 (getdeploying does not split variants)",
+      "sources": [
+        "https://images.nvidia.com/content/technologies/volta/pdf/volta-v100-datasheet-update-us-1165301-r5.pdf"
+      ],
+      "derived_from_sparse": false,
+      "unverified": [
+        "cc",
+        "full_die_sms"
+      ],
+      "note": "A 16 GB variant exists. 16 GB variant; same die, clocks and bandwidth as the 32 GB part."
     }
   ],
   "confusable_pairs": [
@@ -1524,6 +1599,38 @@
         "fp8"
       ],
       "note": "58 vs 40 SMs; FP8 yes/no."
+    },
+    {
+      "a": "h100-nvl",
+      "b": "gh200",
+      "separate_by": [
+        "h2d_gbs"
+      ],
+      "note": "94 vs 96 GB and 3.9 vs 4.0 TB/s are within measurement noise; the Grace link's host-to-device bandwidth (NVLink-C2C) separates them."
+    },
+    {
+      "a": "v100-sxm2",
+      "b": "v100-sxm2-16",
+      "separate_by": [
+        "mem_alloc_gib"
+      ],
+      "note": "Same chip; only usable memory differs."
+    },
+    {
+      "a": "v100-pcie",
+      "b": "v100-pcie-16",
+      "separate_by": [
+        "mem_alloc_gib"
+      ],
+      "note": "Same chip; only usable memory differs."
+    },
+    {
+      "a": "v100-sxm2-16",
+      "b": "v100-pcie-16",
+      "separate_by": [
+        "int8_ratio"
+      ],
+      "note": "HARD: same 80 SMs, 900 GB/s. FP16 tensor 125 vs 112 (1.12x); power 300 vs 250 W. 16 vs 32 GB variants split by allocation. (No INT8 tensor: use FP16.)"
     }
   ]
 }

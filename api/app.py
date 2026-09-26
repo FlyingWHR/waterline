@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import statistics
 import time
 from pathlib import Path
 from typing import Any
@@ -18,9 +19,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from core.challenge import Params
+from core.specs import MODELS
 
 from . import chain, world
-from .check import class_name, classify, draw_samples, gpu_label, grade, throughput
+from . import perf
+from .check import (claimed_models, class_check, classify, deadline_s, draw_samples, gpu_label, grade,
+                    throughput)
 from .store import store
 
 log = logging.getLogger("waterline.api")
@@ -37,11 +41,6 @@ app = FastAPI(title="Waterline API")
 
 def now():  # tests patch this to simulate a slow prover
     return time.time()
-
-
-def deadline_for(cls: int) -> float:
-    table = json.loads(os.environ.get("DEADLINES", "{}"))  # e.g. {"1": 5.0, "2": 6.0, "3": 9.0}
-    return float(table.get(str(cls), 5.0))
 
 
 @app.exception_handler(HTTPException)
@@ -93,13 +92,14 @@ class RevealIn(BaseModel):
     leaf_hashes: dict[str, str]
     rows: dict[str, list[int]]
     health: dict[str, Any] | None = None  # advisory, reported by the machine; stored, never graded
+    metrics: dict[str, dict[str, Any]] | None = Field(None, max_length=64)  # measured in the pod; never graded
 
 
 @app.post("/api/check/start")
 def check_start(body: StartIn):
     sid = secrets.token_urlsafe(16)
     seed = secrets.randbits(63)
-    s = body.model_dump() | {"seed": seed, "t0": now(), "deadline_s": deadline_for(body.claimed_class)}
+    s = body.model_dump() | {"seed": seed, "t0": now(), "deadline_s": deadline_s(body.claimed_class, body.n, body.steps)}
     store.put(f"sess:{sid}", s, SESSION_TTL)
     return {"session_id": sid, "seed": str(seed), "n": body.n, "steps": body.steps,
             "fp_key": str(Params(seed, body.n, body.steps).fp_key), "deadline_s": s["deadline_s"]}
@@ -124,8 +124,8 @@ def check_reveal(body: RevealIn):
     s = _get(f"sess:{body.session_id}", "session")
     if "root" not in s:
         raise HTTPException(409, "Commit before revealing.")
-    if body.health is not None and len(json.dumps(body.health)) > HEALTH_MAX:
-        raise HTTPException(413, f"The health report is larger than {HEALTH_MAX // 1024} KB.")
+    if len(json.dumps([body.health, body.metrics])) > HEALTH_MAX:
+        raise HTTPException(413, f"The health report and metrics are larger than {HEALTH_MAX // 1024} KB.")
     if not store.add(f"reveal:{body.session_id}", 1, SESSION_TTL):
         raise HTTPException(409, "This session was already revealed.")
 
@@ -134,11 +134,10 @@ def check_reveal(body: RevealIn):
     if s["elapsed_s"] > s["deadline_s"]:
         reasons.append(f"Answer locked in after {s['elapsed_s']:.1f} s; the deadline was {s['deadline_s']:.1f} s.")
     reasons += grade(p, s["root"], s["samples"], body.fingerprints, body.leaf_hashes, body.rows)
-    measured = classify(s["probes"])
-    if measured != s["claimed_class"]:
-        pr = s["probes"]
-        reasons.append(f"Measured as {class_name(measured)} ({pr['sms']} SMs, {'FP8' if pr['fp8'] else 'no FP8'}), "
-                       f"listed as {class_name(s['claimed_class'])}.")
+    work_ok = not reasons  # in time and re-graded: only then is the timing a verified number
+    classification, class_reasons = class_check(s["claimed_class"], s["probes"], body.metrics)
+    reasons += class_reasons
+    measured = classify(s["probes"], body.metrics)  # on-chain class code of the best match
 
     rid = secrets.token_hex(16)
     name = f"{gpu_label(s['uuid'])}.{s['cloud']}.waterline.eth"
@@ -151,11 +150,12 @@ def check_reveal(body: RevealIn):
            "probes": s["probes"], "staircase": s.get("staircase"), "elapsed_s": s["elapsed_s"],
            "deadline_s": s["deadline_s"], "samples": [[st, r] for st, r, _ in s["samples"]], "n": s["n"],
            "steps": s["steps"], **throughput(s["n"], s["steps"], s["elapsed_s"], s["claimed_class"]),
-           "health": body.health and body.health | {"grade": "reported by the machine"}}
+           "health": body.health and body.health | {"grade": "reported by the machine"}, "work_ok": work_ok}
+    rep |= perf_profile(rep, body.metrics, classification)
     if not reasons:
         try:
             rep["tx"] = chain.record(node, PASS, measured, rep["cores"], bytes.fromhex(rep["fingerprint"][2:]),
-                                     keccak(text=rid))
+                                     keccak(text=rid), *_perf_onchain(rep))
             rep |= {"published": True, "status_text": "Published."}
         except chain.ChainError as e:
             rep["status_text"] = "Publishing failed."
@@ -283,7 +283,8 @@ def approve_poll(body: DeviceIn):
         store.delete(vote_key)
         return refuse("This report is already published.")
     try:
-        tx = chain.record(node, FAIL, rep["measured_class"], rep["cores"], bytes.fromhex(rep["fingerprint"][2:]), vid)
+        tx = chain.record(node, FAIL, rep["measured_class"], rep["cores"], bytes.fromhex(rep["fingerprint"][2:]), vid,
+                          *_perf_onchain(rep))
     except chain.ChainError as e:
         store.delete(vote_key)
         store.delete(pub_key)
@@ -393,6 +394,114 @@ def gpus():
     for x in rows:
         x |= {"gpu_name": names.get(x["node"]), "status": gpu_status(x["humans"], x["passes"])}
     return {"source": source, "error": error, "gpus": rows}
+
+
+# ---- performance profile and comparisons (docs/INTERFACES.md "Performance profile", docs/METRICS.md) ----------
+SPECS = json.loads((Path(__file__).resolve().parent.parent / "core" / "gpu_specs.json").read_text())
+COHORT_MIN, FEW_MIN = perf.COHORT_MIN, 3
+
+
+def _sig(x):
+    return None if x is None else float(f"{x:.4g}")
+
+
+def _work_ok(rep: dict) -> bool:
+    return rep.get("work_ok", rep.get("verdict") == "pass")  # reports from before work_ok existed
+
+
+def perf_profile(rep: dict, sent: dict | None, classification: dict | None = None) -> dict:
+    """-> {metrics, classification, claimed_model}. Metrics are annotated against the LISTED model (what the renter
+    paid for); perf.annotate re-stamps trust and drops any verified number the pod sent. Only work the API
+    re-graded in time gets int8_tops_verified."""
+    ids = claimed_models(rep.get("claimed_class"))
+    listed = ids[0] if ids else None
+    metrics = perf.annotate(sent, listed)
+    if _work_ok(rep):
+        metrics["int8_tops_verified"] = perf.verified_int8(rep["n"], rep["steps"], rep["elapsed_s"], listed)
+    c = classification or class_check(rep.get("claimed_class"), rep.get("probes"), sent)[0]
+    return {"metrics": metrics, "classification": c | {"claimed": listed, "claimed_models": ids},
+            "claimed_model": listed}
+
+
+def _perf_onchain(rep: dict) -> tuple[int, int]:
+    """(topsX10, pctBps) for Marks.record; zeros when there is no verified number."""
+    v = (rep.get("metrics") or {}).get("int8_tops_verified") or {}
+    return chain.encode_perf(v.get("value"), v.get("pct_of_spec"))
+
+
+def _profile(rep: dict) -> tuple[dict, dict]:
+    """Stored profile, or one rebuilt for reports made before metrics existed."""
+    if rep.get("metrics") is None or rep.get("classification") is None:
+        rep = rep | perf_profile(rep, None)
+    return rep["metrics"], rep["classification"]
+
+
+def _med(xs):
+    return _sig(statistics.median(xs)) if xs else None
+
+
+def _model_row(m: dict) -> dict:
+    d = m.get("dense") or {}
+    return {"id": m["id"], "name": m["name"], "vendor": m["vendor"], "sms": m["sms"], "fp8": m["fp8"],
+            "mem_gb": m["mem_gb"], "bw_tbs": m["bw_tbs"], "int8_tops": d.get("int8_tops"),
+            "bf16_tflops": d.get("bf16_tflops"), "fp8_tflops": d.get("fp8_tflops"),
+            "unverified": m.get("unverified", []), "sources": m.get("sources", []), "note": m.get("note")}
+
+
+@app.get("/api/models")
+def models():
+    return {"generated": SPECS["generated"], "notes": SPECS["notes"], "models": [_model_row(m) for m in SPECS["models"]],
+            "confusable_pairs": SPECS["confusable_pairs"]}
+
+
+@app.get("/api/compare/{report_id}")
+def compare(report_id: str):
+    rep = _get(f"report:{report_id}", "report")
+    metrics, cl = _profile(rep)
+    best = cl.get("best_match")
+    # ponytail: scans the last INDEX_MAX reports per call; keep a per-model index if the record grows past that
+    past = [r | dict(zip(("metrics", "classification"), _profile(r))) for r in _reports(INDEX_MAX) if _work_ok(r)]
+    me = rep | {"metrics": metrics, "classification": cl}
+    cohort = (perf.cohort(me, past) if best else {"n": 0, "note": "no closest model"}) | {"model_id": best, "min_n": COHORT_MIN}
+    if "percentiles" in cohort:  # the values behind each rank, for the distribution strip
+        same = [r for r in past if r["classification"].get("best_match") == best and r["report_id"] != report_id]
+        cohort["values"] = {k: sorted(v for r in same if isinstance(v := (r["metrics"].get(k) or {}).get("value"), (int, float)))
+                            for k in cohort["percentiles"]}
+    return {"report_id": report_id, "metrics": metrics, "classification": cl,
+            "vs_spec": {k: x["pct_of_spec"] for k, x in metrics.items() if x.get("pct_of_spec") is not None},
+            "vs_models": [_model_row(m) for m in SPECS["models"]], "cohort": cohort}
+
+
+@app.get("/api/leaderboard")
+def leaderboard(model: str | None = Query(None, max_length=64)):
+    if model and model not in MODELS:
+        raise HTTPException(404, "Unknown model; see /api/models for the ids.")
+    groups: dict[tuple, list] = {}
+    for r in _reports(INDEX_MAX):
+        mid = (claimed_models(r.get("claimed_class")) or [None])[0]  # grouped by what the cloud listed
+        if mid:
+            groups.setdefault((mid, r.get("cloud")), []).append(r)
+    counts = {}
+    for (mid, _), rs in groups.items():
+        counts[mid] = counts.get(mid, 0) + len(rs)
+    rows = []
+    for (mid, cloud), rs in groups.items():
+        if model and mid != model:
+            continue
+        ok = [_profile(r)[0].get("int8_tops_verified") for r in rs]
+        tops = [x["value"] for x in ok if x and x.get("value") is not None]
+        pcts = [x["pct_of_spec"] for x in ok if x and x.get("pct_of_spec") is not None]
+        rows.append({"model": mid, "cloud": cloud, "n": len(rs), "n_verified": len(tops),
+                     "median_tops": _med(tops), "tops_range": [min(tops), max(tops)] if tops else None,
+                     "median_pct_of_spec": _med(pcts), "pct_range": [min(pcts), max(pcts)] if pcts else None,
+                     "pass_rate": round(sum(r["verdict"] == "pass" for r in rs) / len(rs), 3),
+                     "few": len(rs) < FEW_MIN})
+    ranked = sorted((x for x in rows if not x["few"]), key=lambda x: (x["model"], -(x["median_tops"] or 0)))
+    for x in ranked:  # ranks count within one listed model
+        x["rank"] = sum(y["model"] == x["model"] for y in ranked[:ranked.index(x)]) + 1
+    few = sorted((x for x in rows if x["few"]), key=lambda x: (x["model"], -x["n"], x["cloud"]))
+    return {"model": model, "min_n": FEW_MIN, "rows": ranked + [x | {"rank": None} for x in few],
+            "models": [{"id": k, "name": MODELS[k]["name"], "n": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]}
 
 
 # Static page (web/) served from the same deployment; Vercel promotes StaticFiles mounts to its CDN.

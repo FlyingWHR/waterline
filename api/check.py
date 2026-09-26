@@ -1,17 +1,63 @@
-"""Grading a reveal against the committed root. Pure functions over core/; no I/O."""
+"""Grading a reveal against the committed root, the model verdict and the deadline. Pure functions; no I/O."""
 import hashlib
+import json
+import os
 import secrets
 
 import numpy as np
 
 from core.challenge import Params, leaf_hash, merkle_root, row_fingerprint, verify_row_entries
+from core.specs import MODELS
+
+from . import classify as cl
 
 SAMPLES = 8
 SPOT_COLS = 64
 CLASS_NAMES = {1: "H100 SXM", 2: "H100 PCIe", 3: "A100"}
-# Dense INT8 tensor-core TOPS per class (NVIDIA H100 and A100 datasheets list INT8 "with sparsity";
-# dense is half: H100 SXM 3,958 -> 1,979; H100 PCIe 3,026 -> 1,513; A100 1,248 -> 624).
-SPEC_TOPS = {1: 1979, 2: 1513, 3: 624}
+# On-chain class codes (uint8) -> the gpu_specs.json models each one accepts
+CLASS_MODELS = {1: ["h100-sxm"], 2: ["h100-pcie"], 3: ["a100-sxm-80", "a100-sxm-40", "a100-pcie-80", "a100-pcie-40"]}
+# Dense INT8 tensor-core TOPS per class, from core/gpu_specs.json (1979, 1513, 624: datasheet sparse / 2)
+SPEC_TOPS = {c: MODELS[ids[0]]["dense"]["int8_tops"] for c, ids in CLASS_MODELS.items()}
+# Deadline = max(MIN, BASE + 2 n^3 steps / (dense INT8 x MIN_EFF)); docs/METRICS.md. Calibrate on real pods.
+DEADLINE_BASE_S, DEADLINE_MIN_EFF, DEADLINE_MIN_S, DEADLINE_NO_INT8_S = 3.0, 0.25, 5.0, 60.0
+
+
+def claimed_models(claimed) -> list[str]:
+    """Model ids a claim accepts: a class code (1-3) or a gpu_specs.json model id."""
+    return CLASS_MODELS.get(claimed, []) if isinstance(claimed, int) else [claimed] if claimed in MODELS else []
+
+
+def claimed_name(claimed) -> str:
+    return CLASS_NAMES.get(claimed, "an unknown chip") if isinstance(claimed, int) else \
+        MODELS[claimed]["name"] if claimed in MODELS else "an unknown chip"
+
+
+def class_for_model(model_id) -> int:
+    """On-chain class code for a model id (0 when it has none)."""
+    return next((c for c, ids in CLASS_MODELS.items() if model_id in ids), 0)
+
+
+def deadline_s(claimed, n: int, steps: int) -> float:
+    """Seconds allowed from start to commit for a claim (model id or class code). DEADLINES env (JSON, keys =
+    model id or class code) overrides."""
+    table = json.loads(os.environ.get("DEADLINES") or "{}")
+    if str(claimed) in table:
+        return float(table[str(claimed)])
+    tops = [MODELS[i]["dense"]["int8_tops"] for i in claimed_models(claimed) if MODELS[i]["dense"].get("int8_tops")]
+    if not tops:
+        return DEADLINE_NO_INT8_S
+    return round(max(DEADLINE_MIN_S, DEADLINE_BASE_S + 2 * n**3 * steps / (min(tops) * 1e12 * DEADLINE_MIN_EFF)), 1)
+
+
+def class_check(claimed, probes=None, metrics=None):
+    """(classification, reasons). Fails when the claimed model is neither the best match nor ambiguous with it."""
+    c = cl.classification(probes, metrics, claimed_models(claimed))
+    c["claimed"] = claimed
+    if c["best_match"] is None:
+        return c, [f"The GPU could not be measured, so it can't be confirmed as {claimed_name(claimed)}."]
+    if c["consistent"]:
+        return c, []
+    return c, [f"Measured as {c['name']} ({cl.evidence(c['features'])}), listed as {claimed_name(claimed)}."]
 
 
 def class_name(cls: int) -> str:
@@ -33,15 +79,10 @@ def gpu_label(uuid: str) -> str:
     return "gpu-" + hashlib.sha256(uuid.encode()).hexdigest()[:8]
 
 
-def classify(probes: dict) -> int:
-    sms, fp8 = probes.get("sms"), probes.get("fp8")
-    if sms == 132 and fp8 is True:
-        return 1
-    if sms == 114 and fp8 is True:
-        return 2
-    if sms == 108 and fp8 is False:
-        return 3
-    return 0
+def classify(probes: dict, metrics: dict | None = None) -> int:
+    """On-chain class code (0-3) of the measured GPU: the best match, else the first ambiguous partner with a code."""
+    c = cl.classification(probes, metrics)
+    return next((class_for_model(i) for i in [c["best_match"], *c["ambiguous_with"]] if class_for_model(i)), 0)
 
 
 def draw_samples(n: int, steps: int):

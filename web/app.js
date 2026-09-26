@@ -66,13 +66,14 @@ const table = (cols, rows) => {
 };
 
 // ---- router ------------------------------------------------------------------------------------------------
-const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], about: [about, "Settings"] };
+const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"],
+  leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = name === "check" ? "checks" : name in routes ? name : "";
+  const tab = { check: "checks", models: "leaderboard" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
@@ -278,7 +279,8 @@ const gauge = (label, value, pct, tone, aria) =>
     h("div", { className: "bar " + (tone === "st-fail" ? "over" : ""), role: "img", "aria-label": aria }, h("i", { style: `width:${Math.max(0.5, Math.min(100, pct || 0))}%` })));
 
 async function checkDetail(id) {
-  const r = await api(`/api/reports/${encodeURIComponent(id)}`);
+  const [r, cmp] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
+    api(`/api/compare/${encodeURIComponent(id)}`).catch(() => null)]); // the check still shows if comparing fails
   const p = r.probes || {};
   const kv = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
   const [form, out] = ensLookup(r.gpu_name);
@@ -320,6 +322,7 @@ async function checkDetail(id) {
     section("Core-count staircase", r.staircase ? `step at ${p.sms} blocks` : null,
       h("p", { className: "sub" }, "One busy block per core. Once there are more blocks than cores, the extra ones wait and the time jumps. Heat can slow a GPU down, but it can't move this step."),
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
+    perfSection(r, cmp),
     healthSection(r.health),
     section("On chain", null,
       kv(["Published", r.published ? "yes" : "no"], ["Transaction", txLink(r.tx, r.published)], ["ENS node", h("span", { className: "mono", title: r.node }, short(r.node))], ["GPU name", r.gpu_name]),
@@ -453,6 +456,258 @@ function staircase(st, sms) {
       S("text", { x: sx - 6, y: H - B - 8, "text-anchor": "end", fill: "var(--pod)", "font-size": "12" }, `step: ${step} cores`));
   }
   return h("div", { className: "panel" }, svg);
+}
+
+// ---- performance profile -------------------------------------------------------------------------------------
+// Keys, units, trust and methods follow docs/INTERFACES.md ("Performance profile"). Every number shown carries its
+// unit, how many runs it came from, its spread, and a trust label.
+const METRICS = {
+  int8_tops_verified: ["INT8 work, verified", "ops the API asked for ÷ seconds on the API's clock, start to commit. Includes generation, hashing and network, so it is a lower bound."],
+  int8_tops: ["INT8 matmul", "torch._int_mm, n = 8192, CUDA events, 5 warm-up runs, median of 20."],
+  bf16_tflops: ["BF16 matmul", "torch.matmul in BF16, n = 8192, same timing."],
+  fp8_tflops: ["FP8 matmul", "torch._scaled_mm in e4m3, same timing. Empty when the chip has no FP8."],
+  hbm_copy_tbs: ["Memory copy", "device-to-device copy over ≥ 4 GiB (far larger than L2), L2 flushed between runs."],
+  hbm_read_tbs: ["Memory read", "read-and-reduce over ≥ 4 GiB, same care with L2."],
+  h2d_gbs: ["Host to GPU", "pinned host memory, 1 GiB transfers."],
+  d2h_gbs: ["GPU to host", "pinned host memory, 1 GiB transfers."],
+  launch_us: ["Kernel launch", "empty-kernel round trip, median of 1000."],
+  mem_alloc_gib: ["Usable memory", "largest block actually written and read back: catches 40 GB sold as 80 GB."],
+  sm_count: ["SMs", "timing staircase, one busy block per SM; independent of what the driver reports."],
+  stability_cv: ["Stability", "variation of per-second BF16 throughput over the burn."],
+};
+const UNITS = { int8_tops_verified: "TOPS", int8_tops: "TOPS", bf16_tflops: "TFLOPS", fp8_tflops: "TFLOPS", hbm_copy_tbs: "TB/s",
+  hbm_read_tbs: "TB/s", h2d_gbs: "GB/s", d2h_gbs: "GB/s", launch_us: "µs", mem_alloc_gib: "GiB", sm_count: "SMs", stability_cv: "%" };
+const TRUST = {
+  verified: "Verified: from work the API re-graded and timed on its own clock. The host can't inflate it.",
+  measured: "Measured: timed by our code inside the pod. A rigged driver could, in principle, lie.",
+  reported: "Reported: read from the driver. The host can fake it.",
+};
+const mname = (k) => METRICS[k]?.[0] || k;
+const HEADLINE = ["int8_tops_verified", "int8_tops", "bf16_tflops", "fp8_tflops", "hbm_copy_tbs", "hbm_read_tbs"]; // throughput: higher is faster
+// 3 significant digits, thousands separators above 1000; tiny CPU-run numbers stay readable
+const fmt = (x) => (x == null || !isFinite(x) ? "—" : Math.abs(x) >= 1000 ? Math.round(x).toLocaleString() : String(+(+x).toPrecision(3)));
+const trustChip = (t) => h("span", { className: "pill trust trust-" + t, title: TRUST[t] || "" }, t || "unknown");
+const runs = (n) => `n = ${n ?? "?"}${n === 1 ? " run" : " runs"}`;
+
+function flagText(k, x) {
+  const ex = x.expected_pct, typ = ex ? `; typical is ${ex[0] === ex[1] ? ex[0] : `${ex[0]}–${ex[1]}`}%` : "";
+  if (x.flag === "unstable") return k === "stability_cv" // cv is in percent (docs/METRICS.md)
+    ? `Throughput swung by ${fmt(x.value)}% over the burn; a steady card stays under 3%.`
+    : `${mname(k)} varied by ±${fmt(x.cv)}% between runs; a steady card stays within ±5%.`;
+  if (x.flag === "low") return `${mname(k)} at ${fmt(x.pct_of_spec)}% of rated${typ}.`;
+  if (x.flag === "high") return `${mname(k)} at ${fmt(x.pct_of_spec)}% of rated${typ}. The chip may be a bigger model than listed.`;
+  return null;
+}
+
+// p10–p90 as a small bar on a ±15% window around the median (wider if the spread is wider). Text carries the numbers.
+function rangeBar(x) {
+  const m = x.median, lo = x.p10 ?? m, hi = x.p90 ?? m;
+  if (m == null || !isFinite(m) || m === 0) return null;
+  const a = Math.min(lo, m * 0.85), b = Math.max(hi, m * 1.15), P = (v) => (100 * (v - a)) / (b - a);
+  return h("div", { className: "rbar", "aria-hidden": "true" },
+    h("i", { style: `left:${P(lo)}%; width:${Math.max(1, P(hi) - P(lo))}%` }), h("b", { style: `left:${P(m)}%` }));
+}
+
+// % of the rating on 0–120%, the expected band shaded, a tick at 100%.
+function pctBar(x) {
+  const p = x.pct_of_spec, ex = x.expected_pct, S = (v) => Math.max(0, Math.min(100, (v / 120) * 100));
+  if (p == null) return h("span", { className: "sub" }, x.spec == null ? "no rating" : "—");
+  const tone = x.flag === "low" || x.flag === "high" ? " warn" : "";
+  return h("div", { className: "pct" },
+    h("div", { className: "pbar" + tone, role: "img", "aria-label": `${fmt(p)}% of the ${fmt(x.spec)} ${x.unit} rating${ex ? `; typical ${ex[0]} to ${ex[1]}%` : ""}` },
+      ex ? h("span", { className: "band", style: `left:${S(ex[0])}%; width:${Math.max(0.8, S(ex[1]) - S(ex[0]))}%` }) : null,
+      h("i", { style: `width:${Math.max(0.6, S(p))}%` }), h("em", { style: `left:${S(100)}%` })),
+    h("span", { className: "pctv" }, `${fmt(p)}%`, h("small", {}, ` of ${fmt(x.spec)}`)));
+}
+
+function metricTable(mt) {
+  const keys = [...Object.keys(METRICS).filter((k) => k in mt), ...Object.keys(mt).filter((k) => !(k in METRICS))];
+  return table(["Metric", "Median", "Unit", "Spread (p10–p90)", "% of rating", "Trust", "Note"], keys.map((k) => {
+    const x = mt[k], note = flagText(k, x);
+    return h("tr", { className: x.flag ? "flagged" : "" },
+      h("td", { title: METRICS[k]?.[1] || x.method || "" }, mname(k)),
+      h("td", { className: "numc" }, x.value == null && x.median == null ? (x.supported === false ? "not supported" : "—") : fmt(x.median ?? x.value)),
+      h("td", { className: "sub" }, x.unit || UNITS[k] || ""),
+      h("td", {}, h("div", { className: "spread" }, rangeBar(x),
+        h("small", {}, x.n > 1 ? `${fmt(x.p10)}–${fmt(x.p90)} · ${runs(x.n)}` : runs(x.n)))),
+      h("td", {}, pctBar(x)),
+      h("td", {}, trustChip(x.trust)),
+      h("td", { className: "note" + (x.flag ? " warnc" : " sub") }, note || (x.flag ? x.flag : x.expected_pct && x.pct_of_spec != null ? "in the typical range" : "")));
+  }));
+}
+
+const methodsNote = () => h("details", { className: "methods" }, h("summary", {}, "How each number is measured"),
+  h("dl", { className: "kv" }, Object.entries(METRICS).flatMap(([k, [name, how]]) => [h("dt", {}, `${name} (${UNITS[k]})`), h("dd", {}, how)])),
+  h("p", { className: "sub small" }, "Trust labels: ", trustChip("verified"), " the API re-graded the work and timed it itself · ", trustChip("measured"),
+    " timed by our code in the pod · ", trustChip("reported"), " read from the driver."));
+
+// Rated dense INT8 (x) against memory bandwidth (y), both log scales, for every reference model with both figures.
+function scatter(models, me, claimed, best) {
+  const pts = models.filter((m) => m.int8_tops && m.bw_tbs);
+  const phone = matchMedia("(max-width:640px)").matches; // narrower canvas so the labels stay legible
+  const W = phone ? 420 : 720, H = phone ? 340 : 400, L = 44, R = 12, T = 18, B = 46, X0 = 100, X1 = 6000, Y0 = 0.25, Y1 = 10;
+  const X = (v) => L + (Math.log(v / X0) / Math.log(X1 / X0)) * (W - L - R), Y = (v) => H - B - (Math.log(v / Y0) / Math.log(Y1 / Y0)) * (H - T - B);
+  const cm = models.find((m) => m.id === claimed), bm = models.find((m) => m.id === best);
+  const aria = `Rated INT8 TOPS against memory bandwidth for ${pts.length} GPU models, log scales.` +
+    (me ? ` This GPU measured ${fmt(me.x)} TOPS${me.verified ? " (verified lower bound)" : ""} and ${fmt(me.y)} TB/s.` : "") +
+    (cm ? ` Its listing, ${cm.name}, is rated ${fmt(cm.int8_tops)} TOPS and ${fmt(cm.bw_tbs)} TB/s.` : "");
+  const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, class: "scatter", role: "img", "aria-label": aria });
+  for (const v of [100, 200, 500, 1000, 2000, 5000])
+    svg.append(S("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, class: "grid" }), S("text", { x: X(v), y: H - B + 16, "text-anchor": "middle", class: "ax" }, v.toLocaleString()));
+  for (const v of [0.25, 0.5, 1, 2, 4, 8])
+    svg.append(S("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), class: "grid" }), S("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "ax" }, v));
+  svg.append(S("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "ax" }, "rated dense INT8, TOPS (log)"),
+    S("text", { x: 4, y: 12, class: "ax" }, "TB/s (log)"));
+  const LABEL = new Set([claimed, best, "a100-sxm-80", "b200", "l4", ...(phone ? [] : ["h100-sxm", "mi300x", "rtx-4090", "l40s"])]);
+  // Labels are placed after all marks, most important first, each at the first nearby spot that doesn't overlap
+  // an earlier label or leave the plot. ponytail: greedy placement, fine for ~10 labels.
+  const reqs = [], boxes = [];
+  const label = (x, y, text, cls, rank) => reqs.push({ x, y, text, cls, rank });
+  const place = ({ x, y, text, cls }) => {
+    const w = text.length * (phone ? 6.2 : 7.4) + 4, hgt = 15;
+    const spots = [[9, 4, "start"], [9, -13, "start"], [9, 21, "start"], [-9, 4, "end"], [-9, -13, "end"], [-9, 21, "end"], [9, -30, "start"], [-9, 38, "end"]];
+    for (const [dx, dy, anchor] of spots) {
+      const x0 = anchor === "start" ? x + dx : x + dx - w, y0 = y + dy - 11;
+      if (x0 < L || x0 + w > W - R + 20 || y0 < T - 10 || y0 + hgt > H - B) continue;
+      if (boxes.some(b => x0 < b.x + b.w && b.x < x0 + w && y0 < b.y + b.h && b.y < y0 + hgt)) continue;
+      boxes.push({ x: x0, y: y0, w, h: hgt });
+      svg.append(S("text", { x: x + dx, y: y + dy, "text-anchor": anchor, class: cls }, text));
+      return;
+    }
+  };
+  for (const m of pts) {
+    const x = X(m.int8_tops), y = Y(m.bw_tbs);
+    svg.append(S("circle", { cx: x, cy: y, r: 3.5, class: m.id === best ? "pt best" : "pt" }, null));
+    if (LABEL.has(m.id) && m.id !== claimed) label(x, y, m.name.replace(/ \(.*\)$/, ""), "lbl", m.id === best ? 2 : 3);
+  }
+  if (cm?.int8_tops) {
+    const x = X(cm.int8_tops), y = Y(cm.bw_tbs);
+    svg.append(S("circle", { cx: x, cy: y, r: 9, class: "ring" }));
+    label(x + 4, y, `listed: ${cm.name}`, "lbl claimed", 1);
+  }
+  if (me) {
+    const off = me.x < X0 || me.x > X1 || me.y < Y0 || me.y > Y1;
+    const x = X(Math.min(X1, Math.max(X0, me.x))), y = Y(Math.min(Y1, Math.max(Y0, me.y)));
+    svg.append(S("rect", { x: x - 5, y: y - 5, width: 10, height: 10, class: "me", transform: `rotate(45 ${x} ${y})` }));
+    label(x, y, off ? `this GPU: ${fmt(me.x)} TOPS, off the scale` : "this GPU (measured)", "lbl me-l", 0);
+  }
+  reqs.sort((a, b) => a.rank - b.rank).forEach(place);
+  return h("div", { className: "panel" }, svg,
+    h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-me" }), "this GPU, measured"), h("span", {}, h("i", { className: "sw-ring" }), "listed model, rated"),
+      h("span", {}, h("i", { className: "sw-pt" }), "reference model, rated"), bm && best !== claimed ? h("span", {}, h("i", { className: "sw-best" }), "closest match") : null),
+    h("p", { className: "sub small" }, `${pts.length} of ${models.length} reference models have both an INT8 rating and a bandwidth figure. Ratings are vendor peak figures; a healthy card measures somewhat below them.`));
+}
+
+// One dot per check of this model; this check drawn larger. Linear scale over the cohort's own range.
+function strip(vals, mine, unit) {
+  const W = 320, H = 30, lo = Math.min(...vals, mine), hi = Math.max(...vals, mine), X = (v) => 8 + (hi > lo ? ((v - lo) / (hi - lo)) * (W - 16) : (W - 16) / 2);
+  const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, class: "strip", "aria-hidden": "true" });
+  svg.append(S("line", { x1: 8, x2: W - 8, y1: H / 2, y2: H / 2, class: "grid" }), ...vals.map((v) => S("circle", { cx: X(v), cy: H / 2, r: 3, class: "pt" })),
+    S("circle", { cx: X(mine), cy: H / 2, r: 6, class: "mine" }));
+  return h("div", { className: "stripw" }, svg, h("small", { className: "sub" }, `${fmt(lo)} – ${fmt(hi)} ${unit}`));
+}
+
+function perfSection(r, cmp) {
+  const wrap = (...kids) => h("section", { className: "perf", "aria-labelledby": "perf-h" },
+    h("div", { className: "sechead" }, h("h3", { id: "perf-h" }, "Performance"), h("span", { className: "count" }, "every number: unit · runs · spread · trust")), ...kids);
+  if (!cmp) return wrap(h("p", { className: "err" }, "Couldn't load the performance comparison for this check."));
+  const mt = cmp.metrics || {}, cl = cmp.classification || {}, models = cmp.vs_models || [];
+  const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+  const listed = byId[cl.claimed], best = byId[cl.best_match], v = mt.int8_tops_verified;
+  const sim = r.health?.source === "simulated";
+  const headline = v
+    ? h("div", { className: "headline" },
+      h("p", { className: "big" }, `at least ${fmt(v.median)} TOPS`, h("small", {}, v.pct_of_spec != null && listed ? ` · ${fmt(v.pct_of_spec)}% of the ${listed.name}'s rating (${fmt(v.spec)} TOPS)` : "")),
+      h("p", { className: "sub" }, trustChip("verified"), " from re-graded work, timed by the API · dense INT8 · ", runs(v.n),
+        sim ? h("span", {}, " · ", pill("CPU test run: tiny matrices, not a GPU number", "suspect")) : null))
+    : h("div", { className: "headline" }, h("p", { className: "big" }, "No verified number"),
+      h("p", { className: "sub" }, "The work did not pass re-grading in time, so its timing proves nothing about this GPU."));
+
+  const me = (() => {
+    const x = mt.int8_tops?.value ?? v?.value, y = mt.hbm_copy_tbs?.value;
+    return x > 0 && y > 0 ? { x, y, verified: mt.int8_tops?.value == null } : null;
+  })();
+  const cands = (cl.candidates || []).map((c) => h("li", {},
+    h("b", {}, byId[c.id]?.name || c.id), " ",
+    c.id === cl.best_match ? pill("closest", "pass") : null, " ", c.id === cl.claimed ? pill("listed", "unknown") : null, " ",
+    h("span", { className: "sub" }, c.why || ""), h("small", { className: "dist" }, ` distance ${fmt(c.distance)}`)));
+  const amb = (cl.ambiguous_with || cl.ambiguous || []).map((id) => byId[id]?.name || id);
+
+  const co = cmp.cohort || {}, coName = byId[co.model_id]?.name || "this model";
+  const ranks = Object.entries(co.percentiles || {}).filter(([k]) => HEADLINE.includes(k) && co.values?.[k]?.length && mt[k])
+    .sort(([a], [b]) => HEADLINE.indexOf(a) - HEADLINE.indexOf(b));
+  const cohort = ranks.length
+    ? h("ul", { className: "cohort" }, ranks.map(([k, pr]) => h("li", {},
+      h("div", {}, h("span", { className: "label" }, mname(k)), " ", trustChip(mt[k].trust)),
+      h("p", {}, `Faster than ${Math.round(pr)}% of ${co.values[k].length} other ${coName} checks.`),
+      strip(co.values[k], mt[k].median ?? mt[k].value, mt[k].unit || UNITS[k] || ""))))
+    : h("p", { className: "empty" }, co.model_id
+      ? `Not enough checks of the ${coName} yet (n = ${co.n} other check${co.n === 1 ? "" : "s"}; ranks start at ${co.min_n || 5}).`
+      : "No closest model, so there is no cohort to compare with.");
+
+  return wrap(headline,
+    Object.keys(mt).length ? metricTable(mt) : h("p", { className: "empty" }, "The profiler sent no metrics for this check."),
+    h("p", { className: "sub small" }, "Hover a metric name for its method. Medians are over repeated runs in the pod; the bar shows the p10–p90 spread. The shaded band on % of rating is what a healthy card of this model typically reaches."),
+    methodsNote(),
+    h("div", { className: "block" }, h("div", { className: "label" }, "vs other models"),
+      scatter(models, me, cl.claimed, cl.best_match),
+      h("div", { className: "label" }, "Closest matches"),
+      cands.length ? h("ol", { className: "cands" }, cands) : h("p", { className: "sub" }, "No classification for this check."),
+      amb.length ? h("p", { className: "sub" }, `Can't be told apart from ${amb.join(", ")} with what this check measured, so the record doesn't pick one.`) : null,
+      cl.claimed && cl.consistent === false ? h("p", { className: "st-fail" }, `The measurements don't fit the listed ${listed?.name || cl.claimed}.`) : null),
+    h("div", { className: "block" }, h("div", { className: "label" }, `vs other ${coName} checks`),
+      h("p", { className: "sub small" }, `Cohort: checks whose closest match is the ${coName} and whose work passed re-grading.`), cohort));
+}
+
+// ---- leaderboard and reference models ------------------------------------------------------------------------
+const subtabs = (cur) => h("nav", { className: "subtabs", "aria-label": "Leaderboard views" },
+  ...[["#/leaderboard", "By cloud"], ["#/models", "Reference models"]].map(([href, t]) => h("a", { href, "aria-current": href === cur ? "page" : null }, t)));
+
+async function leaderboard(arg) {
+  const lb = await api("/api/leaderboard");
+  const model = arg || lb.models[0]?.id, info = lb.models.find((m) => m.id === model);
+  const rows = lb.rows.filter((x) => x.model === model), ranked = rows.filter((x) => !x.few), few = rows.filter((x) => x.few);
+  const pick = h("select", { id: "lb-model", onchange: (e) => (location.hash = `#/leaderboard/${e.target.value}`) },
+    lb.models.map((m) => h("option", { value: m.id, selected: m.id === model }, `${m.name} · ${m.n} check${m.n > 1 ? "s" : ""}`)));
+  const range = (r, u) => (r && r[0] !== r[1] ? h("small", { className: "sub" }, ` ${fmt(r[0])}–${fmt(r[1])}${u}`) : null);
+  const tr = (x) => h("tr", { className: x.few ? "few" : "" },
+    h("td", {}, x.rank ? `#${x.rank}` : pill("few checks", "unknown")),
+    h("td", { className: "mono" }, x.cloud),
+    h("td", {}, String(x.n)),
+    h("td", {}, x.median_tops == null ? "—" : h("span", {}, `${fmt(x.median_tops)} TOPS`, range(x.tops_range, ""), h("small", { className: "sub" }, ` · n = ${x.n_verified}`))),
+    h("td", {}, x.median_pct_of_spec == null ? "—" : h("span", {}, `${fmt(x.median_pct_of_spec)}%`, range(x.pct_range, "%"))),
+    h("td", {}, h("span", {}, `${Math.round(100 * x.pass_rate)}%`, h("small", { className: "sub" }, ` ${Math.round(x.pass_rate * x.n)} of ${x.n}`))));
+  const cols = ["Rank", "Cloud", "Checks", "Median verified INT8 (range · n)", "Median % of rating (range)", "Pass rate"];
+  return [
+    head("Leaderboard", "Clouds, by what their GPUs deliver", subtabs("#/leaderboard"),
+      h("p", { className: "sub" }, "For one listed model: how each cloud's GPUs did on checks renters ran. Only verified numbers are ranked: work the API re-graded and timed on its own clock.")),
+    section(info ? info.name : "No checks yet", info ? `${info.n} checks across ${rows.length} cloud${rows.length === 1 ? "" : "s"}` : null,
+      lb.models.length ? h("div", { className: "field narrow" }, h("label", { className: "label", htmlFor: "lb-model" }, "Listed model"), pick) : null,
+      ranked.length ? table(cols, ranked.map(tr)) : rows.length ? h("p", { className: "empty" }, `No cloud has ${lb.min_n} checks of this model yet, so none is ranked.`) : h("p", { className: "empty" }, "No checks yet. Run the agent against a pod to start the board."),
+      few.length ? h("details", { className: "fewbox", open: !ranked.length }, h("summary", {}, `${few.length} cloud${few.length > 1 ? "s" : ""} with fewer than ${lb.min_n} checks, not ranked`),
+        table(cols, few.map(tr))) : null,
+      h("p", { className: "sub small" }, `Verified INT8 is a lower bound: it counts the API's whole round trip (generating, hashing, network), so it reads below the chip's peak and favours pods close to the API. Pass rate counts every check, including failures still waiting for a human approval. A cloud needs ${lb.min_n} checks to be ranked.`),
+      methodsNote()),
+  ];
+}
+
+async function modelsView() {
+  const d = await api("/api/models");
+  const unv = (m, ...fields) => (fields.some((f) => m.unverified.includes(f)) ? h("abbr", { className: "unv", title: "Unverified: derived or third-party, not read from a primary source" }, "*") : null);
+  const dense = (m, k) => [m[k] == null ? "—" : fmt(m[k]), unv(m, "dense", "dense." + k)];
+  const rows = d.models.map((m) => h("tr", {},
+    h("td", { title: m.note || "" }, h("span", {}, m.name), h("small", { className: "mono sub" }, " " + m.id)),
+    h("td", {}, String(m.sms), unv(m, "sms")), h("td", {}, m.fp8 ? "yes" : "no"),
+    h("td", {}, `${m.mem_gb} GB`, unv(m, "mem_gb")), h("td", {}, `${m.bw_tbs} TB/s`, unv(m, "bw_tbs")),
+    h("td", {}, ...dense(m, "int8_tops")), h("td", {}, ...dense(m, "bf16_tflops")), h("td", {}, ...dense(m, "fp8_tflops")),
+    h("td", {}, m.sources.map((u, i) => h("a", { href: u, target: "_blank", rel: "noopener", className: "src", title: u }, `[${i + 1}]`)))));
+  return [
+    head("Leaderboard", "Reference models", subtabs("#/models"),
+      h("p", { className: "sub" }, `The ${d.models.length} GPU models checks are compared against, from vendor datasheets (compiled ${d.generated}). Throughput is dense, without sparsity; where a vendor prints only sparse figures they were halved.`)),
+    section("Spec table", `${d.models.length} models · ${d.confusable_pairs.length} look-alike pairs`,
+      table(["Model", "SMs", "FP8", "Memory", "Bandwidth", "INT8 TOPS", "BF16 TFLOPS", "FP8 TFLOPS", "Sources"], rows),
+      h("p", { className: "sub small" }, h("abbr", { className: "unv" }, "*"), " unverified: derived or from a third party, not confirmed from a primary source. For AMD, SMs are compute units. GeForce FP8 and BF16 figures use FP32 accumulate, as cuBLAS does.")),
+  ];
 }
 
 // ---- settings / about --------------------------------------------------------------------------------------

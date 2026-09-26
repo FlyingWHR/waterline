@@ -13,6 +13,7 @@ import torch
 
 from core.challenge import TAG_A, TAG_B
 from core.rng import col, mix64, row
+from prover.metrics import sm_from_staircase, sm_metric, stability_metric
 
 MIX = r"""
 __device__ __forceinline__ unsigned long long mix(unsigned long long x) {
@@ -53,8 +54,20 @@ extern "C" __global__ void chase(const unsigned int* next, int hops, unsigned in
   sink[blockIdx.x] = j;  // keeps the chase from being optimised away
 }
 """
-SMEM = 120 * 1024  # more than half the per-SM shared memory on H100 (228 KB) and A100 (164 KB)
 QUANT = 50         # per-SM ratio buckets of 2%: calibration knob if the fingerprint flickers between runs
+
+
+def _smem():
+    """Max opt-in dynamic shared memory per block: always more than half an SM's (227/228 KB Hopper and B200,
+    163/164 A100, 99/100 Ada and GeForce Blackwell), so at most one spinning block fits per SM. Only sizes the
+    trick; the SM count itself is measured."""
+    try:
+        return int(cp.cuda.Device().attributes["MaxSharedMemoryPerBlockOptin"])
+    except Exception:
+        return 99 * 1024
+
+
+SMEM = _smem()
 
 
 def _kernel(name):
@@ -78,20 +91,25 @@ def gpu_uuid():
     return "GPU-" + str(torch.cuda.get_device_properties(0).uuid)
 
 
-def sm_staircase(lo=64, hi=160, cycles=10_000_000):
-    """Launch k spinning blocks for k = lo..hi. Time jumps once k exceeds the SM count."""
+def sm_staircase(lo=32, hi=256, cycles=4_000_000, reps=3):
+    """Launch k spinning blocks for k = lo..hi (never sized from the driver's SM count). Seconds per k from CUDA
+    events, min of reps. Time doubles once k exceeds the SM count; see metrics.sm_from_staircase."""
     k, out = _kernel("spin"), cp.zeros(hi, dtype=cp.int64)
-    k((lo,), (32,), (cp.int64(cycles), out), shared_mem=SMEM)  # warm-up (module load)
+    k((lo,), (32,), (cp.int64(cycles * 50), out), shared_mem=SMEM)  # module load + ~0.1 s to ramp clocks up
     _sync()
     times = {}
     for n in range(lo, hi + 1):
-        t = time.perf_counter()
-        k((n,), (32,), (cp.int64(cycles), out), shared_mem=SMEM)
-        _sync()
-        times[n] = time.perf_counter() - t
-    base = min(times[n] for n in range(lo, lo + 8))
-    jump = next((n for n in range(lo, hi + 1) if times[n] > 1.5 * base), None)
-    return (jump - 1 if jump else None), times
+        best = None
+        for _ in range(reps):
+            s, e = cp.cuda.Event(), cp.cuda.Event()
+            s.record()
+            k((n,), (32,), (cp.int64(cycles), out), shared_mem=SMEM)
+            e.record()
+            e.synchronize()
+            t = cp.cuda.get_elapsed_time(s, e) / 1e3
+            best = t if best is None else min(best, t)
+        times[n] = best
+    return sm_from_staircase(times), times
 
 
 def clock_ghz(cycles=200_000_000):
@@ -158,7 +176,10 @@ class Gpu:
         self.name = torch.cuda.get_device_name(0)
 
     def probes(self):
+        from core.challenge import Params
+        self.fingerprints(Params(1, 256, 1))  # compile the generator and fingerprint kernels before the clock starts
         sms, stair = sm_staircase()
+        self.stair = stair
         fp, _ = sm_fingerprint(sms or torch.cuda.get_device_properties(0).multi_processor_count)
         return {"sms": sms or 0, "fp8": has_fp8(), "clock_ghz": round(clock_ghz(), 3),
                 "bw_tbs": round(copy_bw_tbs(), 3), "fingerprint": fp}, stair
@@ -166,6 +187,16 @@ class Gpu:
     def health(self, burn_seconds):
         from prover.health import collect
         return collect(burn_seconds)
+
+    def metrics(self, budget_s, per_second=None):
+        """Measured profile (prover/perf.py) plus sm_count from the staircase and stability_cv from the burn."""
+        from prover import perf
+        cp.get_default_memory_pool().free_all_blocks()
+        out = perf.run(budget_s)
+        out["sm_count"] = sm_metric(self.stair)
+        if per_second:
+            out["stability_cv"] = stability_metric(per_second)
+        return out
 
     @staticmethod
     def _mat(p, tag, step):
