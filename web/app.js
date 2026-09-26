@@ -132,7 +132,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas,
       h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of Delivered Compute"),
         h("h1", {}, "Waterline"),
-        h("p", { className: "lede" }, "Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Every check settles onchain to the GPU's own ENS name, readable by any wallet, app or agent.")),
+        h("p", { className: "lede" }, "Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each result is written to the GPU's ENS name, like gpu-53a4a8ee.lambda.waterline.eth.")),
       oneLine()),
     section("How a check works", "sealed work, a deadline, a core count", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),

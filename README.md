@@ -2,7 +2,7 @@
 
 # Waterline
 
-**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Every check settles onchain to the GPU's own ENS name, readable by any wallet, app or agent.
+**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each result is written to the GPU's ENS name, like gpu-53a4a8ee.lambda.waterline.eth.
 
 *Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
 need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
@@ -44,7 +44,7 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
   specs that don't match, broken NVSwitch ([Vast.ai](https://www.trustpilot.com/review/vast.ai),
   [RunPod](https://dk.trustpilot.com/review/runpod.io) reviews). Swapped chips are the extreme case: ~400,000 spoofed
   workers on one network ([io.net](https://x.com/ionet/status/1780877493672595941)). Our demo's A100-as-H100 is our own relabel.
-- **Nobody's next rental reads the complaints.** Clouds test themselves and reviewers audit now and then
+- **Complaints don't reach the next renter.** Clouds test themselves and reviewers audit now and then
   ([SemiAnalysis](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)); the renter can't check
   their own rental, and the record lives on Trustpilot.
 
@@ -53,9 +53,9 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
 | Pillar | Question | Carried by |
 |---|---|---|
 | **Proof** | Is this GPU what was sold? | The profiler |
-| **Place** | Where does truth live? | ENSv2 |
-| **People** | Who may say it's false? | World ID for Agents |
-| **Use** | How does truth become action? | Curvegrid MultiBaas |
+| **Place** | Where is the result kept? | ENSv2 |
+| **People** | Who can report a failure? | World ID for Agents |
+| **Use** | How do agents act on it? | Curvegrid MultiBaas |
 
 ### Proof: the profiler
 Sealed work, a deadline and a core count, run from inside the renter's rental.
