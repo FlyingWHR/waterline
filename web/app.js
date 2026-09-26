@@ -148,11 +148,17 @@ async function overview() {
 }
 
 // The one-line check a renter pastes into the rented pod's terminal. Nothing of ours is written to the pod.
+const POPULAR = ["runpod", "vastai", "lambda", "coreweave", "nebius", "aws", "gcp", "azure"]; // top of the provider picker
 function oneLine() {
   // the two variables are pickers inside the command: the provider (known names, or type your own) and the listed GPU
   const fit = (el, text) => { el.style.width = `${Math.max(4, text.length) + 2.2}ch`; };
   const pickCloud = h("select", { id: "ol-cloud", className: "var", required: true, "aria-label": "Your provider",
-    onchange: () => { reset(); if (pickCloud.value === "other") { pickCloud.replaceWith(other); other.focus(); } else fit(pickCloud, pickCloud.value); } },
+    onchange: () => {
+      reset();
+      // the list reads as names (Vast.ai); the command shows the chosen one's label (vastai)
+      for (const o of pickCloud.options) if (o.dataset.name) o.label = o.selected ? o.value : o.dataset.name;
+      if (pickCloud.value === "other") { pickCloud.replaceWith(other); other.focus(); } else fit(pickCloud, pickCloud.value);
+    } },
     h("option", { value: "", disabled: true, selected: true }, "provider"));
   const other = h("input", { id: "ol-cloud-other", className: "var", placeholder: "your-provider", spellcheck: false, autocomplete: "off",
     "aria-label": "Your provider's name, lowercase", oninput: () => { fit(other, other.value || other.placeholder); reset(); },
@@ -160,13 +166,15 @@ function oneLine() {
     onblur: () => { if (other.isConnected && !other.value.trim() && pickCloud.options.length > 1) { pickCloud.value = ""; fit(pickCloud, "provider"); other.replaceWith(pickCloud); } } });
   fit(pickCloud, "provider"); fit(other, other.placeholder);
   api("/api/providers/known").then((ps) => pickCloud.append(
-    ...["cloud", "marketplace"].map((k) => h("optgroup", { label: k === "cloud" ? "GPU clouds" : "Marketplaces (the host is a third party)" },
-      ps.filter((p) => p.kind === k).map((p) => h("option", { value: p.slug, title: p.name }, p.slug)))),
+    ...[["Popular", (p) => POPULAR.includes(p.slug)], ["GPU clouds", (p) => p.kind === "cloud"], ["Marketplaces (the host is a third party)", (p) => p.kind === "marketplace"]]
+      .map(([label, keep]) => h("optgroup", { label }, ps.filter(keep)
+        .sort((a, b) => label === "Popular" ? POPULAR.indexOf(a.slug) - POPULAR.indexOf(b.slug) : a.name.localeCompare(b.name))
+        .map((p) => { const o = h("option", { value: p.slug, title: `${p.name}: ${p.slug}` }, p.name); o.dataset.name = p.name; return o; }))),
     h("option", { value: "other" }, "other…"))).catch(() => pickCloud.replaceWith(other));
-  const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => { fit(gpu, gpu.value); reset(); } },
+  const gpu = h("select", { id: "ol-gpu", className: "var", required: true, "aria-label": "The GPU the listing promises", onchange: () => { for (const o of gpu.options) if (o.dataset.name) o.label = o.selected ? o.value : o.dataset.name; fit(gpu, gpu.value); reset(); } },
     h("option", { value: "", disabled: true, selected: true }, "gpu"),
     (GPU_TABLE.length ? GPU_TABLE : [{ slug: "h100", name: "H100 SXM" }, { slug: "h100-pcie", name: "H100 PCIe" }, { slug: "a100", name: "A100" }])
-      .map((g) => h("option", { value: g.slug, title: g.name }, g.slug)));
+      .map((g) => { const o = h("option", { value: g.slug, title: `${g.name}: ${g.slug}` }, g.name); o.dataset.name = g.name; return o; }));
   fit(gpu, "gpu");
   // a typed name becomes a valid label: lowercase, a-z 0-9 and hyphens (what the API accepts)
   const cloudValue = () => (other.isConnected ? other.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) : pickCloud.value);
