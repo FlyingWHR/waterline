@@ -25,7 +25,7 @@ class Nvml:
         try:
             import pynvml as nv
             nv.nvmlInit()
-            self.nv, self.h = nv, nv.nvmlDeviceGetHandleByIndex(0)
+            self.nv, self.h = nv, health.nvml_handle(nv)
         except Exception:
             self.nv = None
 

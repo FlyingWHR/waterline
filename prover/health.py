@@ -23,6 +23,15 @@ VOLATILE, AGGREGATE = 0, 1                  # NVML_VOLATILE_ECC, NVML_AGGREGATE_
 NVLINK_MAX = 18                             # H100 SXM has 18 links; NVML_NVLINK_MAX_LINKS is larger in new bindings
 
 
+
+def nvml_handle(nv):
+    """NVML handle of the GPU the check runs on. NVML ignores CUDA_VISIBLE_DEVICES, so match CUDA's device 0 by UUID."""
+    try:
+        import torch
+        return nv.nvmlDeviceGetHandleByUUID("GPU-" + str(torch.cuda.get_device_properties(0).uuid))
+    except Exception:
+        return nv.nvmlDeviceGetHandleByIndex(0)
+
 def decode(mask):
     return [name for bit, name in REASONS if mask & bit] if mask is not None else None
 
@@ -171,7 +180,7 @@ def collect(burn_seconds=10):
     try:
         import pynvml as nv
         nv.nvmlInit()
-        h = nv.nvmlDeviceGetHandleByIndex(0)
+        h = nvml_handle(nv)
         rep |= {"device": device(nv, h), "memory": memory(nv, h)}
     except Exception as e:
         nv = h = None

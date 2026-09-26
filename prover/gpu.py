@@ -81,14 +81,15 @@ def _sync():
 
 
 def gpu_uuid():
+    """The UUID of the GPU this check runs on. From CUDA first: it honours CUDA_VISIBLE_DEVICES (the renter's choice
+    of GPU on a multi-GPU pod), which `nvidia-smi -i 0` would not."""
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader", "-i", "0"],
-                             capture_output=True, text=True, check=True, timeout=20).stdout.strip()
-        if out:
-            return out
+        return "GPU-" + str(torch.cuda.get_device_properties(0).uuid)
     except Exception:
         pass
-    return "GPU-" + str(torch.cuda.get_device_properties(0).uuid)
+    out = subprocess.run(["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader", "-i", "0"],
+                         capture_output=True, text=True, check=True, timeout=20).stdout.strip()
+    return out
 
 
 def sm_staircase(lo=32, hi=256, cycles=4_000_000, reps=3):

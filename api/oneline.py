@@ -1,6 +1,7 @@
 """Waterline one-line check, served by the API at /run. Paste into the rented pod's terminal:
 
   curl -fsSL <host>/run | python3 - <cloud> <what the listing promises: h100 | h100-pcie | a100>
+  curl -fsSL <host>/run | python3 - <cloud> h100 --gpu 3   # a multi-GPU pod: check the fourth GPU
   curl -fsSL <host>/run | python3 - calibrate      # once, on the reference H100: prints the exam size to set
 
 Nothing is written to disk: the profiler (core/ + prover/) is fetched from the API and imported from memory.
@@ -21,6 +22,7 @@ CLASSES = {"h100-sxm": 1, "h100": 1, "h100-pcie": 2, "a100": 3, "1": 1, "2": 2, 
 ap = argparse.ArgumentParser(prog="waterline", description="Check this GPU against its listing, from inside the rental.")
 ap.add_argument("cloud", help="the provider, lowercase, e.g. cloud-b")
 ap.add_argument("claimed", help="what the listing promises: h100 (SXM), h100-pcie or a100")
+ap.add_argument("--gpu", help="on a multi-GPU pod, which GPU to check (0, 1, ...); default the first")
 ap.add_argument("--api", default=API, help=argparse.SUPPRESS)
 ap.add_argument("--cpu", action="store_true", help=argparse.SUPPRESS)  # no GPU: the offline test path
 calibrating = sys.argv[1:2] == ["calibrate"]
@@ -42,6 +44,9 @@ def need(module, package):
             sys.exit(f"waterline: couldn't install {package}; run: {' '.join(pip)}")
 
 
+if a.gpu is not None:
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = a.gpu  # before torch or cupy start CUDA
 need("numpy", "numpy")
 if not a.cpu:
     need("torch", None)
