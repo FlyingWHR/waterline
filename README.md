@@ -1,3 +1,5 @@
+<img src="web/logo.svg" alt="" width="72" height="72">
+
 # Waterline
 
 **Your agent proves the H100 you're paying for is really an H100 delivering its speed, and the verdict goes on a public record the provider can't edit.**

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Waterline">
+  <title>Waterline</title>
+  <defs>
+    <clipPath id="die"><rect x="14" y="14" width="36" height="36" rx="3"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#06111a"/>
+  <!-- the chip's pins -->
+  <path d="M26 7v6M38 7v6M26 51v6M38 51v6M7 26h6M7 38h6M51 26h6M51 38h6" stroke="#8ba1ad" stroke-width="3" stroke-linecap="round"/>
+  <!-- what it delivers: filled up to the waterline -->
+  <path clip-path="url(#die)" fill="#5fe3b9" fill-opacity=".3" d="M14 34c4.5-3.6 9-3.6 13.5 0s9 3.6 13.5 0 9-3.6 13.5 0V52H14z"/>
+  <rect x="14" y="14" width="36" height="36" rx="3" fill="none" stroke="#e4edf1" stroke-width="3"/>
+  <!-- the waterline -->
+  <path d="M17 34c3.5-2.8 7-2.8 10.5 0s7 2.8 10.5 0 7-2.8 9-1.6" fill="none" stroke="#5fe3b9" stroke-width="3.6" stroke-linecap="round"/>
+</svg>

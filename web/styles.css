@@ -322,3 +322,4 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px 22px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line2);}
 .rules div{display:grid; gap:4px; align-content:start;} .rules b{font-weight:500;} .rules span{color:var(--muted); font-size:13px;}
 .rules + .sub{margin-top:20px;}
+.brand{display:inline-flex; align-items:center;} .brand .mark{width:28px; height:28px; margin-right:14px; flex:none;}
