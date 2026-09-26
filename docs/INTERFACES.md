@@ -184,7 +184,7 @@ text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries
   (`separators=(",",":")`), UTF-8 (`api/app.py: canonical`). `report_hash = keccak256(canonical bytes)`, computed
   once at reveal (the verdict) and stored on the report. It is sent as `reportHash` in `Marks.record` on both the
   pass path and the approved-fail path; Marks keeps the latest in `waterline.report` and emits it in `Reported`
-  (index 12; the MultiBaas queries don't select it).
+  (index 14; the MultiBaas queries don't select it).
 - `GET /api/reports/{id}/evidence` -> the exact canonical bytes (`application/json`) + header
   `X-Waterline-Report-Hash`. `/api/reports`, `/api/reports/{id}` and the reveal output carry `report_hash`.
 - `GET /api/reports/by-hash/{report_hash}` -> the check summary whose `report_hash` matches (404 if none): ENS to the
