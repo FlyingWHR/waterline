@@ -143,6 +143,12 @@ def checks():
             yield h["store"] == "redis", f"API store: {h['store']}", "Add Redis on Vercel (REDIS_URL), then redeploy."
             yield bool(h["chain"].get("marks")) and str(h["chain"]["marks"]).lower() == str(marks).lower(),\
                 f"API uses Marks {h['chain'].get('marks')}", "Set MARKS_ADDRESS on Vercel to the deployed Marks, then redeploy."
+            import io
+            import zipfile
+            names = set(zipfile.ZipFile(io.BytesIO(httpx.get(api + "/api/bundle", timeout=30).content)).namelist())
+            need = {"core/challenge.py", "core/listing.py", "core/gpu_specs.json", "prover/run.py", "prover/gpu.py"}
+            yield need <= names, f"One-liner bundle carries the profiler ({len(names)} files)", \
+                f"Missing from /api/bundle: {sorted(need - names)}. Check .vercelignore and vercel.json excludeFiles."
             yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_CLIENT_ID and WORLD_CLIENT_SECRET there, then redeploy."
         except (httpx.HTTPError, ValueError, KeyError) as e:
             yield False, f"API unreachable at {api} ({type(e).__name__})", "Deploy the API (vercel --prod) and check API_URL."
