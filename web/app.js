@@ -193,8 +193,34 @@ function oneLine() {
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.
+// Isometric glyphs for the diagram: small extruded boxes in the step's colour (top lit, sides in shade). Drawn back to front.
+const SVGNS = "http://www.w3.org/2000/svg";
+function isoGlyph(boxes) {
+  const P = (x, y, z) => `${(32 + (x - y) * 0.866).toFixed(1)},${(36 + (x + y) * 0.5 - z).toFixed(1)}`;
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 64 56"); svg.setAttribute("class", "glyph"); svg.setAttribute("aria-hidden", "true");
+  for (const [x, y, z, w, d, hgt] of boxes) {
+    const [x1, y1, z1] = [x + w, y + d, z + hgt];
+    for (const [cls, pts] of [["side", [P(x1, y, z), P(x1, y1, z), P(x1, y1, z1), P(x1, y, z1)]],
+                              ["front", [P(x, y1, z), P(x1, y1, z), P(x1, y1, z1), P(x, y1, z1)]],
+                              ["top", [P(x, y, z1), P(x1, y, z1), P(x1, y1, z1), P(x, y1, z1)]]]) {
+      const f = document.createElementNS(SVGNS, "polygon");
+      f.setAttribute("points", pts.join(" ")); f.setAttribute("class", cls);
+      svg.append(f);
+    }
+  }
+  return svg;
+}
+const GLYPHS = {
+  people: [[-12, -9, 0, 24, 18, 2], [-12, -11, 0, 24, 2, 15]], // a laptop: base and screen
+  pod: [[-13, -10, 0, 26, 20, 4], [-5, -4, 4, 10, 8, 4]], // a GPU board with its die
+  api: [[-10, -8, 0, 20, 16, 5], [-10, -8, 7, 20, 16, 5], [-10, -8, 14, 20, 16, 5]], // a server stack
+  chain: [[-15, -2, 0, 12, 12, 12], [2, -11, 0, 12, 12, 12]], // two linked blocks
+  ens: [[-4, -14, 12, 8, 8, 7], [-12, 0, 0, 8, 8, 7], [4, 0, 0, 8, 8, 7]], // a name and its children
+};
+
 function flowDiagram() {
-  const node = (layer, name, what) => h("div", { className: "node c-" + layer }, h("b", {}, name), h("small", {}, what));
+  const node = (layer, name, what) => h("div", { className: "node c-" + layer }, isoGlyph(GLYPHS[layer]), h("b", {}, name), h("small", {}, what));
   const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
   const att = (layer, name, what) => h("div", { className: "att c-" + layer }, h("b", {}, name), h("small", {}, what));
   return h("div", { className: "panel" },

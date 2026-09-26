@@ -389,3 +389,32 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .mandate .grant{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-top:14px;}
 .mandate .grant .field{margin:0;}
 .mandate .grant select{width:auto; min-width:9rem;}
+/* the diagram, in relief: steps are extruded slabs with an isometric glyph; proof links carry a moving flow */
+.flow .node{--edge:color-mix(in srgb, var(--c) 42%, #03080c);
+  background:linear-gradient(155deg, color-mix(in srgb, var(--c) 16%, var(--deep)) 0%, var(--deep) 58%);
+  box-shadow:1px 1px 0 var(--edge), 2px 2px 0 var(--edge), 3px 3px 0 var(--edge), 4px 4px 0 var(--edge), 5px 5px 0 var(--edge),
+    6px 6px 0 var(--edge), 10px 14px 22px rgba(0,0,0,.45);
+  transform:translate(-3px,-3px); transition:transform .18s ease, box-shadow .18s ease; min-height:112px; align-content:end;}
+.flow .node:hover{transform:translate(-5px,-5px);
+  box-shadow:1px 1px 0 var(--edge), 2px 2px 0 var(--edge), 3px 3px 0 var(--edge), 4px 4px 0 var(--edge), 5px 5px 0 var(--edge),
+    6px 6px 0 var(--edge), 7px 7px 0 var(--edge), 8px 8px 0 var(--edge), 14px 20px 28px rgba(0,0,0,.5);}
+.flow .glyph{width:54px; height:47px; margin:-4px 0 2px -6px; overflow:visible;}
+.flow .glyph polygon{stroke:var(--c); stroke-width:.9; stroke-linejoin:round;}
+.flow .glyph .top{fill:color-mix(in srgb, var(--c) 46%, transparent);}
+.flow .glyph .front{fill:color-mix(in srgb, var(--c) 24%, transparent);}
+.flow .glyph .side{fill:color-mix(in srgb, var(--c) 12%, transparent);}
+.flow .att{background:color-mix(in srgb, var(--c) 5%, transparent); box-shadow:3px 3px 0 color-mix(in srgb, var(--c) 18%, transparent);}
+.flow .wire{height:112px;}
+.flow .wire span{padding-bottom:62px;}
+.flow .wire.proof::before{border-top:0; height:2px; margin-top:-1px;
+  background:repeating-linear-gradient(90deg, var(--accent) 0 9px, color-mix(in srgb, var(--accent) 25%, transparent) 9px 15px);
+  background-size:15px 2px; animation:wl-flow 0.9s linear infinite;}
+@keyframes wl-flow{to{background-position:15px 0;}}
+@media (max-width:820px){
+  .flow .wire{height:46px;} .flow .wire span{padding:0;}
+  .flow .wire.proof::before{height:auto; width:2px; margin:0 0 0 -.5px;
+    background:repeating-linear-gradient(180deg, var(--accent) 0 9px, color-mix(in srgb, var(--accent) 25%, transparent) 9px 15px);
+    background-size:2px 15px; animation-name:wl-flow-down;}
+  @keyframes wl-flow-down{to{background-position:0 15px;}}
+}
+@media (prefers-reduced-motion:reduce){ .flow .wire.proof::before{animation:none;} .flow .node{transition:none;} }
