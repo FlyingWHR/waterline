@@ -2,7 +2,7 @@
 
 # Waterline
 
-**Proof of Delivered Compute.** Permissionless GPU verification. Any renter checks, the network keeps the record.
+**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each check is recorded onchain under the GPU's ENS name.
 
 *Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
 need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*

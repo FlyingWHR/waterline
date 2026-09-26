@@ -132,7 +132,7 @@ async function overview() {
     h("div", { className: "hero" }, canvas,
       h("div", { className: "hero-copy" }, h("div", { className: "kicker" }, "Proof of Delivered Compute"),
         h("h1", {}, "Waterline"),
-        h("p", { className: "lede" }, "Permissionless GPU verification. Any renter checks, the network keeps the record.")),
+        h("p", { className: "lede" }, "Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each check is recorded onchain under the GPU's ENS name.")),
       oneLine()),
     section("How a check works", "sealed work, a deadline, a core count", flowDiagram()),
     ...(proof.length ? [section("Proof so far", c.mode === "live" ? "live on Ethereum Sepolia" : "dry run: nothing is sent to the chain", h("div", { className: "tiles" }, proof))] : []),
