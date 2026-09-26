@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import secrets
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -46,6 +47,31 @@ def post(api, path, body, timeout=120):
 
 def log(*a):
     print(*a, file=sys.stderr, flush=True)
+
+
+# The terminal receipt: one mark, a few facts, the verdict. Colour only on a terminal, and never with NO_COLOR.
+_TTY = sys.stderr.isatty() and not os.environ.get("NO_COLOR")
+MINT, DIM, GREEN, AMBER, RED = "38;5;79", "2", "32", "33", "31"
+
+
+def paint(code, text):
+    return f"\033[{code}m{text}\033[0m" if _TTY else text
+
+
+def mark():
+    log(paint(MINT, "≈ waterline") + paint(DIM, " · proof of delivered compute"))
+
+
+def step(text):
+    log(paint(DIM, "  · " + text))
+
+
+def fact(key, value):
+    log(f"  {paint(DIM, key.ljust(9))} {value}")
+
+
+def rule():
+    log(paint(DIM, "  " + "─" * 44))
 
 
 # CPU mode: which model an SM count plays (108 plays the A100 40GB, like health.simulated)
@@ -88,10 +114,12 @@ class Cpu:
 
 def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60):
     """Full check against the API. Returns (api_result, local_result)."""
-    log("probing hardware ...")
+    step("probing the hardware")
     probes, stair = backend.probes()
     stair_ms = {str(k): round(v * 1000, 3) for k, v in sorted(stair.items())}
-    log(f"probes: {probes}")
+    fact("gpu", " · ".join(x for x in (f"{probes.get('sms')} SMs", "FP8" if probes.get("fp8") else "no FP8",
+                                       probes.get("clock_ghz") and f"{probes['clock_ghz']} GHz",
+                                       probes.get("bw_tbs") and f"{probes['bw_tbs']} TB/s") if x))
 
     body = {"cloud": cloud, "uuid": backend.uuid, "claimed_class": claimed}
     if n:
@@ -102,29 +130,30 @@ def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, p
     p = Params(int(st["seed"]), int(st["n"]), int(st["steps"]))
     if int(st["fp_key"]) != p.fp_key:
         raise ApiError("the API's fp_key does not match the seed")
-    log(f"session {st['session_id']}: n={p.n} steps={p.steps} deadline {st['deadline_s']}s")
+    step(f"sealed exam: {p.steps} steps of {p.n:,}² INT8, deadline {st['deadline_s']} s")
 
     t0 = time.perf_counter()
     fps = backend.fingerprints(p)
     leaves = [leaf_hash(f) for f in fps]
     root = merkle_root(leaves)
     compute_s = time.perf_counter() - t0
-    log(f"computed {p.steps} steps in {compute_s:.2f}s")
+    step(f"answered in {compute_s:.1f} s")
 
     cm = post(api, "/api/check/commit", {"session_id": st["session_id"], "root": root,
                                          "probes": probes | {"staircase": stair_ms}})
     samples = [(int(x[0]), int(x[1])) for x in cm["samples"]]
-    log(f"committed; API saw {cm['elapsed_s']}s; revealing {len(samples)} rows")
+    step(f"sealed at {cm['elapsed_s']} s on the API's clock · re-grading {len(samples)} random rows")
 
     rows = backend.rows(p, samples)
-    log(f"health report: {burn_seconds}s burn ...")
+    if burn_seconds:
+        step(f"health report, {burn_seconds} s burn (advisory)")
     try:
         hr = backend.health(burn_seconds)
     except Exception as e:  # advisory: never let it break the check
         hr = {"grade": health.GRADE, "source": "error", "notes": [f"{type(e).__name__}: {str(e)[:200]}"]}
     metrics = {}
     if perf_seconds > 0:
-        log(f"performance profile (budget {perf_seconds}s) ...")
+        step(f"performance profile, up to {perf_seconds} s (advisory)")
         try:
             metrics = backend.metrics(perf_seconds, ((hr or {}).get("burn") or {}).get("per_second"))
         except Exception as e:  # advisory too
@@ -165,24 +194,34 @@ def main(argv=None):
     else:
         from prover.gpu import Gpu  # lazy: CuPy/torch only exist on the pod
         backend, n, steps = Gpu(), a.n, a.steps
+    mark()
     try:
         rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds)
     except ApiError as e:
-        log(f"error: {e}")
+        log(paint(RED, f"  error: {e}"))
         return 2
     if a.out:
         with open(a.out, "w") as f:
             json.dump(local, f, indent=1)
     link = f"{a.api.rstrip('/')}/#/check/{rv['report_id']}"
-    log({"pass": "PASS: the listed chip, done in time.",
-         "degraded": "DEGRADED: the listed chip with correct answers, but too slow for the deadline.",
-         }.get(rv["verdict"], "FAIL: " + "; ".join(rv.get("reasons") or ["see the report"])))
-    log(f"on ENS: {rv['gpu_name']}   (its provider: {rv['gpu_name'].split('.', 1)[1]})")
+    word, colour, line = {"pass": ("PASS", GREEN, "the listed chip, in time"),
+                          "degraded": ("DEGRADED", AMBER, "the listed chip, correct answers, too slow")}.get(
+        rv["verdict"], ("FAIL", RED, "not the chip on the listing" if rv.get("measured_class") != a.claimed
+                        else "the answers didn't check out"))
+    rule()
+    log(f"  {paint(colour, word.ljust(9))} {line}")
+    for reason in rv.get("reasons") or []:
+        log(paint(DIM, f"            {reason}"))
+    fact("gpu", rv["gpu_name"])
+    fact("provider", rv["gpu_name"].split(".", 1)[1])
     if rv.get("published"):
-        log(f"published: {rv.get('tx') or 'dry run, no transaction'}" + (f" (via {rv['via']})" if rv.get("via") not in (None, "dry-run") else ""))
-    log(f"report: {link}" + ("\n  nothing is published yet: open the link and Approve with World to publish this failure"
-                             if rv["verdict"] == "fail" else ""))
-    print(json.dumps(rv))
+        fact("onchain", (rv.get("tx") or "dry run, no transaction")
+             + (f" via {rv['via']}" if rv.get("via") not in (None, "dry-run") else ""))
+    fact("report", link)
+    if rv["verdict"] == "fail":
+        log(paint(AMBER, "  → nothing is published yet: open the report and approve it with World to publish"))
+    if not sys.stdout.isatty():  # machine-readable for the agent; a person on a terminal gets the receipt only
+        print(json.dumps(rv))
     return 0
 
 
