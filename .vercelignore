@@ -1,7 +1,6 @@
 files/
 tests/
 contracts/
-prover/
 agent/
 docs/
 .venv/
