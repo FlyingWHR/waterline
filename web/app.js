@@ -237,21 +237,21 @@ async function gpus() {
   const prows = pv.providers.map((x) => h("tr", {},
     h("td", { className: "mono", title: x.provider_node }, x.name || short(x.provider_node)),
     h("td", {}, String(x.gpus)), h("td", { className: x.failed_gpus ? "st-fail" : "" }, String(x.failed_gpus)),
-    h("td", {}, String(x.humans)), h("td", {}, String(x.passes)), h("td", {}, String(x.fails)),
+    h("td", {}, String(x.humans)), h("td", {}, String(x.passes)), h("td", {}, String(x.degraded ?? "—")), h("td", {}, String(x.fails)),
     h("td", {}, x.name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.name) }, "Look up") : null)));
   const rows = g.gpus.map((x) => h("tr", {},
     h("td", { className: "mono", title: x.node }, x.gpu_name || short(x.node)),
-    h("td", {}, cls(x.cls)), h("td", {}, String(x.cores ?? "—")), h("td", {}, String(x.passes)), h("td", {}, String(x.fails)),
+    h("td", {}, cls(x.cls)), h("td", {}, String(x.cores ?? "—")), h("td", {}, String(x.passes)), h("td", {}, String(x.degraded ?? "—")), h("td", {}, String(x.fails)),
     h("td", {}, String(x.humans)), h("td", {}, pill(x.status)), h("td", {}, when(x.last_at)),
     h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.gpu_name) }, "Look up") : null)));
   return [
     head("GPUs", "GPU health", h("p", { className: "sub" }, "One row per GPU on the public record. A failure needs two different people before the GPU shows as failed; two passes after its last failure bring it back as recovered.")),
     ...(prows.length ? [section("Providers", "each person counts once per provider",
       h("p", { className: "sub" }, "Every GPU name sits under its provider's name, so failures roll up: a provider can give a chip a new name, not itself a clean record. A provider can add a note to its own name; it can't change a number."),
-      table(["Provider", "GPUs", "Failed now", "People", "Passes", "Fails", ""], prows))] : []),
+      table(["Provider", "GPUs", "Failed now", "People", "Passes", "Degraded", "Fails", ""], prows))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
-      rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Fails", "People", "Status", "Last report", ""], rows)
+      rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "People", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
     section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "Type a GPU name or a provider name (like cloud-b). The record is read through the ENS universal resolver, straight from the chain."), form, out),
   ];
@@ -840,9 +840,13 @@ async function about() {
       h("div", { className: "block" }, h("div", { className: "label" }, "This browser"),
         h("p", { className: "sub" }, token.get() ? "You are logged in with World here. The login is kept in this browser only." : "Not logged in with World in this browser."),
         h("div", {}, forget)))),
+    section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
+      "Every GPU you rent out already has a name under your provider name, like cloud-b.waterline.eth. Look both up on the GPUs page. You can't write a score, and neither can we by hand: only a check can. Two ways back from a failure: renters' passes (two after the last failure mark the GPU recovered, with its history kept), and a note in your own words. Ask us for the note role on your provider name; the note shows beside your record and changes no number.")),
+    section("For agents and integrations", "the record is public and machine-readable", h("p", { className: "sub" },
+      "Read any GPU or provider name through ENS (text records waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; a provider also has gpus, failed_gpus, note). Or query the Reported and ProviderTally events on MultiBaas, or GET /api/gpus and /api/providers here.")),
     section("How a check works", null, h("ol", { className: "how" }, steps.map((s) => h("li", {}, h("span", {}, s))))),
     section("What the statuses mean", null, kv(["pass", "At least one check passed and nobody has reported it."],
-      ["suspect · 1 of 2 humans", "One person approved a failure report."], ["failed", "Two different people approved failure reports."],
+      ["suspect · 1 of 2 humans", "One person approved a failure report. To add a second voice, rent that GPU yourself and run the check: a failure you approve counts as a different person."], ["failed", "Two different people approved failure reports."],
       ["degraded", "Its latest check found the listed chip with correct answers, but too slow for the deadline: heat, a power cap or sharing. Published with its numbers; never counts toward failed."],
       ["recovered", "It had failure reports, then passed two checks after the last one. The reports stay in its history, and the people who made them can't report it again."],
       ["unknown", "No published check yet."],
