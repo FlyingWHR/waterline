@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 vc() { env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy vercel "$@"; }
 
-API_URL=${API_URL:-https://waterline-red.vercel.app}
+API_URL=${API_URL:-https://waterline-eth.vercel.app}
 val() {  # value of $1 in .env (shell env wins), else default $2
   python3 - "$1" "${2:-}" <<'PY'
 import os, shlex, sys
