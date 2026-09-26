@@ -319,6 +319,7 @@ async function namePage(full) {
         : h("span", {}, "Named under ", h("a", { href: `#/name/${n.split(".").slice(1).join(".")}` }, n.split(".").slice(1).join(".")), ". Resolved by Marks, written only by its reporter role."))),
     section("The record", "read live from ENS on Sepolia", facts),
     ...(isProvider ? [section("Its GPUs", "each with its own record", nameTree({ providers: provNode ? [provNode] : [] }, g.gpus.filter((x) => x.gpu_name?.endsWith("." + n)), () => {}))] : []),
+    ...(!isProvider && mine.some((x) => x.series) ? [section("Periodic series", "the latest, check by check", seriesStrip(mine, mine.find((x) => x.series).series))] : []),
     section("History", `${mine.length} check${mine.length === 1 ? "" : "s"}`, mine.length ? checksTable(mine) : h("p", { className: "empty" }, "No checks through this API yet.")),
   ];
 }
@@ -410,11 +411,25 @@ function ensLookup(initial = "") {
 }
 
 // ---- checks ------------------------------------------------------------------------------------------------
+// Periodic checks (--every): the same rental re-checked at jittered intervals. A tag in tables, and a timeline where a
+// throttle or a swapped card shows as a break in the line.
+const seriesTag = (r) => r.series ? h("span", { className: "stag", title: `Periodic series ${r.series}` }, `↻ #${r.seq}`) : null;
+
+function seriesStrip(all, id, current) {
+  const xs = all.filter((r) => r.series === id).sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const top = Math.max(100, ...xs.map((r) => r.pct_of_spec || 0));
+  return h("div", { className: "strip", role: "list", "aria-label": `Periodic series ${id}` }, xs.map((r) =>
+    h("a", { role: "listitem", href: `#/check/${r.report_id}`, className: "tick st-" + r.verdict + (r.report_id === current ? " here" : ""),
+      title: `#${r.seq} · ${r.verdict} · ${when(r.created_at)}${r.pct_of_spec != null ? ` · ${num(r.pct_of_spec)}% of rating` : ""}` },
+      h("i", { style: `height:${r.pct_of_spec ? Math.max(8, (r.pct_of_spec / top) * 100) : 100}%` }),
+      h("span", {}, `#${r.seq}`))));
+}
+
 function checksTable(reps) {
   return table(["When", "GPU", "Listed as", "Measured as", "Verdict", "Tx", "Indexed", ""], reps.map((r) => h("tr", {},
     h("td", {}, when(r.created_at)),
     h("td", {}, h("a", { href: `#/check/${r.report_id}`, className: "mono", title: "Open this check" }, r.gpu_name || r.report_id)),
-    h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r)),
+    h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r), seriesTag(r)),
     h("td", {}, txLink(r.tx, r.published)),
     h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
     h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", title: "Approve with World", onclick: () => approveFlow(r) }, "Approve") : null))));
@@ -439,8 +454,10 @@ const gauge = (label, value, pct, tone, aria) =>
     h("div", { className: "bar " + (tone === "st-fail" ? "over" : ""), role: "img", "aria-label": aria }, h("i", { style: `width:${Math.max(0.5, Math.min(100, pct || 0))}%` })));
 
 async function checkDetail(id) {
-  const [r, cmp] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
-    api(`/api/compare/${encodeURIComponent(id)}`).catch(() => null)]); // the check still shows if comparing fails
+  const [r, cmp, recent] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
+    api(`/api/compare/${encodeURIComponent(id)}`).catch(() => null), // the check still shows if comparing fails
+    api("/api/reports?limit=500").catch(() => [])]);
+  const seriesOf = recent;
   const p = r.probes || {};
   const kv = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
   const [form, out] = ensLookup(r.gpu_name);
@@ -495,6 +512,9 @@ async function checkDetail(id) {
     section("Core-count staircase", r.staircase ? `step at ${p.sms} blocks` : null,
       h("p", { className: "sub" }, "One busy block per core: past the core count, blocks queue and the time jumps. Heat slows a chip; it can't move this step."),
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
+    ...(r.series ? [section("Periodic series", `↻ check #${r.seq} of series ${r.series}`,
+      h("p", { className: "sub" }, "The same rental, re-checked at jittered intervals so the host can't time it. Each bar is one check: its height is the share of the rating it delivered, its colour the verdict."),
+      seriesStrip(seriesOf, r.series, r.report_id))] : []),
     perfSection(r, cmp),
     healthSection(r.health),
     onChain(r, kv),

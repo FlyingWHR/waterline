@@ -2,6 +2,7 @@
 
   curl -fsSL <host>/run | python3 - <cloud> <what the listing promises: h100 | h100-pcie | a100>
   curl -fsSL <host>/run | python3 - <cloud> h100 --gpu 3   # a multi-GPU pod: check the fourth GPU
+  curl -fsSL <host>/run | python3 - <cloud> h100 --every 30m   # a periodic series, until Ctrl-C (or --times N)
   curl -fsSL <host>/run | python3 - calibrate      # once, on the reference H100: prints the exam size to set
 
 Nothing is written to disk: the profiler (core/ + prover/) is fetched from the API and imported from memory.
@@ -9,6 +10,10 @@ It needs numpy and torch (every PyTorch pod image has them); cupy is installed o
 """
 import argparse
 import importlib.abc
+import random
+import re
+import secrets
+import time
 import importlib.util
 import io
 import subprocess
@@ -23,6 +28,8 @@ ap = argparse.ArgumentParser(prog="waterline", description="Check this GPU again
 ap.add_argument("cloud", help="the provider, lowercase, e.g. cloud-b")
 ap.add_argument("claimed", help="what the listing promises: h100 (SXM), h100-pcie or a100")
 ap.add_argument("--gpu", help="on a multi-GPU pod, which GPU to check (0, 1, ...); default the first")
+ap.add_argument("--every", help="check again at this interval, e.g. 30m or 2h (jittered ±20%%), until Ctrl-C")
+ap.add_argument("--times", type=int, help="with --every: stop after this many checks")
 ap.add_argument("--api", default=API, help=argparse.SUPPRESS)
 ap.add_argument("--cpu", action="store_true", help=argparse.SUPPRESS)  # no GPU: the offline test path
 calibrating = sys.argv[1:2] == ["calibrate"]
@@ -88,6 +95,30 @@ sys.meta_path.insert(0, Memory())
 if calibrating:
     from prover.calibrate import main as calibrate  # noqa: E402
     sys.exit(calibrate([*(["--cpu"] if a.cpu else []), *rest]))
-from prover.run import main  # noqa: E402
+from prover.run import DIM, main, paint  # noqa: E402
 
-sys.exit(main(["--api", a.api, "--cloud", a.cloud, "--claimed", str(claimed), *(["--cpu"] if a.cpu else []), *rest]))
+args = ["--api", a.api, "--cloud", a.cloud, "--claimed", str(claimed), *(["--cpu"] if a.cpu else []), *rest]
+if not a.every:
+    sys.exit(main(args))
+
+# A periodic series: one id, numbered checks, jittered gaps so the host can't time the next one.
+m = re.fullmatch(r"(\d+(?:\.\d+)?)([smh]?)", a.every.strip().lower())
+if not m:
+    sys.exit("waterline: --every takes a duration like 90s, 30m or 2h")
+gap = float(m[1]) * {"s": 1, "m": 60, "h": 3600, "": 60}[m[2]]
+if gap < 60 and not a.cpu:
+    sys.exit("waterline: --every must be at least 1m")
+series, n = secrets.token_hex(4), 0
+try:
+    while a.times is None or n < a.times:
+        n += 1
+        main(args + ["--series", series, "--seq", str(n)] + (["--no-mark"] if n > 1 else []))
+        if a.times is not None and n >= a.times:
+            break
+        wait = gap * random.uniform(0.8, 1.2)
+        print(paint(DIM, f"  ↻ next check in ~{f'{wait / 60:.0f} min' if wait >= 90 else f'{wait:.0f} s'} (jittered, so the host can't time it) · Ctrl-C to stop"),
+              file=sys.stderr, flush=True)
+        time.sleep(wait)
+except KeyboardInterrupt:
+    pass
+print(paint(DIM, f"  ↻ series {series} ended after {n} check{'s' if n != 1 else ''}"), file=sys.stderr, flush=True)

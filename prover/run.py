@@ -112,7 +112,7 @@ class Cpu:
         return out
 
 
-def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60):
+def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60, series=None, seq=None):
     """Full check against the API. Returns (api_result, local_result)."""
     step("probing the hardware")
     probes, stair = backend.probes()
@@ -121,7 +121,8 @@ def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, p
                                        probes.get("clock_ghz") and f"{probes['clock_ghz']} GHz",
                                        probes.get("bw_tbs") and f"{probes['bw_tbs']} TB/s") if x))
 
-    body = {"cloud": cloud, "uuid": backend.uuid, "claimed_class": claimed}
+    body = {"cloud": cloud, "uuid": backend.uuid, "claimed_class": claimed,
+            **({"series": series, "seq": seq} if series else {})}
     if n:
         body["n"] = n
     if steps:
@@ -187,6 +188,8 @@ def main(argv=None):
     ap.add_argument("--perf-seconds", type=int, default=60,
                     help="performance profile time budget, run after commit (0 skips it)")
     ap.add_argument("--no-mark", action="store_true", help=argparse.SUPPRESS)  # the agent prints it first
+    ap.add_argument("--series", help=argparse.SUPPRESS)  # a periodic series (--every), set by the one-liner or agent
+    ap.add_argument("--seq", type=int, help=argparse.SUPPRESS)
     ap.add_argument("--out", help="also write the probes and timings to this file (nothing is written without it)")
     a = ap.parse_args(argv)
 
@@ -198,7 +201,7 @@ def main(argv=None):
     if not a.no_mark:
         mark()
     try:
-        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds)
+        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds, a.series, a.seq)
     except ApiError as e:
         log(paint(RED, f"  error: {e}"))
         return 2
@@ -216,6 +219,8 @@ def main(argv=None):
         log(paint(DIM, f"            {reason}"))
     fact("gpu", rv["gpu_name"])
     fact("provider", rv["gpu_name"].split(".", 1)[1])
+    if a.series:
+        fact("series", f"↻ check #{a.seq} of series {a.series}")
     if rv.get("published"):
         fact("onchain", (rv.get("tx") or "dry run, no transaction")
              + (f" via {rv['via']}" if rv.get("via") not in (None, "dry-run") else ""))

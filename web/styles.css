@@ -365,3 +365,11 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .namestatus{margin:10px 0 2px;} .namestatus .pill{font-size:13px; padding:4px 12px;}
 .lede-s{font-size:clamp(17px,2vw,20px); font-weight:300;}
 .namefacts{display:grid; gap:14px;}
+/* periodic series: a tag in tables, a timeline of bars */
+.stag{font-family:var(--mono); font-size:11px; color:var(--accent); margin-left:8px; white-space:nowrap;}
+.strip{display:flex; align-items:flex-end; gap:6px; height:88px; padding:12px 14px 10px; background:var(--deep); border:1px solid var(--line2); overflow-x:auto;}
+.strip .tick{display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:6px; height:100%; min-width:26px; border:0; color:var(--c, var(--muted));}
+.strip .tick i{display:block; width:14px; background:currentColor; opacity:.85;}
+.strip .tick span{font-family:var(--mono); font-size:10.5px; color:var(--muted);}
+.strip .tick.here i{outline:1px solid var(--ink); outline-offset:2px;}
+.strip .st-pass{color:var(--pass);} .strip .st-degraded{color:var(--warn);} .strip .st-fail{color:var(--fail);}

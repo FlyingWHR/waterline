@@ -16,6 +16,9 @@ WATERLINE_STOP_CMD (default --stop-cmd).
 """
 import argparse
 import json
+import random
+import re
+import secrets
 import os
 import shlex
 import subprocess
@@ -99,6 +102,8 @@ def claimed_class(text, forced=None):
 def run_profiler(a, api, cls):
     """Returns the API's final JSON (the profiler's last stdout line). result.json lands in a.out."""
     args = ["--api", api, "--cloud", a.cloud, "--claimed", str(cls), "--no-mark"]  # the agent already printed it
+    if getattr(a, "series", None):
+        args += ["--series", a.series, "--seq", str(a.seq)]
     if a.n:
         args += ["--n", str(a.n)]
     if a.steps:
@@ -127,9 +132,34 @@ def run_profiler(a, api, cls):
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
-def check(a, api):
-    mark()
-    cls = claimed_class(a.listing, a.claimed)
+def check_every(a, api):
+    """A periodic series: re-check the same rental at jittered intervals. Passes and degraded results keep publishing
+    on their own; the first failure stops paying and asks for your World approval, which ends the series."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([smh]?)", a.every.strip().lower())
+    if not m:
+        raise SystemExit("--every takes a duration like 90s, 30m or 2h")
+    gap = float(m[1]) * {"s": 1, "m": 60, "h": 3600, "": 60}[m[2]]
+    a.series, a.seq, rc = secrets.token_hex(4), 0, 0
+    try:
+        while a.times is None or a.seq < a.times:
+            a.seq += 1
+            rc = check(a, api, first=a.seq == 1)
+            if rc == 1 or (a.times is not None and a.seq >= a.times):  # a failure ends the rental, so the series
+                break
+            wait = gap * random.uniform(0.8, 1.2)
+            print(paint(DIM, f"  ↻ next check in ~{f'{wait / 60:.0f} min' if wait >= 90 else f'{wait:.0f} s'} "
+                             "(jittered, so the host can't time it) · Ctrl-C to stop"))
+            time.sleep(wait)
+    except KeyboardInterrupt:
+        pass
+    print(paint(DIM, f"  ↻ series {a.series} ended after {a.seq} check{'s' if a.seq != 1 else ''}"))
+    return rc
+
+
+def check(a, api, first=True):
+    if first:
+        mark()
+    cls = a.claimed = claimed_class(a.listing, a.claimed)  # read the listing once; a series reuses it
     claim = listing.CLASSES.get(cls, cls)
     print(paint(DIM, f"  · checking {'this machine (CPU)' if a.local else a.pod} against the listing: {claim}"))
     rv = run_profiler(a, api, cls)  # prints its own receipt: the verdict, the ENS names, where it landed
@@ -238,6 +268,8 @@ def main(argv=None):
     c.add_argument("--pod-id", help="the rental's id at the cloud, fills {pod_id} in the stop command")
     c.add_argument("--stop-cmd", help="on FAIL, run this at once to stop paying, e.g. 'runpodctl stop pod {pod_id}' "
                                       "(default: env WATERLINE_STOP_CMD). Never run on PASS.")
+    c.add_argument("--every", help="a periodic series: re-check at this interval (e.g. 30m), jittered ±20%%, until Ctrl-C")
+    c.add_argument("--times", type=int, help="with --every: stop after this many checks")
     sub.add_parser("history", help="GPU history from MultiBaas: passes, failures, status")
     ch = sub.add_parser("choose", help="pick a listing from MultiBaas history only (no LLM ranking)")
     ch.add_argument("--listings", required=True, help='JSON list of {"gpu": name, "listing": text, "price": n}')
@@ -251,7 +283,7 @@ def main(argv=None):
         if a.cmd == "login":
             return 0 if login(a.api) else 1
         if a.cmd == "check":
-            return check(a, a.api)
+            return check_every(a, a.api) if a.every else check(a, a.api)
         return show_history(a) if a.cmd == "history" else choose(a)
     except ApiError as e:
         print(f"Waterline API error: {e}")

@@ -88,6 +88,9 @@ class StartIn(BaseModel):
     claimed_class: int = Field(ge=1, le=3)
     n: int = Field(CHECK_N, ge=8, le=32768)  # omitted -> the API's calibrated size (prover.run on a GPU omits both)
     steps: int = Field(default_factory=lambda: int(os.environ.get("CHECK_STEPS") or 100), ge=1, le=1000)
+    # a periodic series (--every): the same renter re-checking one rental at jittered intervals
+    series: str | None = Field(default=None, pattern=r"^[a-z0-9]{6,24}$")
+    seq: int | None = Field(default=None, ge=1, le=100000)
 
 
 class Probes(BaseModel):
@@ -172,6 +175,8 @@ def check_reveal(body: RevealIn):
     prev = next((r for r in _reports(INDEX_MAX) if r["node"] == "0x" + node.hex()), None)
     fp = s["probes"]["fingerprint"].lower()
     rep = {"report_id": rid, "verdict": verdict, "measured_class": measured,
+           # periodic checks carry their series and place in it; both sit inside the evidence hash
+           **({"series": s["series"], "seq": s.get("seq")} if s.get("series") else {}),
            "reasons": reasons, "gpu_name": name, "node": "0x" + node.hex(), "published": False, "tx": None,
            "gpu_label": label, "provider": provider, "provider_node": "0x" + chain.namehash(provider).hex(),
            # an observation, never a verdict: the fingerprint is quantised timing, not yet proven stable across runs
@@ -359,7 +364,8 @@ def approve_poll(body: DeviceIn):
 
 # ---- control panel reads ------------------------------------------------------------------------------------
 SUMMARY = ("report_id", "created_at", "gpu_name", "node", "cloud", "claimed_class", "measured_class", "verdict",
-           "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash")
+           "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash", "series", "seq",
+           "pct_of_spec")
 # Reported(node 0, provider 1, gpuVoter 2, providerVoter 3, verdict 4, cls 5, cores 6, fingerprint 7, topsX10 8,
 #          pctBps 9, at 10, passes 11, fails 12, active 13, reportHash 14) and
 # ProviderTally(provider 0, gpus 1, failedGpus 2, humans 3, passes 4, fails 5, at 6):
