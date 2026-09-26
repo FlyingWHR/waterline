@@ -52,7 +52,11 @@ def world_flow(api, start_path, start_body, poll_path, what):
     print(f"\n{what}: open {link}\n  (or enter code {d['user_code']} in World App)")
     deadline = time.time() + int(d.get("expires_in", 600))
     while time.time() < deadline:
-        r = post(api, poll_path, {"device_id": d["device_id"]})
+        try:
+            r = post(api, poll_path, {"device_id": d["device_id"]})
+        except OSError:  # a dropped connection (URLError, SSL EOF) is not an answer: keep waiting
+            time.sleep(poll_s())
+            continue
         if r["status"] != "pending":
             return r
         time.sleep(poll_s())

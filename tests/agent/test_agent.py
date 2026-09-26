@@ -151,3 +151,18 @@ def test_choose_skips_a_degraded_gpu_and_says_why():
     pick, skipped = history.choose([{"gpu": g, "price": 1.0}], hist)
     assert pick is None and skipped[0][1].startswith("degraded on its last check")
     assert history.status(hist[history.namehash(g)]) == "degraded"
+
+
+def test_world_wait_survives_a_dropped_connection(monkeypatch):
+    from agent import cli
+    answers = iter([{"device_id": "d", "user_code": "C", "verification_uri_complete": "https://w", "expires_in": 60},
+                    OSError("SSL: UNEXPECTED_EOF"), {"status": "approved", "agent_token": "t"}])
+
+    def fake_post(api, path, body):
+        a = next(answers)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    monkeypatch.setattr(cli, "post", fake_post)
+    monkeypatch.setattr(cli, "poll_s", lambda: 0)
+    assert cli.world_flow("http://api", "/s", {}, "/p", "Log in")["status"] == "approved"
