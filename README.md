@@ -9,6 +9,11 @@ degraded. And if someone lies about the cores, World makes sure they can only li
 
 ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBaas
 
+## One-sentence summary
+
+Waterline lets a renter's agent prove, from inside the rental, that a cloud GPU is the chip on the listing and
+delivers its speed, and publishes the verdict on the GPU's ENS name, where the provider can't edit it.
+
 - Demo video: [link]
 - Live app: [link]
 - Showcase (architecture + demo walkthrough): [link]
@@ -124,7 +129,7 @@ for all), with World keeping each a distinct human. The name tree grows a site l
 | `web/` | Control panel served by the API |
 | `docs/` | `INTERFACES.md` (the spec), `prompts/` (build prompts), GPU reference data |
 
-## Run it
+## Setup and testing
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -141,7 +146,7 @@ open http://127.0.0.1:8787
 ```
 On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/README.md`. Environment: `.env.example`.
 
-## How MultiBaas is used
+## How we used MultiBaas
 
 - **Writes:** the API composes every `Marks.record` call through MultiBaas (nonce and gas filled in), checks the
   calldata, signs it locally, and submits it through MultiBaas. (MultiBaas's concurrent nonce management needs its
@@ -149,18 +154,42 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 - **Indexer:** event indexing of `Marks.Reported`; event queries grouped by GPU power the agent's choice and the
   control panel's health table and leaderboard. `Marks` emits running totals so queries only need `last`/`max`.
 - **Listener:** a webhook on `Reported` confirms each report was indexed; the control panel shows it.
+- **Provider roll-up:** a second event query on `ProviderTally`, grouped by provider, ranks clouds for the agent.
 
-## MultiBaas feedback
+## Our experience with MultiBaas
 
-[Written by the builder after using it. Notes from the build:]
-- The free plan's 100-block look-back means you must link a contract right after deploying it, or history is lost.
-- Event queries have no count or count-distinct aggregator, so we emit running totals from the contract instead.
-- The MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits agent use.
-- The Python SDK lags the current API paths; we called REST directly.
+[DRAFT from build notes: rewrite in your own words before submitting.]
+- **Wins:** compose-then-sign kept the reporter key on our side while MultiBaas handled nonce and gas; the webhook
+  gave us "indexed" confirmation for free; event queries grouped by GPU and by provider replaced a backend database.
+- **Challenges:** the free plan's 100-block look-back means you must link a contract right after deploying it, or
+  history is lost. Re-deploying a contract version hit a 409 on the existing address alias; we linked it under a new
+  alias (`marks2`). Event queries have no count or count-distinct aggregator, so the contract emits running totals.
+- **Feedback:** the MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits
+  agent use; the Python SDK lags the current API paths, so we called REST directly.
 
-## World ID feedback
+## World ID integration debrief
 
-[Written by the builder after the live integration.]
+[DRAFT from build notes: rewrite in your own words, and fill in the time, before submitting.]
+
+### Time to first success
+[N] hours from first attempt to the first live device-code login through `sandbox.auth.world.org` from our
+production API. Most of it went to finding the right portal; the code itself worked the first time it had a
+valid client.
+
+### Friction encountered
+We first registered an app at developer.world.org. Its id returned `invalid_client` at the World ID for Agents
+IdP with no hint that it belonged to a different product, so we rebuilt the approval on IDKit before the prize page
+pointed us to `sandbox.auth.world.org/portal`. The portal calls OIDC clients "apps", which made the right button
+hard to find. The sandbox app's TestFlight enrollment stayed pending; the note that proofs are mocked lived only on
+the prize page.
+
+### Missing capability or documentation
+docs.world.org doesn't link to the Agents IdP or its portal, and the device-grant guide is only reachable through
+the IdP's MCP resources. It isn't documented whether the World ID Simulator works with the sandbox IdP.
+
+### The one improvement with the greatest impact
+Make `invalid_client` say which environment and portal a client id belongs to (or link both portals from each other).
+That one message would have saved us the IDKit detour.
 
 ## How we built it
 
@@ -172,7 +201,7 @@ All code was written during the event.
 
 ## Team
 
-[name] · [X / GitHub handle] · solo builder
+[name] · [X handle] · [GitHub handle] · solo builder
 
 ## Builds on
 
