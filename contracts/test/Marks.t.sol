@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import {Test} from "forge-std/Test.sol";
 import {Marks} from "../src/Marks.sol";
+import {IEnhancedAccessControl} from "@ensdomains/contracts-v2/access-control/interfaces/IEnhancedAccessControl.sol";
 
 contract MarksTest is Test {
     Marks marks;
@@ -28,8 +29,10 @@ contract MarksTest is Test {
     }
 
     function test_hostCannotPostItsOwnPass() public {
+        uint256 role = marks.ROLE_REPORTER();
         vm.prank(host);
-        vm.expectRevert(Marks.NotReporter.selector);
+        vm.expectRevert(abi.encodeWithSelector(
+            IEnhancedAccessControl.EACUnauthorizedAccountRoles.selector, uint256(node), role, host));
         marks.record(node, 1, 1, 132, fp, keccak256("fake"), 0, 0);
     }
 
@@ -108,11 +111,37 @@ contract MarksTest is Test {
         marks.record(node, 1, 1, 132, fp, keccak256("r"), 14105, 7125);
     }
 
-    function test_onlyAdminChangesReporter() public {
-        vm.expectRevert(Marks.NotAdmin.selector);
-        marks.setReporter(host);
+    function test_onlyAdminGrantsTheReporterRole() public {
+        uint256 role = marks.ROLE_REPORTER();
+        vm.prank(host);
+        vm.expectRevert();
+        marks.grantRootRoles(role, host);
         vm.prank(admin);
-        marks.setReporter(address(0x2));
-        assertEq(marks.reporter(), address(0x2));
+        marks.grantRootRoles(role, address(0x2));
+        assertTrue(marks.hasRootRoles(role, address(0x2)));
+        vm.prank(admin);
+        marks.revokeRootRoles(role, api);
+        vm.prank(api);
+        vm.expectRevert();
+        marks.record(node, 1, 1, 132, fp, keccak256("r"), 0, 0);
+    }
+
+    /// The next stage in one call: an independent verifier allowed to write one GPU's record, and no other.
+    function test_verifierScopedToOneGpu() public {
+        address verifier = address(0xBEEF);
+        bytes32 other = keccak256("gpu-2b44.cloud-a.waterline.eth");
+        uint256 role = marks.ROLE_REPORTER();
+        vm.prank(admin);
+        marks.grantRoles(uint256(node), role, verifier);
+        vm.startPrank(verifier);
+        marks.record(node, 1, 1, 132, fp, keccak256("v1"), 0, 0);
+        vm.expectRevert();
+        marks.record(other, 1, 1, 132, fp, keccak256("v2"), 0, 0);
+        vm.stopPrank();
+        assertEq(marks.text(node, "waterline.passes"), "1");
+    }
+
+    function test_supportsAccessControlInterface() public view {
+        assertTrue(marks.supportsInterface(type(IEnhancedAccessControl).interfaceId));
     }
 }

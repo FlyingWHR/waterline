@@ -1,6 +1,6 @@
 # Waterline
 
-**When you rent a GPU, Waterline checks it's really the chip you paid for, from inside your own rental, and puts the result on a public record the host can't edit.**
+**Your agent proves the H100 you're paying for is really an H100, and the verdict goes on a public record the provider can't edit.**
 
 ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBaas
 
@@ -8,41 +8,78 @@ ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENS · World ID · Curvegrid MultiBa
 - Live app: [link]
 - Showcase (architecture + demo walkthrough): [link]
 
-## The problem
+## Why
 
-GPU rentals run on the host's word. The "same" H100 rents for $1.49–$6.98 an hour across 15+ clouds
-([IntuitionLabs](https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison)); SemiAnalysis tracks 209 GPU
-clouds and gave a medal to 37 of the 84 it rated ([ClusterMAX 2.0](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard));
-one decentralised network found ~400,000 spoofed GPU workers ([io.net](https://x.com/ionet/status/1780877493672595941)).
-Ratings are periodic reviews. Nothing checks *your* rental, right now.
+GPU cloud passed $25B in 2025 and is heading to ~$400B by 2031
+([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)).
+Banks now lend against GPUs ([CoreWeave's $8.5B facility](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)).
+Yet the "same" H100 rents for $1.49–$6.98 an hour ([IntuitionLabs](https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison)),
+and one network found ~400,000 spoofed GPU workers ([io.net](https://x.com/ionet/status/1780877493672595941)).
+Clouds test their own fleets and reviewers audit them now and then
+([SemiAnalysis ClusterMAX](https://newsletter.semianalysis.com/p/clustermax-20-the-industry-standard)), but the
+renter can't check their own rental, right now.
 
-## How it works
+## Four pillars
 
-1. **Check (a timed exam).** The renter's agent runs our profiler inside its own rental. From a secret seed, the GPU
-   builds 16,384 × 16,384 INT8 matrices and multiplies them on its tensor cores (8.8 trillion operations a step) against
-   a deadline only the listed chip can meet. It seals every result row in a Merkle root; only then does our API pick
-   8 rows at random and recompute 64 entries of each. Timing probes count the GPU's cores (132 on an H100 SXM, 108 on an
-   A100) and test for Hopper-only FP8. Heat can slow a chip down; it can't remove cores.
-2. **Record (ENS).** A pass carries its own proof and is published straight away to the `Marks` contract on Sepolia.
-   `Marks` is the resolver for `waterline.eth`, so every GPU has a name the moment it's checked
-   (`gpu-<id>.<cloud>.waterline.eth`, ENSv2 wildcard resolution): anyone can look it up, and the host can't change it.
-3. **Approve (World ID).** A failure can't prove itself and it hurts someone, so it's published only after a fresh
-   approval from a verified human (World ID, Human Continuity). One person gets one voice per GPU; a GPU is marked
-   failed only when two different people report it.
-4. **Use (Curvegrid MultiBaas).** MultiBaas indexes every report; the agent skips GPUs with a bad record, and the
-   control panel shows each GPU's health.
+| Pillar | Question | Carried by |
+|---|---|---|
+| **Proof** | Is this GPU what was sold? | The profiler |
+| **Place** | Where does truth live? | ENSv2 |
+| **People** | Who may say it's false? | World ID for Agents |
+| **Use** | How does truth become action? | Curvegrid MultiBaas |
 
-Renters also get a **health report**: sustained throughput, throttling, memory errors, link speeds, and NVIDIA's DCGM
-diagnostic where available. It's reported by the machine, so it informs but never decides the verdict.
+### Proof: the profiler
+Work only the claimed chip can finish in time, run from inside the renter's own rental.
+- **A secret INT8 exam.** From a fresh seed, the GPU builds 16,384 × 16,384 INT8 matrices and multiplies them on its
+  tensor cores (8.8 trillion operations a step) against a deadline on the verifier's clock. INT8 because it's the
+  only tensor-core format whose answer is exactly reproducible, so we can grade it bit for bit.
+- **Seal, then spot-check.** The GPU commits a Merkle root of every result row first; then the API picks 8 rows at
+  random and recomputes 64 entries of each on a CPU.
+- **Count the cores.** A timing staircase counts SMs (132 = H100 SXM, 108 = A100) and FP8 is tested by throughput.
+  Heat slows a chip; it can't remove cores.
+- **Performance, like a speed test.** A verified minimum INT8 throughput from the re-graded work, plus measured
+  tensor, memory and host-link throughput, usable memory and stability, each against the listed model's rating,
+  against 37 reference GPUs, and against other checks of the same model (`docs/METRICS.md`).
+- The machine's own health report (NVML, DCGM, burn test) is advisory; it never decides the verdict.
 
-The provider never has to sign up or cooperate.
+### Place: ENSv2
+- **Wildcard resolution:** `Marks` is the resolver of `waterline.eth`, so every `gpu-<id>.<cloud>.waterline.eth`
+  resolves with no registration. Every GPU has a public name for free.
+- **Enhanced Access Control:** writing a GPU's record takes the REPORTER role from ENSv2's access-control
+  library, scoped per GPU name. Today only our API holds it; providers and renters can never write a score.
+
+### People: World ID for Agents
+- **Stable, private, pairwise ID** (World's Human Continuity provider): one identifier per human in our app, no name
+  or email. However many agents someone runs, they get one voice per GPU.
+- **Step-up:** renting and passing need no World check. Publishing a failure steps up to a fresh human approval,
+  checked in our backend. Deny publishes nothing. A GPU is marked failed only when two different people agree.
+
+### Use: Curvegrid MultiBaas
+- **The history decides, not the LLM.** A MultiBaas event query (grouped by GPU) makes the agent skip suspect GPUs;
+  Jev only reads listing text. On a FAIL, the agent stops paying for that rental.
+- **The agent never holds a key.** Writes go through our API and MultiBaas, which composes each transaction
+  (nonce and gas); we sign; MultiBaas submits, indexes the event and calls our webhook when it's recorded.
+
+## Principles and limits
+
+- Evidence decides; the machine's claims only inform. Passes carry evidence; failures need verified humans.
+- No provider cooperation; the host never writes the score.
+- **Limits:** a host could answer checks on a real H100 while running the job on an A100 (mitigated by random
+  in-job checks; hardware attestation would close it); no exact serial-number proof yet; real people could be
+  bribed; World is checked in our backend; the demo's "fake H100" is an A100 we listed ourselves.
+
+## What's next
+
+Today one renter verifies one GPU. Next, every renter's container is a verifier: the REPORTER role goes from our
+one API to many independent verifiers (one role grant per GPU, or for all), with World keeping each a distinct
+human.
 
 ## Repo
 
 | Folder | What |
 |---|---|
 | `core/` | Challenge maths: seeded INT8 generator, row fingerprints, Merkle root; frozen test vectors |
-| `contracts/` | `Marks`: report store + ENS wildcard resolver (Foundry); ENSv2 pinned at `sepolia-deployment-2026-09-15` |
+| `contracts/` | `Marks`: report store, ENS wildcard resolver, ENSv2 Enhanced Access Control (Foundry); ENSv2 pinned at `sepolia-deployment-2026-09-15` |
 | `api/` | Waterline API (FastAPI on Vercel + Redis): the check, World login and approval, chain writes |
 | `prover/` | Profiler that runs in the rented pod (CuPy + torch), health report |
 | `agent/` | Renter CLI: check a pod over SSH, approve failures, choose GPUs from history |
@@ -68,10 +105,11 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 
 ## How MultiBaas is used
 
-- **Event indexing** of `Marks.Reported` on Ethereum Sepolia.
-- **Event queries** grouped by GPU (latest class, tallies, last report) power both the agent's GPU choice and the
-  control panel's health table. `Marks` emits running totals so queries only need `last`/`max`.
-- **Webhook** on new reports (alerting renters of that GPU).
+- **Nonce manager:** the API composes every `Marks.record` call through MultiBaas (nonce and gas filled in), signs it
+  locally, and submits it through MultiBaas.
+- **Indexer:** event indexing of `Marks.Reported`; event queries grouped by GPU power the agent's choice and the
+  control panel's health table and leaderboard. `Marks` emits running totals so queries only need `last`/`max`.
+- **Listener:** a webhook on `Reported` confirms each report was indexed; the control panel shows it.
 
 ## MultiBaas feedback
 

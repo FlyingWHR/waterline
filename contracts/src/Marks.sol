@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import {EnhancedAccessControl} from "@ensdomains/contracts-v2/access-control/EnhancedAccessControl.sol";
+
 /// @title Marks
 /// @notice Stores renter-sourced GPU reports and serves them as ENS text records for *.waterline.eth.
 ///         Set as the resolver of waterline.eth, it answers every `gpu-<id>.<cloud>.waterline.eth` name
-///         by wildcard (ENSIP-10), so no GPU needs its own registration. Only the Waterline API (the
-///         reporter) can record reports, so a host can't publish its own pass.
-contract Marks {
+///         by wildcard (ENSIP-10), so no GPU needs its own registration.
+///         Who may write a GPU's record is governed by ENSv2's Enhanced Access Control: the REPORTER role,
+///         scoped per GPU name (resource = the name's node; a root grant covers every GPU). Today only the
+///         Waterline API holds it, so a host can't publish its own pass; later the admin can grant it to
+///         independent verifiers, per GPU or for all.
+contract Marks is EnhancedAccessControl {
     uint8 public constant PASS = 1;
     uint8 public constant FAIL = 2;
     uint32 public constant HUMANS_TO_FAIL = 2;
+    uint256 public constant ROLE_REPORTER = 1 << 0;
+    uint256 public constant ROLE_REPORTER_ADMIN = ROLE_REPORTER << 128;
 
     struct Gpu {
         uint8 cls; // last measured class: 0 unknown, 1 H100 SXM, 2 H100 PCIe, 3 A100
@@ -23,8 +30,6 @@ contract Marks {
         uint16 pctBps; // latest verified TOPS as percent of the claimed model's spec x 100 (71.25% -> 7125)
     }
 
-    address public admin;
-    address public reporter;
     mapping(bytes32 node => Gpu) public gpus;
     mapping(bytes32 voteKey => bool) public voted; // keccak(node, voterId)
 
@@ -42,23 +47,15 @@ contract Marks {
         uint32 fails,
         uint32 humans
     );
-    event ReporterChanged(address reporter);
-
-    error NotReporter();
-    error NotAdmin();
     error BadVerdict();
     error AlreadyVoted();
     error UnsupportedRecord(bytes4 selector);
 
+    /// @param admin_ may grant and revoke the reporter role (e.g. to add independent verifiers).
+    /// @param reporter_ the Waterline API's account; gets the reporter role for every GPU.
     constructor(address admin_, address reporter_) {
-        admin = admin_;
-        reporter = reporter_;
-    }
-
-    function setReporter(address reporter_) external {
-        if (msg.sender != admin) revert NotAdmin();
-        reporter = reporter_;
-        emit ReporterChanged(reporter_);
+        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER_ADMIN, admin_, false);
+        _grantRoles(ROOT_RESOURCE, ROLE_REPORTER, reporter_, false);
     }
 
     /// @notice Record one verified report. Passes carry their own evidence; a failure needs a
@@ -74,7 +71,7 @@ contract Marks {
         uint32 topsX10,
         uint16 pctBps
     ) external {
-        if (msg.sender != reporter) revert NotReporter();
+        _checkRoles(uint256(node), ROLE_REPORTER, msg.sender);
         Gpu storage g = gpus[node];
         if (verdict == PASS) {
             g.passes += 1;
@@ -138,10 +135,10 @@ contract Marks {
         revert UnsupportedRecord(selector);
     }
 
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == 0x01ffc9a7 // ERC-165
-            || id == 0x9061b923 // IExtendedResolver
-            || id == 0x59d1d43c; // text(bytes32,string)
+    function supportsInterface(bytes4 id) public view override returns (bool) {
+        return id == 0x9061b923 // IExtendedResolver
+            || id == 0x59d1d43c // text(bytes32,string)
+            || super.supportsInterface(id); // ERC-165 + IEnhancedAccessControl
     }
 
     // ---- helpers -------------------------------------------------------------------------------

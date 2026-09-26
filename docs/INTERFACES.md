@@ -64,7 +64,7 @@ text(bytes32 node, string key) view -> string
         waterline.fails, waterline.humans, waterline.status ("unknown"|"pass"|"suspect · 1 of 2 humans"|"failed")
 resolve(bytes dnsName, bytes data) -> bytes   (ENSIP-10; handles text(bytes32,string) and addr(bytes32) -> zero)
 supportsInterface: 0x01ffc9a7, 0x9061b923 (IExtendedResolver), 0x59d1d43c (text)
-setReporter(address) onlyAdmin
+grantRoles(uint256(node), ROLE_REPORTER, account) / grantRootRoles(ROLE_REPORTER, account)  admin only (ENSv2 EnhancedAccessControl); unauthorized record() reverts EACUnauthorizedAccountRoles
 ```
 Status rule: humans >= 2 -> failed; humans == 1 -> suspect; passes > 0 -> pass; else unknown.
 Class shown on the name is the last measured class.
