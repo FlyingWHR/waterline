@@ -63,16 +63,16 @@ Details: `docs/INTERFACES.md` (spec), `docs/METRICS.md` (measurement method), `d
 Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops paying. Pod A and Pod B side by side.
 | Time | Beat | Key line |
 |---|---|---|
-| 0:00 | Problem | "It all rests on a claim the renter can't check." |
-| 0:25 | Zoom in | "Pod B is really an A100. I relabeled it myself." |
-| 0:35 | Overview | "Waterline is proof of delivered compute." |
-| 0:50 | Rent | "I could run fifty agents; I'm still one person." |
-| 1:10 | Check | "Pod B fails. My agent stops paying for it." |
-| 1:50 | Record | "Nobody registered this name. Only our API can write it." |
-| 2:10 | Approve | "It steps up: a real person has to approve." Deny, then approve. |
-| 2:40 | Guardrails | "One human, one voice." |
-| 2:55 | Use | "The LLM never decides; the history does." |
-| 3:15 | Close | "Proof, place, people, use." |
+| 0:00 | Problem | "It rests on a claim renters can't check." |
+| 0:20 | Setup | 4 pods, 2 clouds. "B2 is an A100 I relabelled myself." |
+| 0:30 | Overview | "Proof of delivered compute. Permissionless: any renter checks." |
+| 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
+| 1:10 | The exam | "The cores decide the chip; the clock decides the speed." |
+| 1:35 | Fail · Approve | Agent on B2: fail, stops paying, listing pasted, Jev agrees, World Deny then Approve. |
+| 2:15 | Record | ENS name + cloud-b roll-up + Verify the evidence hash. |
+| 2:40 | Compare | Leaderboard: cloud-a vs cloud-b H100s; the honest A100. |
+| 3:00 | Use | MultiBaas indexed; `agent choose` skips B2. |
+| 3:20 | Close | "Proof of Delivered Compute." |
 Full script: the showcase's Demo tab. Video rules: 2–4 min (auto-reject outside), ≥720p, own voice, no speed-up,
 no phone recording (mirror the phone to the Mac for the World ID app).
 
