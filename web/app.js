@@ -1,7 +1,7 @@
 // Waterline control panel. Plain ES module, no build. Talks only to this origin's /api/*; addresses come from /api/health.
 const VIEM = "https://esm.sh/viem@2.56.9";
 const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
-const IDKIT = "https://cdn.jsdelivr.net/npm/@worldcoin/idkit-core@4.3.0/dist/idkit.global.js"; // loads its WASM beside it
+const IDKIT = "vendor/idkit-core-4.3.0/idkit.global.js"; // served by us (a CDN can be blocked); loads its WASM beside it
 const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
