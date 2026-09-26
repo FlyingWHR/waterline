@@ -147,14 +147,21 @@ async function overview() {
 
 // The one-line check a renter pastes into the rented pod's terminal. Nothing of ours is written to the pod.
 function oneLine() {
-  const cmd = `curl -fsSL ${location.host}/run | python3 - cloud-b h100`;
+  // the two variables are fields inside the command: your provider's name, and the GPU the listing promises
+  const cloud = h("input", { id: "ol-cloud", className: "var", placeholder: "cloud", spellcheck: false, autocomplete: "off",
+    "aria-label": "Your provider's name, e.g. cloud-b", size: 7, oninput: () => { cloud.size = Math.max(5, cloud.value.length || 7); } });
+  const gpu = h("select", { id: "ol-gpu", className: "var", "aria-label": "The GPU the listing promises" },
+    ["h100", "h100-pcie", "a100"].map((g) => h("option", { value: g }, g)));
+  const cmd = () => `curl -fsSL ${location.host}/run | python3 - ${cloud.value.trim().toLowerCase() || "<cloud>"} ${gpu.value}`;
   const copy = h("button", { type: "button", className: "btn sm", onclick: async () => {
-    try { await navigator.clipboard.writeText(cmd); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
+    if (!cloud.value.trim()) { cloud.focus(); copy.textContent = "Name your provider first"; return; }
+    try { await navigator.clipboard.writeText(cmd()); copy.textContent = "Copied"; } catch { copy.textContent = "Select and copy"; }
   } }, "Copy");
   return h("div", { className: "try" },
     h("div", { className: "try-head" }, h("span", { className: "label" }, "Check your GPU · in the rented pod"), copy),
-    h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"), h("code", {}, cmd)),
-    h("p", { className: "sub small" }, "Your provider, then the listed GPU: h100, h100-pcie or a100. Runs from memory; nothing stays on the pod."));
+    h("div", { className: "oneline" }, h("span", { className: "prompt", "aria-hidden": "true" }, "$"),
+      h("code", {}, `curl -fsSL ${location.host}/run | python3 - `, cloud, " ", h("span", { className: "pick" }, gpu))),
+    h("p", { className: "sub small" }, "Fill in your provider and the GPU its listing promises. Runs from memory; nothing stays on the pod."));
 }
 
 // "How a check works": nodes and wires in HTML, so it wraps to a column on phones instead of being cut off.

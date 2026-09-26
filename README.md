@@ -23,7 +23,7 @@ is the listed chip at its rated speed, and the verdict lives onchain on the GPU'
 In the rented pod's terminal (provider, then what the listing promises: `h100`, `h100-pcie` or `a100`):
 
 ```bash
-curl -fsSL waterline-eth.vercel.app/run | python3 - cloud-b h100
+curl -fsSL waterline-eth.vercel.app/run | python3 - <cloud> <h100 | h100-pcie | a100>
 ```
 
 The profiler is fetched from our API and runs from memory; nothing is written to the pod. It needs numpy and torch
