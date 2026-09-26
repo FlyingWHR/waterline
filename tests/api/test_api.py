@@ -250,3 +250,16 @@ def test_reporting_needs_the_listing_and_shows_the_reporter():
     assert full["listing"].startswith("H100 80GB SXM5") and full["reporter_reports"] >= 1 and full["approved_at"]
     ev = client.get(f"/api/reports/{rep['report_id']}/evidence").json()
     assert "listing" not in ev and "provider_voter" not in ev  # added after the verdict: outside the frozen hash
+
+
+def test_listing_that_contradicts_the_claim_needs_report_anyway():
+    rep = run_check(uuid="GPU-J", claimed=1, probes=A100)  # reported "as H100"
+    tok = login()
+    body = {"report_id": rep["report_id"], "agent_token": tok, "listing": "1x NVIDIA A100 80GB PCIe · $1.19/h"}
+    r = post("/api/report/approve/start", body)
+    assert r.status_code == 409 and "reads as A100" in r.json()["error"] and "report anyway" in r.json()["error"]
+    world.MOCK.update(decision="approve", sub="human-1")
+    d = post("/api/report/approve/start", body | {"report_anyway": True}).json()
+    assert post("/api/report/approve/poll", {"device_id": d["device_id"]}).json()["published"] is True
+    full = client.get(f"/api/reports/{rep['report_id']}").json()
+    assert full["listing_reads_as"] == {"class": 3, "confidence": 0.95, "source": "rules", "contradicts": True}

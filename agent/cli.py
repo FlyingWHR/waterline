@@ -151,9 +151,18 @@ def check(a, api):
     text = a.listing or input("Paste the listing you rented (its URL or text): ").strip()
     print(f"You are reporting: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}. "
           "This report is tied to your World ID and shown with the listing above.")
-    r = world_flow(api, "/api/report/approve/start",
-                   {"report_id": rv["report_id"], "agent_token": token, "listing": text},
-                   "/api/report/approve/poll", "Approve this failure report")
+    body = {"report_id": rv["report_id"], "agent_token": token, "listing": text}
+    try:
+        r = world_flow(api, "/api/report/approve/start", body, "/api/report/approve/poll", "Approve this failure report")
+    except ApiError as e:
+        if "report anyway" not in str(e):
+            raise
+        print(str(e).split(": ", 1)[-1])  # Jev read the listing as another GPU than the one being reported
+        if input("Report anyway? [y/N] ").strip().lower() != "y":
+            print("Not reported: nothing published.")
+            return 1
+        r = world_flow(api, "/api/report/approve/start", body | {"report_anyway": True}, "/api/report/approve/poll",
+                       "Approve this failure report")
     if r["status"] == "approved" and r.get("published"):
         tx = f" (tx {r['tx']})" if r.get("tx") else ""
         print(f"Approved. Published: {r.get('status_text', 'fail recorded')}{tx}")

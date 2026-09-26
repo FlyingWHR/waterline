@@ -3,7 +3,7 @@
   "functions": {
     "api/app.py": {
       "maxDuration": 60,
-      "excludeFiles": "{files/**,tests/**,contracts/**,agent/**,docs/**,.venv/**,**/__pycache__/**}"
+      "excludeFiles": "{files/**,tests/**,contracts/**,agent/cli.py,agent/history.py,docs/**,.venv/**,**/__pycache__/**}"
     }
   }
 }

@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 from core.challenge import Params
 from core.specs import MODELS
 
+from agent import listing as listings
+
 from . import chain, world
 from . import perf
 from .check import (claimed_models, class_check, classify, deadline_s, draw_samples, gpu_label, grade,
@@ -65,7 +67,7 @@ def _get(key: str, what: str):
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
 MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
-           "approved_at"}
+           "listing_reads_as", "approved_at"}
 
 
 def canonical(rep: dict) -> bytes:
@@ -211,6 +213,7 @@ class ApproveIn(BaseModel):
     report_id: str
     agent_token: str
     listing: str | None = Field(default=None, max_length=2000)
+    report_anyway: bool = False  # the listing reads as another class than the one reported, and the reporter insists
 
 
 def _new_device(extra: dict) -> dict:
@@ -296,8 +299,15 @@ def approve_start(body: ApproveIn):
     listing = (body.listing or rep.get("listing") or "").strip()
     if len(listing) < 8:
         raise HTTPException(422, "Paste the listing you rented (its URL or text) before reporting this GPU.")
-    if listing != rep.get("listing"):
-        store.put(f"report:{rep['report_id']}", rep | {"listing": listing}, REPORT_TTL)
+    # Jev reads the listing: reporting an A100 listing "as H100" is the cheap way to smear a provider, so a confident
+    # contradiction stops here unless the reporter insists, and the dashboard shows it either way
+    code, conf, src = listings.parse(listing)
+    reads = {"class": code, "confidence": round(conf, 2), "source": src,
+             "contradicts": bool(code) and code != rep["claimed_class"] and conf >= 0.8}
+    if reads["contradicts"] and not body.report_anyway:
+        raise HTTPException(409, f"Your listing reads as {listings.CLASSES[code]} ({src}), but you are reporting it as "
+                                 f"{listings.CLASSES.get(rep['claimed_class'], 'another GPU')}. Check the listing, or report anyway.")
+    store.put(f"report:{rep['report_id']}", rep | {"listing": listing, "listing_reads_as": reads}, REPORT_TTL)
     return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
 
 

@@ -424,6 +424,8 @@ async function checkDetail(id) {
         r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "Every check passed: the work was done in time and the hardware matches the listing."),
         kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
           ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
+          ...(r.listing_reads_as?.class ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : "st-pass" },
+            `${cls(r.listing_reads_as.class)} (${r.listing_reads_as.source}) · ${r.listing_reads_as.contradicts ? "contradicts the claim; reported anyway" : "matches the claim"}`)]] : []),
           ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
             ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_at ? ` · approved ${when(r.approved_at)}` : "")]] : []))),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
@@ -937,6 +939,20 @@ function confirmReport(rep, my) {
   });
 }
 
+function reportAnyway(message, my) {
+  return new Promise((done) => {
+    const yes = h("button", { type: "button", className: "btn" }, "Report anyway");
+    const no = h("button", { type: "button", className: "btn primary" }, "Don't report");
+    const box = h("div", { className: "confirm" }, h("p", { className: "st-suspect" }, message), h("div", { className: "row" }, no, yes));
+    say("");
+    $w("what").after(box);
+    const end = (v) => { box.remove(); done(v && my === flow); };
+    yes.addEventListener("click", () => end(true));
+    no.addEventListener("click", () => end(false));
+    dlg.addEventListener("close", () => end(false), { once: true });
+  });
+}
+
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
@@ -957,13 +973,18 @@ async function approveFlow(rep) {
     if (!listing) return;
     $w("title").textContent = "Approve with World";
     let r;
+    const start = (extra) => device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing, ...extra },
+      "/api/report/approve/poll", my, "Approve this failure report: scan the code with World App or open the link.");
     try {
-      r = await device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing }, "/api/report/approve/poll", my,
-        "Approve this failure report: scan the code with World App or open the link.");
+      r = await start({});
     } catch (e) {
-      if (e.status !== 401) throw e;
-      token.set(null);
-      return say("Your World login has expired. Close this and press Approve with World again to log in.", "bad");
+      if (e.status === 409 && /report anyway/.test(e.message)) {  // Jev read the listing as another GPU than reported
+        if (!(await reportAnyway(e.message, my))) return say("Not reported. Nothing was published.", "bad");
+        r = await start({ report_anyway: true });
+      } else if (e.status === 401) {
+        token.set(null);
+        return say("Your World login has expired. Close this and press Approve again to log in.", "bad");
+      } else throw e;
     }
     if (!r) return;
     if (r.status === "denied") return say("Denied. Nothing was published.", "bad");
