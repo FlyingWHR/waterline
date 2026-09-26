@@ -460,8 +460,10 @@ def _mb_gpus() -> list[dict]:
     out = []
     for row in r.json()["result"]["rows"]:
         g = {k: int(row.get(k) or 0) for k in ("cls", "cores", "passes", "fails", "active")}
+        pct, tops = int(row.get("pct_bps") or 0), int(row.get("tops_x10") or 0)  # the latest check, as written onchain
         out.append(g | {"node": _hex0x(row["node"]), "provider_node": _hex0x(row.get("provider") or ""),
-                        "last_verdict": int(row.get("verdict") or 0),
+                        "last_verdict": int(row.get("verdict") or 0), "pct_of_spec": pct / 100 if pct else None,
+                        "tops": tops / 10 if tops else None,
                         "humans": g["fails"], "last_at": int(row.get("at") or 0)})
     return out
 
@@ -513,7 +515,9 @@ def _local_tallies(reps: list[dict]) -> tuple[list[dict], list[dict]]:
             p["voters"].add(r.get("provider_voter") or r["report_id"])
         p["failed_gpus"] += (x["active"] >= 2) - was
         p["humans"] = len(p["voters"])
-        x |= {"cls": r["measured_class"], "cores": r.get("cores"), "last_at": r.get("created_at"), "humans": x["fails"]}
+        tops_x10, pct_bps = _perf_onchain(r)  # the same pair Marks stores
+        x |= {"cls": r["measured_class"], "cores": r.get("cores"), "last_at": r.get("created_at"), "humans": x["fails"],
+              "pct_of_spec": pct_bps / 100 if pct_bps else None, "tops": tops_x10 / 10 if tops_x10 else None}
         p["last_at"] = r.get("created_at")
     gpus_ = [{k: v for k, v in x.items() if k != "since_fail"} for x in g.values()]
     provs = [{k: v for k, v in p.items() if k != "voters"} for p in prov.values()]
@@ -533,8 +537,11 @@ def gpus():
             error = "MultiBaas did not answer; showing this API's own records."
     rows = _local_tallies(reps)[0] if rows is None else rows
     names = {r["node"]: r["gpu_name"] for r in reps}
+    listed = {}
+    for r in reps:  # newest first: the latest listing claim per GPU
+        listed.setdefault(r["node"], r.get("claimed_class"))
     for x in rows:
-        x |= {"gpu_name": names.get(x["node"]),
+        x |= {"gpu_name": names.get(x["node"]), "listed_class": listed.get(x["node"]),
               "status": gpu_status(x["active"], x["fails"], x["passes"], x.get("last_verdict"))}
     return {"source": source, "error": error, "gpus": rows}
 

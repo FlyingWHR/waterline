@@ -348,3 +348,15 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .confirm .check{display:flex; gap:10px; align-items:flex-start; font-size:13px; color:var(--body2);}
 .confirm .btn{justify-self:start;} .confirm .btn:disabled{opacity:.4; cursor:not-allowed;}
 .quote{font-style:italic; overflow-wrap:anywhere;}
+/* the ENS name tree */
+.tree{font-size:14px; background:var(--deep); border:1px solid var(--line2); padding:16px 18px; overflow-x:auto;}
+.tree ul{list-style:none; margin:0; padding-left:22px; border-left:1px solid var(--line);}
+.tree > ul{margin-top:6px; margin-left:6px;}
+.tree li{position:relative; padding:4px 0;}
+.tree li::before{content:""; position:absolute; left:-22px; top:17px; width:16px; border-top:1px solid var(--line);}
+.tree .tnode{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:6px 12px;}
+.tree .tn{font-family:var(--mono); font-size:13px; color:var(--ens); background:none; border:0; padding:0; cursor:pointer; border-bottom:1px dotted rgba(79,214,238,.45);}
+.tree span.tn{cursor:default; border:0;}
+.tree .facts{color:var(--muted); font-size:13px;}
+.tree .tnode.root b{color:var(--ink);}
+.rules .wide{grid-column:span 2;} @media (max-width:880px){ .rules .wide{grid-column:auto;} }

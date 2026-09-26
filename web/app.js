@@ -183,8 +183,7 @@ function flowDiagram() {
     h("div", { className: "rules" },
       h("div", {}, h("b", { className: "st-pass" }, "A pass needs real silicon."), h("span", {}, "Correct answers, re-graded by us, on time: that takes real work on real silicon, so passes publish at once.")),
       h("div", {}, h("b", { className: "st-degraded" }, "Chip class is heat-proof."), h("span", {}, "Heat slows a chip but can't remove cores. A wrong chip fails; the right chip running slow is degraded.")),
-      h("div", {}, h("b", { className: "st-fail" }, "A failure needs real people."), h("span", {}, "Renters could sabotage their own exam, so a failure needs a World ID approval, and two people to mark a GPU failed.")),
-      h("div", {}, h("b", {}, "Reputation rolls up."), h("span", {}, "Failures also land on the provider's name, each person counted once. Renaming a chip doesn't clean the provider."))),
+      h("div", { className: "wide" }, h("b", { className: "st-fail" }, "A failure needs people, and it rolls up."), h("span", {}, "One World ID approval is a voice on the GPU and on its provider. Two people mark a GPU failed; a person counts once per provider, however many GPUs they report. Renaming a chip doesn't clean the provider."))),
     h("p", { className: "sub" }, "The API sends a fresh puzzle and a deadline, re-grades a random slice of the answer, and counts the cores. That separates three cases: the right chip at speed, the right chip too slow, another chip."));
 }
 
@@ -243,11 +242,6 @@ async function gpus() {
   const [g, pv] = await Promise.all([api("/api/gpus"), api("/api/providers").catch(() => ({ providers: [] }))]);
   const [form, out, run] = ensLookup();
   const look = (name) => { run(name); form.scrollIntoView({ block: "center" }); };
-  const prows = pv.providers.map((x) => h("tr", {},
-    h("td", { className: "mono", title: x.provider_node }, x.name || short(x.provider_node)),
-    h("td", {}, String(x.gpus)), h("td", { className: x.failed_gpus ? "st-fail" : "" }, String(x.failed_gpus)),
-    h("td", {}, String(x.humans)), h("td", {}, String(x.passes)), h("td", {}, String(x.degraded ?? "—")), h("td", {}, String(x.fails)),
-    h("td", {}, x.name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.name) }, "Look up") : null)));
   const rows = g.gpus.map((x) => h("tr", {},
     h("td", { className: "mono", title: x.node }, x.gpu_name || short(x.node)),
     h("td", {}, cls(x.cls)), h("td", {}, String(x.cores ?? "—")), h("td", {}, String(x.passes)), h("td", {}, String(x.degraded ?? "—")), h("td", {}, String(x.fails)),
@@ -255,15 +249,43 @@ async function gpus() {
     h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.gpu_name) }, "Look up") : null)));
   return [
     head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two different people mark a GPU failed; two passes after that bring it back as recovered.")),
-    ...(prows.length ? [section("Providers", "each person counts once per provider",
-      h("p", { className: "sub" }, "GPU names sit under their provider's, so failures roll up: renaming a chip doesn't clean the provider. Providers can add a note, never a number."),
-      table(["Provider", "GPUs", "Failed now", "People", "Passes", "Degraded", "Fails", ""], prows))] : []),
+    ...(g.gpus.length ? [section("The name tree", "every level keeps its own score",
+      h("p", { className: "sub" }, "Each GPU is named under its provider, and one World approval counts on both: two different people mark a GPU failed, and a person counts once per provider however many of its GPUs they report. A renamed chip gets a new GPU name, not a clean provider. Click any name to read it live from ENS."),
+      nameTree(pv, g.gpus, look))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
       rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "People", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
     section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "A GPU or provider name (e.g. cloud-b), read live from Sepolia through the ENS Universal Resolver."), form, out),
   ];
+}
+
+// The ENS name tree: waterline.eth, its providers, their GPUs. Every node is a real name Marks resolves, with its own score;
+// performance comes from the same waterline.pct_of_spec the chain stores, so reading the tree is comparing the clouds.
+function nameTree(pv, gpus, look) {
+  const groups = new Map(pv.providers.map((p) => [p.provider_node, { p, gpus: [] }]));
+  for (const x of gpus) {
+    if (!groups.has(x.provider_node)) groups.set(x.provider_node, { p: { provider_node: x.provider_node, name: x.gpu_name?.split(".").slice(1).join(".") }, gpus: [] });
+    groups.get(x.provider_node).gpus.push(x);
+  }
+  const median = (xs) => { xs = xs.filter((v) => v != null).sort((a, b) => a - b); return xs.length ? xs[(xs.length - 1) >> 1] : null; };
+  const people = (n) => `${n} ${n === 1 ? "person" : "people"}`;
+  const name = (label, full) => full ? h("button", { type: "button", className: "tn", title: `Read ${full} live from ENS`, onclick: () => look(full) }, label) : h("span", { className: "tn" }, label);
+  const provider = ({ p, gpus: gs }) => {
+    const full = p.name || (gs[0]?.gpu_name || "").split(".").slice(1).join(".");
+    const pct = median(gs.map((x) => x.pct_of_spec));
+    return h("li", {},
+      h("div", { className: "tnode" }, name(full || short(p.provider_node), full),
+        h("span", { className: "facts" }, `${p.failed_gpus ?? 0} of ${p.gpus ?? gs.length} failed · ${people(p.humans ?? 0)}`, pct != null ? ` · median ${num(pct)}% of rating` : "")),
+      h("ul", {}, gs.map((x) => h("li", {},
+        h("div", { className: "tnode" }, name((x.gpu_name || short(x.node)).split(".")[0], x.gpu_name), pill(x.status),
+          h("span", { className: "facts" }, cls(x.cls),
+            x.listed_class && x.listed_class !== x.cls ? h("span", { className: "st-fail" }, ` listed as ${cls(x.listed_class)}`) : "",
+            x.pct_of_spec != null ? ` · ${num(x.pct_of_spec)}% of rating` : "", x.humans ? ` · ${people(x.humans)}` : ""))))));
+  };
+  return h("div", { className: "tree" },
+    h("div", { className: "tnode root" }, h("b", { className: "mono" }, "waterline.eth"), h("span", { className: "facts" }, "resolver: Marks · nothing below is registered, all of it resolves onchain")),
+    h("ul", {}, [...groups.values()].map(provider)));
 }
 
 // Text records of one ENS name, read in the browser through the universal resolver (viem).
