@@ -1,0 +1,171 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Waterline · Proof of Delivered Compute</title>
+<style>
+@page { size: 1920px 1080px; margin: 0; }
+:root { --bg:#06111a; --panel:#0a1822; --deep:#030b11; --line:#1b3140; --ink:#e4edf1; --muted:#8ba1ad; --body:#c3d2d8;
+  --accent:#5fe3b9; --pass:#5fe3b9; --fail:#ff7b6b; --warn:#f2c14e; --ens:#2f9bdc; --world:#d9dee2; --mb:#f0443a; --chain:#9aa6c8;
+  --sans:-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif; --mono:"SF Mono",Menlo,Consolas,monospace; }
+* { box-sizing:border-box; }
+html,body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.s { width:1920px; height:1080px; padding:110px 140px; position:relative; overflow:hidden; page-break-after:always; display:flex; flex-direction:column;
+  background:radial-gradient(1200px 700px at 85% 110%, rgba(95,227,185,.10), transparent 60%), var(--bg); }
+.s:last-child { page-break-after:auto; }
+.grid { position:absolute; inset:0; background-image:linear-gradient(rgba(95,227,185,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(95,227,185,.045) 1px, transparent 1px); background-size:80px 80px; pointer-events:none; }
+.eyebrow { font-family:var(--mono); font-size:22px; letter-spacing:.32em; text-transform:uppercase; color:var(--accent); }
+h1 { font-weight:300; font-size:150px; letter-spacing:.18em; margin:26px 0 0; }
+h2 { font-weight:400; font-size:72px; line-height:1.12; margin:26px 0 0; max-width:1500px; letter-spacing:-.01em; }
+.lede { font-size:40px; line-height:1.4; color:var(--body); max-width:1300px; margin-top:34px; }
+.foot { margin-top:auto; display:flex; justify-content:space-between; align-items:flex-end; font-family:var(--mono); font-size:22px; letter-spacing:.08em; color:var(--muted); }
+.wl { width:120px; height:120px; }
+.tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:28px; margin-top:70px; }
+.tile { border-top:3px solid var(--accent); padding-top:22px; }
+.tile b { display:block; font-weight:400; font-size:56px; letter-spacing:-.01em; white-space:nowrap; }
+.tile span { display:block; margin-top:12px; font-size:26px; line-height:1.4; color:var(--body); }
+.tile i { display:block; margin-top:10px; font-style:normal; font-family:var(--mono); font-size:18px; color:var(--muted); }
+.steps { display:grid; grid-template-columns:repeat(4,1fr); gap:28px; margin-top:64px; }
+.step { background:var(--panel); border:1px solid var(--line); padding:30px 30px 34px; }
+.step .n { font-family:var(--mono); color:var(--accent); font-size:22px; }
+.step b { display:block; font-weight:500; font-size:34px; margin-top:16px; }
+.step span { display:block; font-size:25px; line-height:1.45; color:var(--body); margin-top:12px; }
+.verdicts { display:grid; grid-template-columns:repeat(3,1fr); gap:28px; margin-top:34px; }
+.v { border-left:5px solid var(--c); padding:6px 0 6px 24px; font-size:26px; line-height:1.45; color:var(--body); }
+.v b { display:block; font-family:var(--mono); font-weight:500; font-size:28px; letter-spacing:.12em; color:var(--c); margin-bottom:6px; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:60px; margin-top:60px; }
+.card { background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--c); padding:36px 40px; }
+.card .hd { display:flex; align-items:center; gap:18px; font-size:34px; font-weight:500; color:var(--c); }
+.card ul { margin:22px 0 0; padding-left:30px; font-size:28px; line-height:1.55; color:var(--body); }
+.mk { height:44px; width:auto; }
+.tree { font-family:var(--mono); font-size:26px; line-height:1.7; color:var(--body); white-space:pre; margin:22px 0 0; }
+.tree .e { color:var(--ens); } .tree .ok { color:var(--pass); } .tree .sus { color:var(--warn); } .tree .m { color:var(--muted); }
+.sponsors { display:flex; gap:64px; align-items:center; margin-top:80px; }
+.sponsors div { display:flex; align-items:center; gap:18px; font-family:var(--mono); font-size:26px; color:var(--body); letter-spacing:.04em; }
+.sponsors .mk { height:56px; }
+.c-ens { --c:var(--ens); } .c-world { --c:var(--world); } .c-mb { --c:var(--mb); }
+</style></head><body>
+
+<section class="s"><div class="grid"></div>
+  <svg class="wl" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Waterline">
+  
+  <defs>
+    <clipPath id="die"><rect x="14" y="14" width="36" height="36" rx="3"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#06111a"/>
+  <!-- the chip's pins -->
+  <path d="M26 7v6M38 7v6M26 51v6M38 51v6M7 26h6M7 38h6M51 26h6M51 38h6" stroke="#8ba1ad" stroke-width="3" stroke-linecap="round"/>
+  <!-- what it delivers: filled up to the waterline -->
+  <path clip-path="url(#die)" fill="#5fe3b9" fill-opacity=".3" d="M14 34c4.5-3.6 9-3.6 13.5 0s9 3.6 13.5 0 9-3.6 13.5 0V52H14z"/>
+  <rect x="14" y="14" width="36" height="36" rx="3" fill="none" stroke="#e4edf1" stroke-width="3"/>
+  <!-- the waterline -->
+  <path d="M17 34c3.5-2.8 7-2.8 10.5 0s7 2.8 10.5 0 7-2.8 9-1.6" fill="none" stroke="#5fe3b9" stroke-width="3.6" stroke-linecap="round"/>
+</svg>
+
+  <h1>WATERLINE</h1>
+  <div class="eyebrow" style="margin-top:18px">Proof of Delivered Compute</div>
+  <p class="lede">Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed.</p>
+  <div class="foot"><span>ETHGlobal Tokyo 2026</span><span>waterline-eth.vercel.app</span></div>
+</section>
+
+<section class="s"><div class="grid"></div>
+  <div class="eyebrow">The problem</div>
+  <h2>Compute is becoming a financial asset. Its delivery is still self-reported.</h2>
+  <div class="tiles">
+    <div class="tile"><b>~$400B</b><span>GPU cloud by 2031, up from $25B in 2025</span><i>Synergy Research</i></div>
+    <div class="tile"><b>$8.5B</b><span>lent against GPUs in one facility, rated investment grade</span><i>CoreWeave</i></div>
+    <div class="tile"><b>Oct 5</b><span>H100 rental futures scheduled to trade on CME</span><i>CME Group</i></div>
+    <div class="tile"><b>1,755 → 345 MHz</b><span>an H100 under load, billed at full price</span><i>matt.sh</i></div>
+  </div>
+  <div class="foot"><span>There is no independent, shared record.</span><span>01</span></div>
+</section>
+
+<section class="s"><div class="grid"></div>
+  <div class="eyebrow">How a check works</div>
+  <h2>Sealed work, a deadline, a core count.</h2>
+  <div class="steps">
+    <div class="step"><span class="n">01</span><b>A fresh problem</b><span>Seeded INT8 matrices, 8.8 trillion operations a step, on the tensor cores. Nothing to precompute.</span></div>
+    <div class="step"><span class="n">02</span><b>A clock on our side</b><span>The deadline runs on the API, sized to the listed GPU's rated speed.</span></div>
+    <div class="step"><span class="n">03</span><b>Sealed, then re-graded</b><span>The GPU commits every answer first. Then we pick 8 rows and recompute them on a CPU.</span></div>
+    <div class="step"><span class="n">04</span><b>Count the cores</b><span>A timing staircase: 132 on an H100 SXM, 108 on an A100. Heat can't remove cores.</span></div>
+  </div>
+  <div class="verdicts">
+    <div class="v" style="--c:var(--pass)"><b>PASS</b>The listed chip, on time. Published at once.</div>
+    <div class="v" style="--c:var(--warn)"><b>DEGRADED</b>The listed chip, too slow. Published with its numbers.</div>
+    <div class="v" style="--c:var(--fail)"><b>FAIL</b>Another chip, or wrong answers. Needs a person.</div>
+  </div>
+  <div class="foot"><span>25 NVIDIA GPU classes · one line in the pod</span><span>02</span></div>
+</section>
+
+<section class="s"><div class="grid"></div>
+  <div class="eyebrow">A person behind every failure</div>
+  <h2>A pass needs real silicon. A failure needs a real person.</h2>
+  <div class="two">
+    <div class="card c-world"><div class="hd"><svg class="mk" aria-hidden="true" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="233 233 558 558">
+  
+  <path fill="#f6f6f6" d="M649.8,273.99c-42.16-24.65-88.09-36.99-137.8-36.99s-95.65,12.33-137.8,36.99c-42.16,24.66-75.56,58.07-100.22,100.22-24.66,42.16-36.99,88.09-36.99,137.8s12.32,95.65,36.99,137.8c24.65,42.15,58.06,75.55,100.22,100.22,42.15,24.65,88.08,36.98,137.8,36.98s95.64-12.33,137.8-36.98c42.15-24.66,75.55-58.07,100.22-100.22,24.65-42.15,36.99-88.08,36.99-137.8s-12.33-95.64-36.99-137.8c-24.66-42.15-58.07-75.55-100.22-100.22ZM525.72,608.04c-28.24,0-51.4-8.45-69.5-25.35-11.99-11.19-19.98-24.62-24.02-40.27h288.97c-3.07,23.05-9.69,44.92-19.88,65.62h-175.57ZM432.28,482.77c4.07-15.38,12.03-28.71,23.94-39.97,18.09-17.09,41.25-25.65,69.5-25.65h176.16c10.03,20.7,16.52,42.58,19.46,65.62h-289.05ZM328.87,404.33c18.69-32.81,44.24-58.76,76.65-77.85,32.41-19.09,67.9-28.63,106.48-28.63s74.06,9.54,106.48,28.63c15.53,9.15,29.44,19.92,41.82,32.21h-133.98c-31.42,0-59.35,6.56-83.81,19.69-24.46,13.12-43.45,31.12-56.97,53.99-9.2,15.55-15.19,32.38-18.13,50.41h-64.75c3.55-27.86,12.28-54.01,26.2-78.44ZM618.48,697.52c-32.42,19.09-67.91,28.63-106.48,28.63s-74.07-9.54-106.48-28.63c-32.42-19.09-57.97-45.04-76.65-77.85-13.73-24.09-22.39-49.84-26.04-77.25h64.58c2.94,18.04,8.93,34.86,18.13,50.41,13.52,22.87,32.51,40.86,56.97,53.99,24.46,13.12,52.39,19.69,83.81,19.69h132.73c-12.07,11.79-25.55,22.17-40.56,31.02Z"/>
+</svg>World ID for Agents</div><ul>
+      <li>A fresh World approval per failure, or one mandate for your agents</li>
+      <li>One person, one voice per GPU and per provider</li>
+      <li>Two different people mark a GPU failed</li></ul></div>
+    <div class="card" style="--c:var(--accent)"><div class="hd">Accusations cost something</div><ul>
+      <li>The reporter pastes the listing; Jev reads it</li>
+      <li>Suspicious reports are flagged automatically</li>
+      <li>Two passes after a failure: recovered</li></ul></div>
+  </div>
+  <div class="foot"><span>World ID for Agents · sandbox identities in this demo</span><span>03</span></div>
+</section>
+
+<section class="s"><div class="grid"></div>
+  <div class="eyebrow">Record and use</div>
+  <h2>Every GPU has a name. Every provider keeps a score.</h2>
+  <div class="two">
+    <div class="card c-ens"><div class="hd"><svg class="mk" aria-hidden="true" width="202" height="231" viewBox="0 0 202 231" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M98.3592 2.80337L34.8353 107.327C34.3371 108.147 33.1797 108.238 32.5617 107.505C26.9693 100.864 6.13478 72.615 31.9154 46.8673C55.4403 23.3726 85.4045 6.62129 96.5096 0.831705C97.7695 0.174847 99.0966 1.59007 98.3592 2.80337Z" fill="#0080BC"/>
+<path d="M94.8459 230.385C96.1137 231.273 97.6758 229.759 96.8261 228.467C82.6374 206.886 35.4713 135.081 28.9559 124.302C22.5295 113.67 9.88976 96.001 8.83534 80.8842C8.7301 79.3751 6.64332 79.0687 6.11838 80.4879C5.27178 82.7767 4.37045 85.5085 3.53042 88.6292C-7.07427 128.023 8.32698 169.826 41.7753 193.238L94.8459 230.386V230.385Z" fill="#0080BC"/>
+<path d="M103.571 228.526L167.095 124.003C167.593 123.183 168.751 123.092 169.369 123.825C174.961 130.465 195.796 158.715 170.015 184.463C146.49 207.957 116.526 224.709 105.421 230.498C104.161 231.155 102.834 229.74 103.571 228.526Z" fill="#0080BC"/>
+<path d="M107.154 0.930762C105.886 0.0433954 104.324 1.5567 105.174 2.84902C119.363 24.4301 166.529 96.2354 173.044 107.014C179.471 117.646 192.11 135.315 193.165 150.432C193.27 151.941 195.357 152.247 195.882 150.828C196.728 148.539 197.63 145.808 198.47 142.687C209.074 103.293 193.673 61.4905 160.225 38.078L107.154 0.930762Z" fill="#0080BC"/>
+</svg>
+ENSv2</div>
+<div class="tree"><span class="m">waterline.eth</span>
+├─ <span class="e">cloud-a.waterline.eth</span>  <span class="m">0 of 2 failed</span>
+│  └─ gpu-…  <span class="ok">pass</span> · H100 SXM
+└─ <span class="e">cloud-b.waterline.eth</span>  <span class="m">1 person</span>
+   └─ gpu-…  <span class="sus">suspect · 1 of 2</span></div></div>
+    <div class="card c-mb"><div class="hd"><svg class="mk" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27.4 28" role="img" aria-label="Curvegrid"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6933 0.363129C6.13218 0.363129 0 6.49531 0 14.0566C0 21.618 6.13218 27.75 13.6933 27.75C21.2548 27.75 27.3869 21.6182 27.3869 14.0566H22.4658C22.4658 18.9007 18.5376 22.8291 13.6933 22.8291C8.84965 22.8289 4.92104 18.9007 4.92104 14.0566C4.92104 9.21278 8.84948 5.28417 13.6933 5.28417V0.363129V0.363129ZM17.8673 4.53693H23.2131V9.88267H17.8673V4.53693V4.53693Z" fill="#EE2121"/></svg>
+Curvegrid MultiBaas</div><ul>
+      <li>Builds every write; we sign it</li>
+      <li>Indexes every verdict, calls our webhook</li>
+      <li>The agent skips bad GPUs and providers: the record decides, not an LLM</li></ul></div>
+  </div>
+  <div class="foot"><span>Marks on Ethereum Sepolia · resolver for *.waterline.eth</span><span>04</span></div>
+</section>
+
+<section class="s"><div class="grid"></div>
+  <svg class="wl" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Waterline">
+  
+  <defs>
+    <clipPath id="die"><rect x="14" y="14" width="36" height="36" rx="3"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#06111a"/>
+  <!-- the chip's pins -->
+  <path d="M26 7v6M38 7v6M26 51v6M38 51v6M7 26h6M7 38h6M51 26h6M51 38h6" stroke="#8ba1ad" stroke-width="3" stroke-linecap="round"/>
+  <!-- what it delivers: filled up to the waterline -->
+  <path clip-path="url(#die)" fill="#5fe3b9" fill-opacity=".3" d="M14 34c4.5-3.6 9-3.6 13.5 0s9 3.6 13.5 0 9-3.6 13.5 0V52H14z"/>
+  <rect x="14" y="14" width="36" height="36" rx="3" fill="none" stroke="#e4edf1" stroke-width="3"/>
+  <!-- the waterline -->
+  <path d="M17 34c3.5-2.8 7-2.8 10.5 0s7 2.8 10.5 0 7-2.8 9-1.6" fill="none" stroke="#5fe3b9" stroke-width="3.6" stroke-linecap="round"/>
+</svg>
+
+  <h2 style="font-size:96px; margin-top:40px">Proof of Delivered Compute.</h2>
+  <p class="lede">Any renter can check. The result stays on the GPU's name for whoever needs it next: a renter, a lender, or an agent.</p>
+  <div class="sponsors"><div><svg class="mk" aria-hidden="true" width="202" height="231" viewBox="0 0 202 231" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M98.3592 2.80337L34.8353 107.327C34.3371 108.147 33.1797 108.238 32.5617 107.505C26.9693 100.864 6.13478 72.615 31.9154 46.8673C55.4403 23.3726 85.4045 6.62129 96.5096 0.831705C97.7695 0.174847 99.0966 1.59007 98.3592 2.80337Z" fill="#0080BC"/>
+<path d="M94.8459 230.385C96.1137 231.273 97.6758 229.759 96.8261 228.467C82.6374 206.886 35.4713 135.081 28.9559 124.302C22.5295 113.67 9.88976 96.001 8.83534 80.8842C8.7301 79.3751 6.64332 79.0687 6.11838 80.4879C5.27178 82.7767 4.37045 85.5085 3.53042 88.6292C-7.07427 128.023 8.32698 169.826 41.7753 193.238L94.8459 230.386V230.385Z" fill="#0080BC"/>
+<path d="M103.571 228.526L167.095 124.003C167.593 123.183 168.751 123.092 169.369 123.825C174.961 130.465 195.796 158.715 170.015 184.463C146.49 207.957 116.526 224.709 105.421 230.498C104.161 231.155 102.834 229.74 103.571 228.526Z" fill="#0080BC"/>
+<path d="M107.154 0.930762C105.886 0.0433954 104.324 1.5567 105.174 2.84902C119.363 24.4301 166.529 96.2354 173.044 107.014C179.471 117.646 192.11 135.315 193.165 150.432C193.27 151.941 195.357 152.247 195.882 150.828C196.728 148.539 197.63 145.808 198.47 142.687C209.074 103.293 193.673 61.4905 160.225 38.078L107.154 0.930762Z" fill="#0080BC"/>
+</svg>
+ENSv2</div><div><svg class="mk" aria-hidden="true" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="233 233 558 558">
+  
+  <path fill="#f6f6f6" d="M649.8,273.99c-42.16-24.65-88.09-36.99-137.8-36.99s-95.65,12.33-137.8,36.99c-42.16,24.66-75.56,58.07-100.22,100.22-24.66,42.16-36.99,88.09-36.99,137.8s12.32,95.65,36.99,137.8c24.65,42.15,58.06,75.55,100.22,100.22,42.15,24.65,88.08,36.98,137.8,36.98s95.64-12.33,137.8-36.98c42.15-24.66,75.55-58.07,100.22-100.22,24.65-42.15,36.99-88.08,36.99-137.8s-12.33-95.64-36.99-137.8c-24.66-42.15-58.07-75.55-100.22-100.22ZM525.72,608.04c-28.24,0-51.4-8.45-69.5-25.35-11.99-11.19-19.98-24.62-24.02-40.27h288.97c-3.07,23.05-9.69,44.92-19.88,65.62h-175.57ZM432.28,482.77c4.07-15.38,12.03-28.71,23.94-39.97,18.09-17.09,41.25-25.65,69.5-25.65h176.16c10.03,20.7,16.52,42.58,19.46,65.62h-289.05ZM328.87,404.33c18.69-32.81,44.24-58.76,76.65-77.85,32.41-19.09,67.9-28.63,106.48-28.63s74.06,9.54,106.48,28.63c15.53,9.15,29.44,19.92,41.82,32.21h-133.98c-31.42,0-59.35,6.56-83.81,19.69-24.46,13.12-43.45,31.12-56.97,53.99-9.2,15.55-15.19,32.38-18.13,50.41h-64.75c3.55-27.86,12.28-54.01,26.2-78.44ZM618.48,697.52c-32.42,19.09-67.91,28.63-106.48,28.63s-74.07-9.54-106.48-28.63c-32.42-19.09-57.97-45.04-76.65-77.85-13.73-24.09-22.39-49.84-26.04-77.25h64.58c2.94,18.04,8.93,34.86,18.13,50.41,13.52,22.87,32.51,40.86,56.97,53.99,24.46,13.12,52.39,19.69,83.81,19.69h132.73c-12.07,11.79-25.55,22.17-40.56,31.02Z"/>
+</svg>World ID for Agents</div><div><svg class="mk" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27.4 28" role="img" aria-label="Curvegrid"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6933 0.363129C6.13218 0.363129 0 6.49531 0 14.0566C0 21.618 6.13218 27.75 13.6933 27.75C21.2548 27.75 27.3869 21.6182 27.3869 14.0566H22.4658C22.4658 18.9007 18.5376 22.8291 13.6933 22.8291C8.84965 22.8289 4.92104 18.9007 4.92104 14.0566C4.92104 9.21278 8.84948 5.28417 13.6933 5.28417V0.363129V0.363129ZM17.8673 4.53693H23.2131V9.88267H17.8673V4.53693V4.53693Z" fill="#EE2121"/></svg>
+Curvegrid MultiBaas</div></div>
+  <div class="foot"><span>waterline-eth.vercel.app</span><span>github.com/FlyingWHR/waterline</span></div>
+</section>
+</body></html>
