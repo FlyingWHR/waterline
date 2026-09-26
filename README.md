@@ -47,7 +47,7 @@ The web panel builds the command for you: pick the provider and GPU from the two
 - **Compute is becoming a financial asset. Its delivery is still self-reported.** GPU cloud is heading from $25B (2025) to ~$400B
   by 2031 ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
   banks lend against GPUs ([CoreWeave, $8.5B](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)),
-  and H100 rentals trade as futures on CME from October 5, pending review ([CME](https://investor.cmegroup.com/news-releases/news-release-details/cme-group-and-silicon-data-launch-compute-futures-october-5)).
+  and H100 rental futures are scheduled on CME from October 5 ([CME](https://investor.cmegroup.com/news-releases/news-release-details/cme-group-and-silicon-data-launch-compute-futures-october-5)).
   Buyers rely on the provider's own monitoring, periodic audits and benchmarks that are easy to game. There is no
   independent, shared record.
 - **Renters mostly get less, not fake.** Throttled H100s at full price (1,755 → ~345 MHz under load:
