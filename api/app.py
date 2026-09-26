@@ -481,7 +481,7 @@ def report_auto(body: AutoIn):
 
 
 # ---- control panel reads ------------------------------------------------------------------------------------
-SUMMARY = ("report_id", "created_at", "gpu_name", "node", "cloud", "claimed_class", "measured_class", "verdict",
+SUMMARY = ("report_id", "created_at", "gpu_name", "uuid", "node", "cloud", "claimed_class", "measured_class", "verdict",
            "published", "tx", "status_text", "via", "indexed", "indexed_at", "report_hash", "series", "seq",
            "pct_of_spec")
 # Reported(node 0, provider 1, gpuVoter 2, providerVoter 3, verdict 4, cls 5, cores 6, fingerprint 7, topsX10 8,

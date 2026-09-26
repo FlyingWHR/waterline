@@ -193,6 +193,17 @@ def check(a, api, first=True):
         fact(src.lower(), f"your listing reads as {listing.CLASSES[code]}"
              + (": the claim stands" if code == cls else paint(AMBER, f": not {claim}")))
     body = {"report_id": rv["report_id"], "agent_token": token, "listing": text}
+    # with a World mandate the agent reports at once, as your one voice; without one (or when Jev reads the listing
+    # as another GPU, which a mandate never overrides) it asks for your approval as before
+    try:
+        r = post(api, "/api/report/auto", body)
+        m = r.get("mandate") or {}
+        fact("world", f"reported under your mandate · {m.get('used')} of {m.get('max_reports')} used · until {clock(m.get('expires_at'))}")
+        return published(r)
+    except ApiError as e:
+        if "already reported" in str(e):
+            fact("world", paint(AMBER, "you have already reported this GPU: one voice per person per GPU"))
+            return 1
     try:
         r = world_flow(api, "/api/report/approve/start", body, "/api/report/approve/poll", "Approve this failure report")
     except ApiError as e:
@@ -204,6 +215,14 @@ def check(a, api, first=True):
             return 1
         r = world_flow(api, "/api/report/approve/start", body | {"report_anyway": True}, "/api/report/approve/poll",
                        "Approve this failure report")
+    return published(r)
+
+
+def clock(t):
+    return time.strftime("%H:%M", time.localtime(t)) if t else "?"
+
+
+def published(r):
     if r["status"] == "approved" and r.get("published"):
         tx = r.get("tx") or "dry run, no transaction"
         fact("onchain", paint(GREEN, "published") + f" · {tx}" + (f" via {r['via']}" if r.get("via") not in (None, "dry-run") else "")
@@ -213,6 +232,30 @@ def check(a, api, first=True):
     else:
         fact("world", paint(AMBER, f"{r['status']}: nothing published"))
     return 1
+
+
+def mandate(a, api):
+    """Let your agents report failures for a while: one fresh World approval, a report budget, revocable."""
+    token = load_token() or login(api)
+    if not token:
+        return 1
+    if a.revoke or a.status:
+        m = post(api, "/api/world/mandate/revoke" if a.revoke else "/api/world/mandate/status", {"agent_token": token})["mandate"]
+        if not m:
+            fact("mandate", "none: failures wait for your approval")
+        else:
+            state = "revoked" if m.get("revoked_at") else "active" if m["active"] else "ended"
+            fact("mandate", f"{state} · {m['used']} of {m['max_reports']} reports used · until {clock(m['expires_at'])}")
+        return 0
+    r = world_flow(api, "/api/world/mandate/start", {"agent_token": token, "hours": a.hours, "max_reports": a.max},
+                   "/api/world/mandate/poll", f"Let your agents report up to {a.max} failures for {a.hours} h")
+    m = r.get("mandate")
+    if not m:
+        fact("mandate", paint(AMBER, r.get("status_text") or f"{r['status']}: no mandate"))
+        return 1
+    fact("mandate", paint(GREEN, "granted") + f" · up to {m['max_reports']} reports · until {clock(m['expires_at'])}"
+         + " · each counts as your one voice per GPU · revoke: agent mandate --revoke")
+    return 0
 
 
 def stop_paying(cmd, pod_id):
@@ -279,6 +322,11 @@ def main(argv=None):
                                       "(default: env WATERLINE_STOP_CMD). Never run on PASS.")
     c.add_argument("--every", help="a periodic series: re-check at this interval (e.g. 30m), jittered ±20%%, until Ctrl-C")
     c.add_argument("--times", type=int, help="with --every: stop after this many checks")
+    md = sub.add_parser("mandate", help="let your agents report failures for a while, with one World approval")
+    md.add_argument("--hours", type=int, default=24, help="how long it lasts (1-72)")
+    md.add_argument("--max", type=int, default=20, help="most failure reports it covers (1-100)")
+    md.add_argument("--revoke", action="store_true", help="end it now")
+    md.add_argument("--status", action="store_true", help="show it")
     sub.add_parser("history", help="GPU history from MultiBaas: passes, failures, status")
     ch = sub.add_parser("choose", help="pick a listing from MultiBaas history only (no LLM ranking)")
     ch.add_argument("--listings", required=True, help='JSON list of {"gpu": name, "listing": text, "price": n}')
@@ -293,6 +341,8 @@ def main(argv=None):
             return 0 if login(a.api) else 1
         if a.cmd == "check":
             return check_every(a, a.api) if a.every else check(a, a.api)
+        if a.cmd == "mandate":
+            return mandate(a, a.api)
         return show_history(a) if a.cmd == "history" else choose(a)
     except ApiError as e:
         print(f"Waterline API error: {e}")

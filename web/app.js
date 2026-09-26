@@ -83,16 +83,17 @@ const table = (cols, rows) => {
 
 // ---- router ------------------------------------------------------------------------------------------------
 const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
-  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], about: [about, "Settings"] };
+  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], world: [worldView, "World ID"], about: [worldView, "World ID"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = { check: "checks", r: "checks", models: "providers", leaderboard: "providers", name: "gpus" }[name] || (name in routes ? name : "");
+  const tab = { check: "checks", r: "checks", models: "providers", leaderboard: "providers", about: "world", name: "gpus" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
+  sessionBadge();
   view.setAttribute("aria-busy", "true");
   let kids;
   try {
@@ -349,6 +350,7 @@ async function namePage(full) {
   const provNode = pv.providers.find((x) => x.name === (isProvider ? n : n.split(".").slice(1).join(".")));
   return [
     head(isProvider ? "ENS name · provider" : "ENS name · GPU", h("span", { className: "mono namehead" }, n), statusBox,
+      !isProvider && mine[0]?.uuid ? h("p", { className: "sub small mono", title: "NVIDIA UUID, as the host's driver reports it" }, `card ${mine[0].uuid}`) : null,
       h("p", { className: "sub" }, isProvider ? "Every GPU this provider rents out is named under it; its score is the roll-up of theirs, each person counted once."
         : h("span", {}, "Named under ", h("a", { href: `#/name/${n.split(".").slice(1).join(".")}` }, n.split(".").slice(1).join(".")), ". Resolved by Marks, written only by its reporter role."))),
     section("The record", "read live from ENS on Sepolia", facts),
@@ -539,11 +541,13 @@ async function checkDetail(id) {
       h("div", { className: "block" }, h("div", { className: "label" }, "Why"),
         r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "All checks passed: done in time, and the hardware matches the listing."),
         kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
+          ...(r.uuid ? [["Card", h("span", { className: "mono", title: "NVIDIA UUID, as the host's driver reports it; the GPU's name is its first 8 hex digits" }, r.uuid)]] : []),
           ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
           ...(r.listing_reads_as?.class ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : "st-pass" },
             `${cls(r.listing_reads_as.class)} (${r.listing_reads_as.source}) · ${r.listing_reads_as.contradicts ? "contradicts the claim; reported anyway" : "matches the claim"}`)]] : []),
           ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
-            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_at ? ` · approved ${when(r.approved_at)}` : "")]] : []))),
+            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_via === "mandate" ? h("span", { className: "world-c", title: `mandate ${r.mandate_id}, valid until ${when(r.mandate_expires_at)}` }, ` · reported by their agent under a World mandate ${when(r.approved_at)}`)
+              : r.approved_at ? ` · approved with World ${when(r.approved_at)}` : "")]] : []))),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
         kv(["Cores (SMs)", String(p.sms ?? "—")], ["FP8 maths", p.fp8 == null ? "—" : p.fp8 ? "yes (Hopper)" : "no"],
           ["Clock", p.clock_ghz ? `${p.clock_ghz} GHz` : "—"], ["Copy bandwidth", p.bw_tbs ? `${p.bw_tbs} TB/s` : "—"],
@@ -907,7 +911,7 @@ async function providersView(arg) {
   const provs = [...pv.providers].sort((a, b) => failedShare(a) - failedShare(b) || (median(pcts.get(b.provider_node)) ?? 0) - (median(pcts.get(a.provider_node)) ?? 0));
   const rollup = provs.map((p) => h("tr", {},
     h("td", {}, p.name ? h("a", { href: `#/name/${p.name}`, className: "mono", title: "Its page: the record read live from ENS" }, p.name) : h("span", { className: "mono" }, short(p.provider_node)),
-      p.listed === false ? h("span", { className: "stag", title: "Not on our list of known providers: the name is whatever the renter typed" }, "unlisted") : null),
+      p.name && p.listed === false ? h("span", { className: "stag", title: "Not on our list of known providers: the name is whatever the renter typed" }, "unlisted") : null),
     h("td", {}, String(p.gpus ?? 0)), h("td", {}, h("span", { className: p.failed_gpus ? "st-fail" : "" }, String(p.failed_gpus ?? 0))),
     h("td", {}, String(p.humans ?? 0)), h("td", {}, String(p.passes ?? 0)), h("td", {}, String(p.degraded ?? 0)), h("td", {}, String(p.fails ?? 0)),
     h("td", {}, median(pcts.get(p.provider_node)) == null ? "—" : `${num(median(pcts.get(p.provider_node)))}%`)));
@@ -959,48 +963,79 @@ async function modelsView() {
   ];
 }
 
-// ---- settings / about --------------------------------------------------------------------------------------
-async function about() {
-  const hl = await getHealth(true);
-  const kv = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
-  const forget = h("button", { type: "button", className: "btn", onclick: () => { token.set(null); forget.textContent = "Forgotten"; forget.disabled = true; } }, "Forget my World login");
-  const steps = [
-    "The API gives the GPU a random seed and starts a deadline clock.",
-    "The GPU multiplies seeded INT8 matrices on its tensor cores, step after step.",
-    "Each output row becomes a fingerprint; all are hashed into one Merkle root.",
-    "Only after the root arrives does the API pick 8 random rows and recompute them.",
-    "Probes measure cores (the staircase), FP8, clock and bandwidth. They decide the chip.",
-    "Two layers. Heat-proof probes (cores, FP8) decide the chip: a wrong chip or wrong answers fail. The deadline measures speed: the right chip too slow is degraded, never failed.",
-    "A pass or degraded result publishes at once. A failure needs a fresh World approval.",
-    "One voice per person per GPU; two different people mark a GPU failed.",
-    "The same approval counts once for the provider, however many of its GPUs that person reports.",
-    "Two passes after a failure mark a GPU recovered; its history stays public.",
-  ];
+// ---- World ID: this browser's session, and the mandate that lets your agents report ------------------------------
+async function mandateNow() {
+  const tok = token.get();
+  if (!tok) return { tok: null, m: null };
+  try {
+    return { tok, m: (await api("/api/world/mandate/status", { agent_token: tok })).mandate };
+  } catch (e) {
+    if (e.status === 401) token.set(null); // the login expired: this browser is logged out
+    return { tok: e.status === 401 ? null : tok, m: null };
+  }
+}
+const left = (t) => { const s = t - Date.now() / 1000; return s <= 0 ? "ended" : s >= 5400 ? `${Math.round(s / 3600)} h left` : `${Math.max(1, Math.round(s / 60))} min left`; };
+const mandateState = (m) => (!m ? "none" : m.revoked_at ? "revoked" : m.active ? "active" : m.used >= m.max_reports ? "used up" : "ended");
+
+// the header badge: who is logged in here, and whether their agents may report
+async function sessionBadge() {
+  const el = document.getElementById("session");
+  const { tok, m } = await mandateNow();
+  el.hidden = false;
+  el.className = "session" + (tok ? " on" : "");
+  el.replaceChildren(h("i", { "aria-hidden": "true" }),
+    !tok ? "Log in with World" : m?.active ? `World ID · mandate ${m.used}/${m.max_reports} · ${left(m.expires_at)}` : "World ID · no mandate");
+}
+
+async function worldView() {
+  const [{ tok, m }, hl] = await Promise.all([mandateNow(), getHealth(true).catch(() => null)]);
+  const state = mandateState(m);
+  const sessionBox = h("div", { className: "block" }, h("div", { className: "label world-c" }, "This browser"),
+    tok ? h("p", {}, pill("logged in", "pass"), " with World. Pseudonymous: the record only ever sees a per-GPU and a per-provider id, never who you are.")
+        : h("p", {}, pill("not logged in", "unknown"), " Log in once to approve failure reports, or to let your agents report them."),
+    h("div", { className: "row" }, tok
+      ? h("button", { type: "button", className: "btn", onclick: () => { token.set(null); route(false); } }, "Log out")
+      : h("button", { type: "button", className: "btn world", onclick: () => loginFlow() }, "Log in with World")));
+  const hours = h("select", { id: "md-hours" }, [[1, "1 hour"], [8, "8 hours"], [24, "24 hours"], [72, "3 days"]].map(([v, t]) => h("option", { value: v, selected: v === 24 }, t)));
+  const max = h("select", { id: "md-max" }, [5, 20, 50, 100].map((v) => h("option", { value: v, selected: v === 20 }, `${v} reports`)));
+  const grant = h("button", { type: "button", className: "btn world", disabled: !tok, onclick: () => mandateFlow(+hours.value, +max.value) },
+    m?.active ? "Replace with World" : "Grant with World");
+  const mandateBox = h("div", { className: "block mandate" }, h("div", { className: "label world-c" }, "Agent mandate"),
+    h("p", {}, pill(state, { active: "pass", none: "unknown", revoked: "fail" }[state] || "degraded"),
+      m ? ` since ${when(m.created_at)} · until ${when(m.expires_at)}${m.active ? ` · ${left(m.expires_at)}` : ""}` : " Your agents ask you before every failure report."),
+    m ? gauge("Failure reports used", `${m.used} of ${m.max_reports}`, (m.used / m.max_reports) * 100, "", `${m.used} of ${m.max_reports} reports used`) : null,
+    m?.active ? h("div", { className: "row" }, h("button", { type: "button", className: "btn", onclick: async () => {
+      await api("/api/world/mandate/revoke", { agent_token: tok }); route(false); } }, "Revoke now")) : null,
+    h("div", { className: "grant" },
+      h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-hours" }, "Lasts"), hours),
+      h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-max" }, "Covers up to"), max), grant),
+    h("p", { className: "sub small" }, tok ? ["Agents use it through the login saved by ", h("code", {}, "python -m agent login"), ", or grant it there: ",
+      h("code", {}, "python -m agent mandate --hours 24 --max 20"), "."] : "Log in first."));
   return [
-    head("Settings", "Configuration and how it works"),
-    section("Configuration", "read from /api/health", h("div", { className: "detail" },
-      h("div", { className: "block" }, h("div", { className: "label" }, "API and chain"),
-        kv(["Store", hl.store], ["Chain mode", hl.chain.mode], ["Chain id", String(hl.chain.chain_id)], ["Marks", scan("address", hl.chain.marks) || "not set"],
-          ["Reporter", scan("address", hl.chain.reporter) || "not set"], ["Reporter balance", hl.chain.reporter_balance_eth == null ? "—" : `${hl.chain.reporter_balance_eth} ETH`])),
-      h("div", { className: "block" }, h("div", { className: "label" }, "Partners"),
-        kv(["World", `${hl.world.mode} · ${hl.world.issuer}`], ["MultiBaas", hl.multibaas.configured ? hl.multibaas.url : "not configured"],
-          ["MultiBaas webhook", hl.multibaas.webhook ? "configured" : "not configured"], ["ENS parent", hl.ens.parent], ["Universal resolver", scan("address", hl.ens.universal_resolver) || "not set"], ["Public RPC (ENS reads)", hl.ens.rpc])),
-      h("div", { className: "block" }, h("div", { className: "label" }, "This browser"),
-        h("p", { className: "sub" }, token.get() ? "You are logged in with World here. The login is kept in this browser only." : "Not logged in with World in this browser."),
-        h("div", {}, forget)))),
-    section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
-      "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
-    section("For agents and integrations", "open data, composable by any agent or protocol", h("p", { className: "sub" },
-      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers.")),
-    section("How a check works", null, h("ol", { className: "how" }, steps.map((s) => h("li", {}, h("span", {}, s))))),
-    section("What the statuses mean", null, kv(["pass", "At least one check passed and nobody has reported it."],
-      ["suspect · 1 of 2 humans", "One person approved a failure. A second renter who checks it and approves makes it failed."], ["failed", "Two different people approved failure reports."],
+    head("World ID", "One person, many agents, one voice",
+      h("p", { className: "sub" }, "A failure accuses a provider, so it needs a real person. Approve reports one at a time with World App, or grant your agents a mandate: one approval, a time limit and a report budget. Either way you count once per GPU and once per provider.")),
+    section("Your session", tok ? (m?.active ? "agents may report" : "reports wait for you") : "not logged in", h("div", { className: "detail" }, sessionBox, mandateBox)),
+    section("How people count", "the same rules with or without a mandate", h("ol", { className: "how" }, [
+      "One voice per person per GPU, and once per provider however many of its GPUs you report. Twenty agents under one person are still one voice.",
+      "Two different people mark a GPU failed. One report makes it suspect.",
+      "Every report carries the listing in the reporter's words. When Jev reads it as another GPU, only you can report anyway; a mandate never does.",
+      "A mandate is bounded (hours, reports) and revocable, and reports made under it say so on the check.",
+      "Two passes after the last failure mark a GPU recovered; its history stays public.",
+    ].map((x) => h("li", {}, h("span", {}, x))))),
+    section("What the statuses mean", null, kvList(["pass", "At least one check passed and nobody has reported it."],
+      ["suspect · 1 of 2 humans", "One person reported a failure. A second person who checks it and reports makes it failed."], ["failed", "Two different people reported failures."],
       ["degraded", "Latest check: right chip, correct answers, too slow (heat, a power cap or sharing). Published with its numbers; never counts toward failed."],
       ["recovered", "Failure reports, then two passes after the last one. The reports stay in its history."],
       ["unknown", "No published check yet."],
       ["provider (cloud-b.waterline.eth)", "GPUs failed now, and people who reported any of them (each once). Descriptive: GPUs are judged one by one."])),
+    section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
+      "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
+    section("For agents and integrations", "read it anywhere", h("p", { className: "sub" },
+      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers."),
+      hl ? kvList(["Marks contract", scan("address", hl.chain.marks) || "—"], ["ENS parent", hl.ens.parent], ["Indexed by", hl.multibaas.configured ? "Curvegrid MultiBaas" : "—"]) : null),
   ];
 }
+const kvList = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
 
 // ---- World: log in once, then approve a failure report ------------------------------------------------------
 const dlg = document.getElementById("world");
@@ -1087,6 +1122,45 @@ function reportAnyway(message, my) {
   });
 }
 
+async function login(my) {
+  $w("title").textContent = "Log in with World";
+  const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "Scan the code with World App or open the link.");
+  if (!r) return null;
+  if (r.status !== "approved") { say(`Login ${r.status}.`, "bad"); return null; }
+  token.set(r.agent_token);
+  return r.agent_token;
+}
+
+async function loginFlow() {
+  const my = ++flow;
+  $w("code").hidden = true;
+  $w("what").textContent = "Log in once in this browser. Nothing is published by logging in.";
+  say("");
+  dlg.showModal();
+  try {
+    if (await login(my)) say("Logged in.", "good");
+  } catch (e) { if (my === flow) say(e.message, "bad"); }
+}
+
+async function mandateFlow(hours, max) {
+  const my = ++flow;
+  $w("code").hidden = true;
+  $w("title").textContent = "Grant a mandate";
+  $w("what").textContent = `Let your agents report up to ${max} failures in the next ${hours} h, as your one voice per GPU. You can revoke it at any time.`;
+  say("");
+  dlg.showModal();
+  try {
+    const r = await device("/api/world/mandate/start", { agent_token: token.get(), hours, max_reports: max }, "/api/world/mandate/poll", my,
+      "Approve with World App: scan the code or open the link.");
+    if (!r) return;
+    if (!r.mandate) return say(r.status_text || `${r.status}: no mandate.`, "bad");
+    say(`Granted: up to ${r.mandate.max_reports} reports until ${when(r.mandate.expires_at)}.`, "good");
+  } catch (e) {
+    if (e.status === 401) { token.set(null); return say("Your World login has expired. Close this and log in again.", "bad"); }
+    if (my === flow) say(e.message, "bad");
+  }
+}
+
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
@@ -1094,14 +1168,8 @@ async function approveFlow(rep) {
   say("");
   dlg.showModal();
   try {
-    let tok = token.get();
-    if (!tok) {
-      $w("title").textContent = "Log in with World";
-      const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "First, log in: scan the code with World App or open the link.");
-      if (!r) return;
-      if (r.status !== "approved") return say(`Login ${r.status}. Nothing was published.`, "bad");
-      token.set((tok = r.agent_token));
-    }
+    const tok = token.get() || (await login(my));
+    if (!tok) return;
     $w("title").textContent = "Report this GPU";
     const listing = await confirmReport(rep, my);
     if (!listing) return;
