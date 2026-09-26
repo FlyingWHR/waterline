@@ -69,8 +69,7 @@ Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops pay
 | 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
 | 1:10 | The exam | "The cores decide the chip; the clock decides the speed." |
 | 1:35 | Fail · Approve | Agent on B2: fail, stops paying, listing pasted, Jev agrees, World Deny then Approve. |
-| 2:15 | Record | ENS name + cloud-b roll-up + Verify the evidence hash. |
-| 2:40 | Compare | Leaderboard: cloud-a vs cloud-b H100s; the honest A100. |
+| 2:15 | Record · Compare | The ENS name tree: B2 suspect, one voice on cloud-b, % of rating per cloud; Verify the hash. |
 | 3:00 | Use | MultiBaas indexed; `agent choose` skips B2. |
 | 3:20 | Close | "Proof of Delivered Compute." |
 Full script: the showcase's Demo tab. Video rules: 2–4 min (auto-reject outside), ≥720p, own voice, no speed-up,
