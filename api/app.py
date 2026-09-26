@@ -450,6 +450,16 @@ def report(report_id: str):
     return rep
 
 
+@app.get("/api/reports/by-hash/{report_hash}")
+def report_by_hash(report_hash: str):
+    """ENS -> the check: a GPU name's waterline.report text record (or any Reported event's reportHash) finds it."""
+    h = report_hash.lower()
+    for r in _reports(INDEX_MAX):  # ponytail: scans the 500-report index; a hash:<h> key if the index grows
+        if (r.get("report_hash") or "").lower() == h:
+            return {k: r.get(k) for k in SUMMARY}
+    raise HTTPException(404, "No check with that report hash here")
+
+
 @app.get("/api/reports/{report_id}/evidence")
 def evidence(report_id: str):
     """The exact canonical bytes; keccak256(body) must equal the GPU name's waterline.report text record."""

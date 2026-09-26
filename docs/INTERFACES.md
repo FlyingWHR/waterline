@@ -187,6 +187,8 @@ text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries
   (index 12; the MultiBaas queries don't select it).
 - `GET /api/reports/{id}/evidence` -> the exact canonical bytes (`application/json`) + header
   `X-Waterline-Report-Hash`. `/api/reports`, `/api/reports/{id}` and the reveal output carry `report_hash`.
+- `GET /api/reports/by-hash/{report_hash}` -> the check summary whose `report_hash` matches (404 if none): ENS to the
+  check, from a GPU name's `waterline.report` or any `Reported` event. The panel opens it at `#/r/<hash>`.
 - **Anyone can verify**, without trusting the API:
   ```
   curl -s $API/api/reports/$ID/evidence -o report.json

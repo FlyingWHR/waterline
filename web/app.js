@@ -4,7 +4,7 @@ const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
 const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" };
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
-const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "fails", "humans", "recoveries", "fingerprint"];
+const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "humans", "recoveries", "fingerprint", "report"];
 const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "humans", "passes", "fails", "note"];
 const TOKEN_KEY = "waterline.agent_token";
 const WRITE_PATH = { multibaas: "MultiBaas", rpc: "RPC", "dry-run": "dry run" };
@@ -81,14 +81,14 @@ const table = (cols, rows) => {
 };
 
 // ---- router ------------------------------------------------------------------------------------------------
-const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], name: [namePage, "Name"],
+const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
   leaderboard: [leaderboard, "Leaderboard"], models: [modelsView, "Models"], about: [about, "Settings"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = { check: "checks", models: "leaderboard", name: "gpus" }[name] || (name in routes ? name : "");
+  const tab = { check: "checks", r: "checks", models: "leaderboard", name: "gpus" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
@@ -310,7 +310,7 @@ async function namePage(full) {
       ? [tile("GPUs", v.gpus), tile("failed now", v.failed_gpus), tile("people who reported", v.humans), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails)]
       : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("people", v.humans), tile("recoveries", v.recoveries)])),
       isProvider && v.note ? h("p", { className: "quote" }, `“${v.note}” `, h("span", { className: "sub" }, "the provider's note: its words, not part of the record")) : null,
-      !isProvider && v.fingerprint ? h("p", { className: "sub small" }, "Timing fingerprint ", h("span", { className: "mono" }, short(v.fingerprint)), " · report hash ", h("span", { className: "mono" }, short(v.report || "")), mine[0] ? h("span", {}, " · ", h("a", { href: `#/check/${mine[0].report_id}` }, "verify it on the latest check")) : null) : null);
+      !isProvider && v.fingerprint ? h("p", { className: "sub small" }, "Timing fingerprint ", h("span", { className: "mono" }, short(v.fingerprint)), " · report hash ", v.report ? h("a", { href: `#/r/${v.report}`, className: "mono", title: "Open the check this hash commits to" }, short(v.report)) : "—", mine[0] ? h("span", {}, " · ", h("a", { href: `#/check/${mine[0].report_id}` }, "verify it on the latest check")) : null) : null);
   }).catch((e) => facts.replaceChildren(h("p", { className: "err" }, `Couldn't read ${n} from ENS: ${e.shortMessage || e.message}`)));
   const provNode = pv.providers.find((x) => x.name === (isProvider ? n : n.split(".").slice(1).join(".")));
   return [
@@ -399,7 +399,8 @@ function ensLookup(initial = "") {
         : h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record"), h("div", { className: "nm" }, n), pill(r.status || "unknown"),
           h("dl", { className: "kv" }, row("Measured as", r.class), row("Cores", r.cores), row("Of its rating", r.pct_of_spec ? `${r.pct_of_spec}%` : ""),
             row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"), row("People who reported it", r.humans || "0"),
-            row("Recoveries", r.recoveries || "0"), row("Timing fingerprint", r.fingerprint))));
+            row("Recoveries", r.recoveries || "0"), row("Timing fingerprint", r.fingerprint),
+            row("Latest check", r.report && h("a", { href: `#/r/${r.report}`, className: "mono", title: r.report }, short(r.report))))));
     } catch (e) {
       out.replaceChildren(h("p", { className: "err" }, `Couldn't read ${name}: ${e.shortMessage || e.message}`));
     }
@@ -423,6 +424,13 @@ function seriesStrip(all, id, current) {
       title: `#${r.seq} · ${r.verdict} · ${when(r.created_at)}${r.pct_of_spec != null ? ` · ${num(r.pct_of_spec)}% of rating` : ""}` },
       h("i", { style: `height:${r.pct_of_spec ? Math.max(8, (r.pct_of_spec / top) * 100) : 100}%` }),
       h("span", {}, `#${r.seq}`))));
+}
+
+// #/r/<hash>: open a check from the hash in its GPU's waterline.report record (or a Reported event's reportHash)
+async function byHash(hash) {
+  const r = await api(`/api/reports/by-hash/${encodeURIComponent(hash)}`);
+  history.replaceState(null, "", `#/check/${r.report_id}`);
+  return checkDetail(r.report_id);
 }
 
 function checksTable(reps) {

@@ -263,3 +263,10 @@ def test_listing_that_contradicts_the_claim_needs_report_anyway():
     assert post("/api/report/approve/poll", {"device_id": d["device_id"]}).json()["published"] is True
     full = client.get(f"/api/reports/{rep['report_id']}").json()
     assert full["listing_reads_as"] == {"class": 3, "confidence": 0.95, "source": "rules", "contradicts": True}
+
+
+def test_ens_report_hash_finds_the_check():
+    r = run_check(uuid="GPU-hash")
+    found = client.get(f"/api/reports/by-hash/{r['report_hash'].upper().replace('0X', '0x')}")
+    assert found.status_code == 200 and found.json()["report_id"] == r["report_id"]
+    assert client.get("/api/reports/by-hash/0x" + "00" * 32).status_code == 404
