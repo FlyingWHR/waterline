@@ -1,5 +1,8 @@
-"""Writes to Marks on Sepolia. Dry-run (log + remember the call, tx None) unless MARKS_ADDRESS, REPORTER_KEY and
-SEPOLIA_RPC are all set."""
+"""Writes to Marks on Sepolia. Three paths (write_path()):
+- "multibaas": MB_URL + MB_API_KEY + REPORTER_KEY. MultiBaas composes the call (fills nonce and gas), we check and sign
+  it locally with REPORTER_KEY, MultiBaas submits it. Contract: MB_MARKS_ALIAS (default marks) / MB_MARKS_LABEL (marks).
+- "rpc": MARKS_ADDRESS + REPORTER_KEY + SEPOLIA_RPC, straight JSON-RPC.
+- "dry-run": otherwise (log + remember the call, tx None)."""
 import logging
 import os
 
@@ -44,7 +47,61 @@ def _rpc(url, method, params, timeout=20):
 
 
 def live() -> bool:
-    return all(os.environ.get(k) for k in ("MARKS_ADDRESS", "REPORTER_KEY", "SEPOLIA_RPC"))
+    return write_path() != "dry-run"
+
+
+def write_path() -> str:
+    env = os.environ.get
+    if env("MB_URL") and env("MB_API_KEY") and env("REPORTER_KEY"):
+        return "multibaas"
+    return "rpc" if all(env(k) for k in ("MARKS_ADDRESS", "REPORTER_KEY", "SEPOLIA_RPC")) else "dry-run"
+
+
+def _mb(method, path, body=None):
+    """MultiBaas REST call -> `result`. Any trouble -> ChainError with a plain message."""
+    try:
+        r = httpx.request(method, os.environ["MB_URL"].rstrip("/") + "/api/v0" + path, json=body, timeout=20,
+                          headers={"Authorization": f"Bearer {os.environ['MB_API_KEY']}"})
+        out = r.json()
+    except (httpx.HTTPError, ValueError) as e:
+        raise ChainError(f"MultiBaas unreachable: {type(e).__name__}") from None
+    if r.status_code >= 400 or not isinstance(out, dict) or "result" not in out:
+        msg = out.get("message") if isinstance(out, dict) else None
+        raise ChainError(f"MultiBaas refused the call (HTTP {r.status_code}): {msg or 'no message'}")
+    return out["result"]
+
+
+def _int(x):
+    return int(x, 0) if isinstance(x, str) else int(x)
+
+
+def _record_mb(args, data, key):
+    try:
+        acct = Account.from_key(key)
+    except ValueError:
+        raise ChainError("REPORTER_KEY is not a valid private key.") from None
+    alias, label = os.environ.get("MB_MARKS_ALIAS") or "marks", os.environ.get("MB_MARKS_LABEL") or "marks"
+    mb_args = ["0x" + a.hex() if isinstance(a, bytes) else str(a) for a in args]
+    tx = _mb("POST", f"/chains/ethereum/addresses/{alias}/contracts/{label}/methods/record",
+             {"args": mb_args, "from": acct.address, "formatInts": "as_strings"}).get("tx") or {}
+    chain_id = _mb("GET", "/chains/ethereum/status").get("chainID")
+    try:
+        # MultiBaas composed it, but the reporter key signs it: sign only the exact call we asked for.
+        want = os.environ.get("MARKS_ADDRESS")
+        if bytes.fromhex(str(tx["data"]).removeprefix("0x")) != data or _int(tx.get("value") or 0) != 0 or (
+                want and to_checksum_address(tx["to"]) != to_checksum_address(want)):
+            raise ChainError("MultiBaas composed a different transaction than Marks.record; not signing it.")
+        fields = {"chainId": _int(chain_id), "nonce": _int(tx["nonce"]), "to": to_checksum_address(tx["to"]),
+                  "data": data, "value": 0, "gas": _int(tx["gas"])}
+        if tx.get("gasFeeCap") is not None:  # EIP-1559: MultiBaas names them gasFeeCap / gasTipCap
+            fields |= {"type": 2, "maxFeePerGas": _int(tx["gasFeeCap"]), "maxPriorityFeePerGas": _int(tx["gasTipCap"])}
+        else:
+            fields["gasPrice"] = _int(tx["gasPrice"])
+        signed = acct.sign_transaction(fields)
+    except (KeyError, TypeError, ValueError) as e:
+        raise ChainError(f"MultiBaas returned a transaction we could not sign ({type(e).__name__}: {e}).") from None
+    _mb("POST", "/chains/ethereum/transactions/submit", {"signedTx": "0x" + bytes(signed.raw_transaction).hex()})
+    return "0x" + bytes(signed.hash).hex()
 
 
 def reporter_address():
@@ -68,15 +125,18 @@ def balance_eth(address):
 def record(node: bytes, verdict: int, cls: int, cores: int, fingerprint: bytes, voter_id: bytes,
            tops_x10: int = 0, pct_bps: int = 0):
     """Marks.record(...). tops_x10 / pct_bps from encode_perf. Returns the tx hash (0x hex), or None in dry-run.
-    Raises ChainError on failure."""
+    The path taken is write_path(). Raises ChainError on failure."""
     args = (node, verdict, cls, cores, fingerprint, voter_id, tops_x10, pct_bps)
     addr, key, rpc = (os.environ.get(k) for k in ("MARKS_ADDRESS", "REPORTER_KEY", "SEPOLIA_RPC"))
-    if not (addr and key and rpc):
+    path = write_path()
+    if path == "dry-run":
         DRY_RUN_CALLS.append(args)
         log.info("dry-run Marks.record node=0x%s verdict=%d cls=%d cores=%d fp=0x%s voter=0x%s tops_x10=%d pct_bps=%d",
                  node.hex(), verdict, cls, cores, fingerprint.hex(), voter_id.hex(), tops_x10, pct_bps)
         return None
     data = SELECTOR + encode(ARG_TYPES, list(args))
+    if path == "multibaas":
+        return _record_mb(args, data, key)
     acct = Account.from_key(key)
     try:
         tx = {"from": acct.address, "to": to_checksum_address(addr), "data": "0x" + data.hex(), "value": 0}

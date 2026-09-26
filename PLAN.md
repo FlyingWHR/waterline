@@ -21,7 +21,7 @@ goes on a record the provider can't edit.
 | **Proof** | Is this GPU what was sold? | Profiler | Secret INT8 exam under a deadline on the API's clock; seal (Merkle root), then 8 random rows re-graded; core-count staircase + FP8; performance profile vs 37 models; health report advisory only |
 | **Place** | Where does truth live? | ENSv2 | Marks is the resolver of `waterline.eth`: every `gpu-….waterline.eth` resolves with no registration (wildcard). Writing is governed by ENSv2's **Enhanced Access Control**: a REPORTER role, scoped per GPU name, held today only by our API |
 | **People** | Who may say it's false? | World ID for Agents | Stable, private, pairwise ID (Human Continuity OIDC): any number of agents, one human voice per GPU. Renting and passing need no World check; publishing a failure steps up to a fresh approval. Deny publishes nothing |
-| **Use** | How does truth become action? | Curvegrid MultiBaas | Indexer (history the agent chooses from), listener (webhook confirms each report), nonce manager (MultiBaas composes the write; we sign; it submits). The history decides, not the LLM. On a FAIL the agent stops paying for that rental |
+| **Use** | How does truth become action? | Curvegrid MultiBaas | Indexer (history the agent chooses from), listener (webhook confirms each report), and write path (MultiBaas builds each write with nonce and gas; we check and sign; it submits). The history decides, not the LLM. On a FAIL the agent stops paying for that rental |
 
 Deliberately not used: soulbound names, aliasing (ENS); IDKit credentials, MCP flow, Monad credits (World);
 Intercepta (no payment to screen). Jev only reads listing text; it never picks a GPU.
@@ -38,7 +38,7 @@ Intercepta (no payment to screen). Jev only reads listing text; it never picks a
   record the provider can't edit.
 - **Versus OpenBook:** OpenBook guarantees the data is fresh; Waterline guarantees the machine is real.
 - **Per sponsor:** ENS: every GPU has a public name only our API can write. World: any number of agents, one human
-  voice per GPU. Curvegrid: serverless backend, so MultiBaas is our indexer, listener and nonce manager.
+  voice per GPU. Curvegrid: serverless backend, so MultiBaas is our indexer, our listener, and builds and submits every write. (Don't say "nonce manager": its concurrent nonce management needs MultiBaas-hosted wallets.)
 - **Closer:** proof, place, people, use.
 - **Next stage (last 15 s or Q&A only):** every renter's container becomes a verifier; the ENSv2 REPORTER role goes
   from our one API to many independent verifiers (already one `grantRoles` call per GPU or for all), World keeps

@@ -10,7 +10,7 @@ STAIR = {str(k): round(5.0 * -(-k // 132), 3) for k in range(64, 161)}
 def test_health_dry_run():
     h = client.get("/api/health").json()
     assert h["api"] == "ok" and h["store"] == "memory"
-    assert h["chain"] == {"mode": "dry-run", "chain_id": 11155111, "marks": None, "reporter": None,
+    assert h["chain"] == {"mode": "dry-run", "write_path": "dry-run", "chain_id": 11155111, "marks": None, "reporter": None,
                           "reporter_balance_eth": None}
     assert h["world"]["mode"] == "mock" and h["multibaas"] == {"configured": False, "url": None}
     assert h["ens"]["parent"] == "waterline.eth" and h["ens"]["universal_resolver"].startswith("0x")

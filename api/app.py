@@ -150,13 +150,14 @@ def check_reveal(body: RevealIn):
            "probes": s["probes"], "staircase": s.get("staircase"), "elapsed_s": s["elapsed_s"],
            "deadline_s": s["deadline_s"], "samples": [[st, r] for st, r, _ in s["samples"]], "n": s["n"],
            "steps": s["steps"], **throughput(s["n"], s["steps"], s["elapsed_s"], s["claimed_class"]),
-           "health": body.health and body.health | {"grade": "reported by the machine"}, "work_ok": work_ok}
+           "health": body.health and body.health | {"grade": "reported by the machine"}, "work_ok": work_ok,
+           "via": None, "indexed": False, "indexed_at": None}
     rep |= perf_profile(rep, body.metrics, classification)
     if not reasons:
         try:
             rep["tx"] = chain.record(node, PASS, measured, rep["cores"], bytes.fromhex(rep["fingerprint"][2:]),
                                      keccak(text=rid), *_perf_onchain(rep))
-            rep |= {"published": True, "status_text": "Published."}
+            rep |= {"published": True, "status_text": "Published.", "via": chain.write_path()}
         except chain.ChainError as e:
             rep["status_text"] = "Publishing failed."
             log.error("publishing pass %s failed: %s", rid, e)
@@ -164,7 +165,7 @@ def check_reveal(body: RevealIn):
     # ponytail: read-modify-write index; two reveals in the same instant can drop an id. Redis LPUSH if it bites.
     store.put(INDEX, [rid, *(store.get(INDEX) or [])][:INDEX_MAX], REPORT_TTL)
     return {k: rep[k] for k in ("report_id", "verdict", "measured_class", "reasons", "gpu_name", "node",
-                                "published", "tx")}
+                                "published", "tx", "via")}
 
 
 # ---- World: login and approval (device grant) --------------------------------------------------------------
@@ -290,22 +291,26 @@ def approve_poll(body: DeviceIn):
         store.delete(pub_key)
         log.error("publishing fail %s failed: %s", rep["report_id"], e)
         return {"status": "approved", "published": False, "status_text": "Publishing failed; approve again."}
-    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks."}
+    via = chain.write_path()
+    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via}
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
-    return _finish(body.device_id, d, {"status": "approved", "published": True, "tx": tx,
+    return _finish(body.device_id, d, {"status": "approved", "published": True, "tx": tx, "via": via,
                                        "status_text": "Recorded on Marks."})
 
 
 # ---- control panel reads ------------------------------------------------------------------------------------
 SUMMARY = ("report_id", "created_at", "gpu_name", "node", "cloud", "claimed_class", "measured_class", "verdict",
-           "published", "tx", "status_text")
-# Reported(node 0, voterId 1, verdict 2, cls 3, cores 4, fingerprint 5, at 6, passes 7, fails 8, humans 9).
+           "published", "tx", "status_text", "via", "indexed", "indexed_at")
+# Reported(node 0, voterId 1, verdict 2, cls 3, cores 4, fingerprint 5, topsX10 6, pctBps 7, at 8, passes 9,
+#          fails 10, humans 11): must match contracts/src/Marks.sol (checked in tests/api/test_event_layout.py).
 # Tallies only grow, so max = latest; per-report fields use last.
+REPORTED = "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint32,uint16,uint64,uint32,uint32,uint32)"
 MB_QUERY = {"events": [{
-    "eventName": "Reported(bytes32,bytes32,uint8,uint8,uint16,bytes32,uint64,uint32,uint32,uint32)",
+    "eventName": REPORTED,
     "select": [{"type": "input", "inputIndex": i, "alias": a, **({"aggregator": g} if g else {})}
-               for a, i, g in [("node", 0, None), ("cls", 3, "last"), ("cores", 4, "last"), ("at", 6, "max"),
-                               ("passes", 7, "max"), ("fails", 8, "max"), ("humans", 9, "max")]]}],
+               for a, i, g in [("node", 0, None), ("cls", 3, "last"), ("cores", 4, "last"), ("tops_x10", 6, "last"),
+                               ("pct_bps", 7, "last"), ("at", 8, "max"), ("passes", 9, "max"), ("fails", 10, "max"),
+                               ("humans", 11, "max")]]}],
     "groupBy": "node", "orderBy": "at", "order": "DESC"}
 
 
@@ -334,7 +339,7 @@ def _universal_resolver():
 def health():
     live, reporter, mb = chain.live(), chain.reporter_address(), os.environ.get("MB_URL")
     return {"api": "ok", "store": "redis" if os.environ.get("REDIS_URL") else "memory",
-            "chain": {"mode": "live" if live else "dry-run", "chain_id": 11155111,
+            "chain": {"mode": "live" if live else "dry-run", "write_path": chain.write_path(), "chain_id": 11155111,
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},
             "world": {"mode": "mock" if world.mock_on() else "live", "issuer": world.issuer()},
@@ -394,6 +399,47 @@ def gpus():
     for x in rows:
         x |= {"gpu_name": names.get(x["node"]), "status": gpu_status(x["humans"], x["passes"])}
     return {"source": source, "error": error, "gpus": rows}
+
+
+# ---- MultiBaas webhook: Reported events mark our reports as indexed ------------------------------------------------
+WEBHOOK_MAX_AGE_S = 300
+
+
+@app.post("/api/webhooks/multibaas")
+async def multibaas_webhook(request: Request):
+    """Signature per docs.curvegrid.com/multibaas/webhooks: hex HMAC-SHA256(secret, raw body + timestamp string)."""
+    secret, raw = os.environ.get("MB_WEBHOOK_SECRET"), await request.body()
+    ts, sig = request.headers.get("X-MultiBaas-Timestamp", ""), request.headers.get("X-MultiBaas-Signature", "")
+    good = secret and hmac.new(secret.encode(), raw + ts.encode(), "sha256").hexdigest()
+    if not (good and ts.isdigit() and abs(now() - int(ts)) <= WEBHOOK_MAX_AGE_S
+            and hmac.compare_digest(good.encode(), sig.strip().lower().encode())):
+        raise HTTPException(401, "Bad, missing or stale webhook signature.")
+    try:
+        events = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "The webhook body is not JSON.")
+    marks = {os.environ.get("MB_MARKS_ALIAS") or "marks", (os.environ.get("MARKS_ADDRESS") or "").lower()} - {""}
+    hits = set()
+    for ev in events if isinstance(events, list) else [events]:
+        try:
+            if (ev.get("event") or ev.get("eventType")) != "event.emitted":
+                continue
+            data = ev["data"]
+            e = data["event"]
+            c = e.get("contract") or data.get("contract") or {}
+            if e.get("name") != "Reported" or not {str(c.get("addressLabel")), str(c.get("address")).lower()} & marks:
+                continue
+            node = str(e["inputs"][0]["value"]).lower()  # Reported's first input is the node
+            hits.add(("0x" + node.removeprefix("0x"), str(data["transaction"]["txHash"]).lower()))
+        except (AttributeError, KeyError, IndexError, TypeError):
+            continue  # not an event we understand: ignore it
+    marked = 0
+    # ponytail: scans the last INDEX_MAX reports; keep a tx -> report_id key if the record grows past that
+    for r in _reports(INDEX_MAX) if hits else []:
+        if (r["node"], (r.get("tx") or "").lower()) in hits and not r.get("indexed"):
+            store.put(f"report:{r['report_id']}", r | {"indexed": True, "indexed_at": int(now())}, REPORT_TTL)
+            marked += 1
+    return {"ok": True, "indexed": marked}
 
 
 # ---- performance profile and comparisons (docs/INTERFACES.md "Performance profile", docs/METRICS.md) ----------

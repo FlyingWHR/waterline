@@ -57,8 +57,8 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
 ### Use: Curvegrid MultiBaas
 - **The history decides, not the LLM.** A MultiBaas event query (grouped by GPU) makes the agent skip suspect GPUs;
   Jev only reads listing text. On a FAIL, the agent stops paying for that rental.
-- **The agent never holds a key.** Writes go through our API and MultiBaas, which composes each transaction
-  (nonce and gas); we sign; MultiBaas submits, indexes the event and calls our webhook when it's recorded.
+- **The agent never holds a key.** Writes go through our API and MultiBaas: MultiBaas builds each transaction
+  (nonce and gas), we check and sign it, MultiBaas submits it, indexes the event and calls our webhook when it lands.
 
 ## Principles and limits
 
@@ -105,8 +105,9 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 
 ## How MultiBaas is used
 
-- **Nonce manager:** the API composes every `Marks.record` call through MultiBaas (nonce and gas filled in), signs it
-  locally, and submits it through MultiBaas.
+- **Writes:** the API composes every `Marks.record` call through MultiBaas (nonce and gas filled in), checks the
+  calldata, signs it locally, and submits it through MultiBaas. (MultiBaas's concurrent nonce management needs its
+  hosted wallets; our reporter signs locally, so we publish one report at a time.)
 - **Indexer:** event indexing of `Marks.Reported`; event queries grouped by GPU power the agent's choice and the
   control panel's health table and leaderboard. `Marks` emits running totals so queries only need `last`/`max`.
 - **Listener:** a webhook on `Reported` confirms each report was indexed; the control panel shows it.

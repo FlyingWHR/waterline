@@ -145,3 +145,18 @@ Comparison endpoints:
 - `GET /api/leaderboard?model=` -> per (model, cloud): n, median `int8_tops_verified`, median pct_of_spec, pass rate.
 Chain: `Marks.record` gains `uint32 topsX10` (verified INT8 TOPS × 10) and `uint16 pctBps` (pct of spec × 100);
 text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries both.
+
+## MultiBaas write path, listener and agent actions (Sat 26 Sep)
+- Write paths (`/api/health` → `chain.write_path`): `multibaas` when `MB_URL` + `MB_API_KEY` + `REPORTER_KEY` are set
+  (compose `methods/record` via MultiBaas, verify calldata/to/value, sign locally, submit via
+  `/chains/ethereum/transactions/submit`), else `rpc` (direct JSON-RPC), else `dry-run`.
+- Reports gain `via` (write path used), `indexed` (bool) and `indexed_at` (unix seconds|null); reveal and approve/poll
+  outputs gain `via`.
+- `POST /api/webhooks/multibaas`: HMAC-SHA256(`MB_WEBHOOK_SECRET`, raw body + `X-MultiBaas-Timestamp`) in
+  `X-MultiBaas-Signature` (hex); stale > 5 min or bad signature → 401. Marks matching `Reported` events indexed → `{ok, indexed}`.
+- Env: `MB_MARKS_ALIAS`, `MB_MARKS_LABEL` (default `marks`), `MB_WEBHOOK_SECRET`, `WATERLINE_STOP_CMD`.
+- Agent: `check --pod-id --stop-cmd` (on FAIL, runs the stop command before asking for World approval; never on PASS).
+  `choose`: history only: skip any GPU with ≥ 1 failure report or suspect/failed status, or over `--max-price`;
+  then most passes, then cheapest. Jev only reads listing text.
+- The `Reported` layout is hard-coded in `api/app.py` and `agent/history.py`; `tests/api/test_event_layout.py`
+  checks both against `contracts/src/Marks.sol`.

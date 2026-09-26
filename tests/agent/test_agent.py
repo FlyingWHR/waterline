@@ -55,22 +55,53 @@ def test_namehash():
     assert history.namehash("eth") == "0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae"
 
 
-def test_choose_skips_bad_history_and_price():
-    names = [f"gpu-{i}.cloud-{c}.waterline.eth" for i, c in [(1, "a"), (2, "a"), (3, "b"), (4, "b"), (5, "b")]]
-    mb = {"status": 200, "message": "success", "result": {"rows": [
-        {"node": history.namehash(names[0]), "passes": "0", "fails": "2", "humans": "2", "cls": 3},
-        {"node": history.namehash(names[1]), "passes": "3", "fails": "1", "humans": "1", "cls": 3},
-        {"node": history.namehash(names[2]), "passes": "4", "fails": "0", "humans": "0", "cls": 1},
-    ]}}
-    hist = {r["node"]: r for r in mb["result"]["rows"]}
-    listings = [{"gpu": names[0], "price": 1.0}, {"gpu": names[1], "price": 1.5},
-                {"gpu": names[2], "price": 2.5}, {"gpu": names[3], "price": 9.0}, {"gpu": names[4], "price": 3.0}]
+def test_choose_decides_from_history_only(capsys, monkeypatch, tmp_path):
+    names = [f"gpu-{i}.cloud-{c}.waterline.eth" for i, c in [(1, "a"), (2, "a"), (3, "b"), (4, "b"), (5, "b"), (6, "b")]]
+    rows = [{"node": history.namehash(names[0]), "passes": "0", "fails": "2", "humans": "2", "cls": 3},
+            {"node": history.namehash(names[1]), "passes": "3", "fails": "1", "humans": "1", "cls": 3},
+            {"node": history.namehash(names[2]), "passes": "4", "fails": "0", "humans": "0", "cls": 1},
+            {"node": history.namehash(names[5]), "passes": "1", "fails": "0", "humans": "0", "cls": 1}]
+    hist = {r["node"]: r for r in rows}
+    listings = [{"gpu": names[0], "price": 1.0}, {"gpu": names[1].removesuffix(".waterline.eth"), "price": 1.5},
+                {"gpu": names[2], "price": 2.5}, {"gpu": names[3], "price": 9.0}, {"gpu": names[4], "price": 0.5},
+                {"gpu": names[5], "price": 2.0}]
     pick, skipped = history.choose(listings, hist, max_price=5)
-    assert pick["gpu"] == names[2] and pick["history"] == "pass"
-    assert [w for _, w in skipped] == ["history: failed", "history: suspect · 1 of 2 humans",
-                                       "over the max price (9.0)"]
+    assert pick["gpu"] == names[2] and pick["history"] == "4 passes, no failures"  # more passes beats cheaper
+    assert [w for _, w in skipped] == ["2 failure reports", "1 failure report", "9/h is over your max price of 5/h"]
     pick, _ = history.choose(listings, hist, max_price=2)
-    assert pick is None
+    assert pick["gpu"] == names[5]
+    assert history.choose(listings, hist, max_price=0.1)[0] is None
+
+    f = tmp_path / "listings.json"
+    monkeypatch.setattr(history, "fetch", lambda: hist)
+    monkeypatch.setattr(listing, "parse_jev", lambda t, k: (_ for _ in ()).throw(AssertionError("no LLM")))
+    f.write_text(json.dumps([dict(li, listing="H100 80GB SXM") for li in listings]))
+    assert main(["choose", "--listings", str(f), "--max-price", "5"]) == 0
+    out = capsys.readouterr().out
+    assert "skipping gpu-2.cloud-a: 1 failure report" in out and "Rent gpu-3.cloud-b at 2.5/h" in out
+
+
+def test_stop_cmd_runs_on_fail_before_approval(make_api, env, capsys):
+    api = make_api(world="denied")
+    flag = env / "stopped"
+    assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108", "--pod-id", "pod 42",
+                     "--stop-cmd", f"echo {{pod_id}} > {flag}") == 1
+    out = capsys.readouterr().out
+    assert flag.read_text().strip() == "pod 42"
+    assert out.index("Stopped paying: rental pod 42 ended.") < out.index("WXYZ-1234")
+
+
+def test_no_stop_cmd_on_fail_says_so(make_api, env, capsys, monkeypatch):
+    monkeypatch.delenv("WATERLINE_STOP_CMD", raising=False)
+    run_check(make_api(world="denied"), env, "--listing", "H100 80GB SXM", "--sim-sms", "108")
+    assert "FAIL: end this rental now (no stop command configured)." in capsys.readouterr().out
+
+
+def test_stop_cmd_never_runs_on_pass(make_api, env, capsys, monkeypatch):
+    flag = env / "stopped"
+    monkeypatch.setenv("WATERLINE_STOP_CMD", f"touch {flag}")
+    assert run_check(make_api(), env, "--listing", "H100 80GB SXM", "--pod-id", "p1") == 0
+    assert not flag.exists() and "Stopped paying" not in capsys.readouterr().out
 
 
 def test_fetch_sends_multibaas_query(monkeypatch):

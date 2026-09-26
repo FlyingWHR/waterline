@@ -1,12 +1,18 @@
 """Waterline agent: runs on the renter's laptop.
 
   python -m agent login
-  python -m agent check --pod ssh://root@1.2.3.4:22 --cloud cloud-b --listing "H100 80GB SXM"
+  python -m agent check --pod ssh://root@1.2.3.4:22 --cloud cloud-b --listing "H100 80GB SXM" \
+      --pod-id abc123 --stop-cmd "runpodctl stop pod {pod_id}"
   python -m agent check --local --sim-sms 108 --cloud cloud-b --listing "H100 80GB SXM"   # offline, CPU
   python -m agent history
   python -m agent choose --listings listings.json [--max-price 3.0]
 
-Env: WATERLINE_API (API base URL), MB_URL + MB_API_KEY (history/choose), TYPESAFE_API_KEY (optional Jev).
+The LLM never decides; the history does. `choose` ranks on MultiBaas history and price only; Jev (or the rules)
+only reads listing text into a claimed GPU class. On a FAIL the agent stops paying: it runs the stop command for
+the rental before asking for your World approval.
+
+Env: WATERLINE_API (API base URL), MB_URL + MB_API_KEY (history/choose), TYPESAFE_API_KEY (optional Jev),
+WATERLINE_STOP_CMD (default --stop-cmd).
 """
 import argparse
 import json
@@ -122,6 +128,7 @@ def check(a, api):
     print(f"FAIL: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}.")
     for r in rv.get("reasons", []):
         print(f"  - {r}")
+    stop_paying(a.stop_cmd or os.environ.get("WATERLINE_STOP_CMD"), a.pod_id)
     print("\nNothing is published yet. A failure goes on the record only with your fresh approval.")
     token = load_token() or login(api)
     if not token:
@@ -139,6 +146,23 @@ def check(a, api):
     return 1
 
 
+def stop_paying(cmd, pod_id):
+    """On a FAIL, end the rental right away (before any approval). Never called on a PASS."""
+    if not cmd:
+        print("FAIL: end this rental now (no stop command configured).")
+        return False
+    if "{pod_id}" in cmd and not pod_id:
+        print("FAIL: end this rental now (a stop command is set but no --pod-id was given).")
+        return False
+    # the template is the renter's own config; only the pod id is quoted in
+    rc = subprocess.run(cmd.replace("{pod_id}", shlex.quote(pod_id or "")), shell=True).returncode
+    if rc:
+        print(f"The stop command failed (exit {rc}): end rental {pod_id} yourself now.")
+        return False
+    print(f"Stopped paying: rental {pod_id} ended.")
+    return True
+
+
 def show_history(a):
     rows = history.fetch()
     if not rows:
@@ -154,20 +178,23 @@ def choose(a):
     items = json.loads(Path(a.listings).read_text())
     pick, skipped = history.choose(items, history.fetch(), a.max_price)
     for li, why in skipped:
-        print(f"skip {li['gpu']} ({li.get('listing', '')}): {why}")
+        print(f"skipping {li['gpu'].removesuffix('.waterline.eth')}: {why}")
     if not pick:
         print("No listing is safe to rent.")
         return 1
-    print(f"Rent {pick['gpu']} ({pick.get('listing', '')}) at {pick['price']}/h. History: {pick['history']}.")
+    print(f"Rent {pick['gpu'].removesuffix('.waterline.eth')} at {pick['price']}/h. History: {pick['history']}.")
+    if pick.get("listing"):  # reading only: the claimed class is what `check` will hold the GPU to
+        code, conf, src = listing.parse(pick["listing"])
+        print(f'Listing "{pick["listing"]}" reads as {listing.CLASSES.get(code, "unknown")} ({src}, confidence {conf:.2f}).')
     return 0
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="agent")
+    ap = argparse.ArgumentParser(prog="agent", description="Waterline agent. The LLM never decides; the history does.")
     ap.add_argument("--api", default=os.environ.get("WATERLINE_API", "http://localhost:3000"))
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("login")
-    c = sub.add_parser("check")
+    sub.add_parser("login", help="log in with World once")
+    c = sub.add_parser("check", help="check a rented GPU; on FAIL stop paying, then ask for your World approval")
     c.add_argument("--pod", help="ssh://user@host:port")
     c.add_argument("--local", action="store_true", help="run the profiler here in CPU mode (offline demo)")
     c.add_argument("--sim-sms", type=int, default=132, help="--local only: SM count to report (108 = A100)")
@@ -178,10 +205,13 @@ def main(argv=None):
     c.add_argument("--n", type=int)
     c.add_argument("--steps", type=int)
     c.add_argument("--out", default="result.json", help="local copy of the profiler's result.json")
-    sub.add_parser("history")
-    ch = sub.add_parser("choose")
+    c.add_argument("--pod-id", help="the rental's id at the cloud, fills {pod_id} in the stop command")
+    c.add_argument("--stop-cmd", help="on FAIL, run this at once to stop paying, e.g. 'runpodctl stop pod {pod_id}' "
+                                      "(default: env WATERLINE_STOP_CMD). Never run on PASS.")
+    sub.add_parser("history", help="GPU history from MultiBaas: passes, failures, status")
+    ch = sub.add_parser("choose", help="pick a listing from MultiBaas history only (no LLM ranking)")
     ch.add_argument("--listings", required=True, help='JSON list of {"gpu": name, "listing": text, "price": n}')
-    ch.add_argument("--max-price", type=float)
+    ch.add_argument("--max-price", type=float, help="skip listings above this price per hour")
     a = ap.parse_args(argv)
     if a.cmd == "check" and not (a.local or a.pod):
         ap.error("check needs --pod or --local")
