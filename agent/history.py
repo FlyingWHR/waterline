@@ -62,7 +62,17 @@ def _post(query, mb_url, key, group):
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as r:
         rows = json.loads(r.read())["result"]["rows"]
-    return {str(r[group]).lower(): r for r in rows}
+    return {hex32(r[group]): r for r in rows}
+
+
+def hex32(v):
+    """bytes32 from MultiBaas as 0x hex: it answers hex, or a list of byte values ("[253, 55, ...]")."""
+    if isinstance(v, str) and v.startswith("["):
+        v = json.loads(v)
+    if isinstance(v, list):
+        return "0x" + bytes(int(b) for b in v).hex()
+    v = str(v).lower()
+    return v if v.startswith("0x") else "0x" + v
 
 
 def fetch(mb_url=None, key=None):

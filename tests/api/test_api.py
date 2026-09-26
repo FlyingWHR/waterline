@@ -281,3 +281,52 @@ def test_known_providers_are_advisory():
     run_check(uuid="GPU-unlisted")  # an unlisted name is still recorded, just marked
     rows = client.get("/api/providers").json()["providers"]
     assert any(p["name"] == "cloud-b.waterline.eth" and p["listed"] is False for p in rows)
+
+
+def test_multibaas_bytes32_as_byte_list():
+    from agent.history import hex32
+    raw = "[253, 55, 131, 8, 229, 95, 207, 107, 90, 95, 70, 59, 32, 42, 22, 234, 237, 137, 25, 253, 70, 243, 172, 53, 229, 104, 8, 223, 81, 116, 38, 231]"
+    want = "0xfd378308e55fcf6b5a5f463b202a16eaed8919fd46f3ac35e56808df517426e7"
+    assert appmod._hex0x(raw) == hex32(raw) == want and appmod._hex0x(want[2:]) == want
+
+
+def grant(token, decision="approve", sub="human-1", hours=24, max_reports=2):
+    world.MOCK.update(decision=decision, sub=sub)
+    d = post("/api/world/mandate/start", {"agent_token": token, "hours": hours, "max_reports": max_reports}).json()
+    return post("/api/world/mandate/poll", {"device_id": d["device_id"]}).json()
+
+
+def auto(report_id, token, listing="H100 80GB SXM5 · 1x · $2.49/h (test listing)"):
+    return post("/api/report/auto", {"report_id": report_id, "agent_token": token, "listing": listing})
+
+
+def test_mandate_lets_agents_report_within_its_limits():
+    tok = login(sub="human-m")
+    rep = run_check(uuid="GPU-M0", claimed=1, probes=A100)
+    assert auto(rep["report_id"], tok).status_code == 403  # no mandate yet
+    assert grant(tok, "deny", sub="human-m")["mandate"] is None
+    assert grant(tok, sub="someone-else")["mandate"] is None  # another person's phone can't grant it
+    m = grant(tok, sub="human-m", max_reports=2)["mandate"]
+    assert m["active"] and m["used"] == 0 and m["max_reports"] == 2
+    r = auto(rep["report_id"], tok).json()
+    assert r["published"] is True and r["mandate"]["used"] == 1
+    full = client.get(f"/api/reports/{rep['report_id']}").json()
+    assert full["approved_via"] == "mandate" and full["mandate_id"] == m["id"]
+    # the same person, through any number of agents, is still one voice per GPU
+    rep2 = run_check(uuid="GPU-M0", claimed=1, probes=A100)
+    assert auto(rep2["report_id"], tok).status_code == 409
+    # a listing that contradicts the report is never auto-reported
+    rep3 = run_check(uuid="GPU-M1", claimed=1, probes=A100)
+    assert auto(rep3["report_id"], tok, listing="1x A100 80GB SXM4 · $1.29/h").status_code == 409
+    assert auto(rep3["report_id"], tok).json()["published"] is True  # 2 of 2 used
+    rep4 = run_check(uuid="GPU-M2", claimed=1, probes=A100)
+    assert auto(rep4["report_id"], tok).status_code == 403  # the mandate is used up
+    m = grant(tok, sub="human-m")["mandate"]  # a new mandate replaces it
+    assert post("/api/world/mandate/revoke", {"agent_token": tok}).json()["mandate"]["active"] is False
+    assert auto(rep4["report_id"], tok).status_code == 403
+    assert post("/api/world/mandate/status", {"agent_token": tok}).json()["mandate"]["revoked_at"]
+
+
+def test_gpu_label_is_the_nvidia_uuid_prefix():
+    assert appmod.gpu_label("GPU-6f3c2a1b-9d0e-4c1a-8b2f-0123456789ab") == "gpu-6f3c2a1b"
+    assert appmod.gpu_label("GPU-1").startswith("gpu-") and len(appmod.gpu_label("GPU-1")) == 12

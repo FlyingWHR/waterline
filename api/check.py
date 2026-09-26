@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 
 import numpy as np
@@ -77,7 +78,10 @@ _rng = secrets.SystemRandom()
 
 
 def gpu_label(uuid: str) -> str:
-    return "gpu-" + hashlib.sha256(uuid.encode()).hexdigest()[:8]
+    """The GPU's ENS label from its NVIDIA UUID: GPU-6f3c2a1b-… -> gpu-6f3c2a1b, the same first 8 hex digits that
+    `nvidia-smi -L` prints, so a renter can match the name to the card. Anything else (simulated, odd formats) is hashed."""
+    m = re.fullmatch(r"gpu-([0-9a-f]{8})(-[0-9a-f]{4}){3}-[0-9a-f]{12}", uuid.strip().lower())
+    return "gpu-" + (m.group(1) if m else hashlib.sha256(uuid.encode()).hexdigest()[:8])
 
 
 def classify(probes: dict, metrics: dict | None = None, claimed=None) -> int:

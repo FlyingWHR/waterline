@@ -1,4 +1,5 @@
 """Waterline API (FastAPI). Vercel loads `app` via [tool.vercel] entrypoint; locally: uvicorn api.app:app."""
+import hashlib
 import hmac
 import json
 import logging
@@ -69,7 +70,7 @@ def _get(key: str, what: str):
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
 MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
-           "listing_reads_as", "approved_at"}
+           "listing_reads_as", "approved_at", "approved_via", "mandate_id", "mandate_expires_at"}
 
 
 def canonical(rep: dict) -> bytes:
@@ -180,7 +181,7 @@ def check_reveal(body: RevealIn):
            # periodic checks carry their series and place in it; both sit inside the evidence hash
            **({"series": s["series"], "seq": s.get("seq")} if s.get("series") else {}),
            "reasons": reasons, "gpu_name": name, "node": "0x" + node.hex(), "published": False, "tx": None,
-           "gpu_label": label, "provider": provider, "provider_node": "0x" + chain.namehash(provider).hex(),
+           "gpu_label": label, "uuid": s["uuid"], "provider": provider, "provider_node": "0x" + chain.namehash(provider).hex(),
            # an observation, never a verdict: the fingerprint is quantised timing, not yet proven stable across runs
            "fingerprint_changed": bool(prev) and prev.get("fingerprint") != fp,
            "cores": s["probes"]["sms"], "fingerprint": s["probes"]["fingerprint"].lower(),
@@ -303,7 +304,14 @@ def approve_start(body: ApproveIn):
         raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
     # a failure accuses the provider of misselling this GPU: the reporter states what they rented, in the listing's
     # own words, and it stays beside the report (anyone can compare it with the provider's real listing)
-    listing = (body.listing or rep.get("listing") or "").strip()
+    _take_listing(rep, body.listing, body.report_anyway)
+    return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
+
+
+def _take_listing(rep: dict, listing: str | None, report_anyway: bool) -> dict:
+    """A failure accuses the provider of misselling this GPU: the reporter states what they rented, in the listing's
+    own words, and it stays beside the report (anyone can compare it with the provider's real listing)."""
+    listing = (listing or rep.get("listing") or "").strip()
     if len(listing) < 8:
         raise HTTPException(422, "Paste the listing you rented (its URL or text) before reporting this GPU.")
     # Jev reads the listing: reporting an A100 listing "as H100" is the cheap way to smear a provider, so a confident
@@ -311,11 +319,12 @@ def approve_start(body: ApproveIn):
     code, conf, src = listings.parse(listing)
     reads = {"class": code, "confidence": round(conf, 2), "source": src,
              "contradicts": bool(code) and code != rep["claimed_class"] and conf >= 0.8}
-    if reads["contradicts"] and not body.report_anyway:
+    if reads["contradicts"] and not report_anyway:
         raise HTTPException(409, f"Your listing reads as {listings.CLASSES[code]} ({src}), but you are reporting it as "
                                  f"{listings.CLASSES.get(rep['claimed_class'], 'another GPU')}. Check the listing, or report anyway.")
-    store.put(f"report:{rep['report_id']}", rep | {"listing": listing, "listing_reads_as": reads}, REPORT_TTL)
-    return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
+    rep |= {"listing": listing, "listing_reads_as": reads}
+    store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
+    return rep
 
 
 @app.post("/api/report/approve/poll")
@@ -337,16 +346,21 @@ def approve_poll(body: DeviceIn):
         return refuse("The approval was not fresh; approve again.")
     if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
         return refuse("The approving person is not the one logged in to this agent.")
-    rep = _fail_report(d["report_id"])
+    out = _publish_fail(_fail_report(d["report_id"]), claims["sub"], {"approved_via": "world"})
+    return out if out.get("retry") else _finish(body.device_id, d, out)
+
+
+def _publish_fail(rep: dict, sub: str, extra: dict) -> dict:
+    """One person's failure report onchain: one voice per person per GPU, counted once per provider."""
     node = bytes.fromhex(rep["node"][2:])
     pnode = chain.namehash(f"{rep['cloud']}.waterline.eth")
-    vid, pvid = world.voter_id(claims["sub"], node), world.voter_id(claims["sub"], pnode)
+    vid, pvid = world.voter_id(sub, node), world.voter_id(sub, pnode)
     vote_key, pub_key = f"vote:{vid.hex()}", f"published:{rep['report_id']}"
     if not store.add(vote_key, 1, VOTE_TTL):
-        return refuse("You have already reported this GPU: one voice per person per GPU.")
+        return {"status": "approved", "published": False, "status_text": "You have already reported this GPU: one voice per person per GPU."}
     if not store.add(pub_key, 1, REPORT_TTL):
         store.delete(vote_key)
-        return refuse("This report is already published.")
+        return {"status": "approved", "published": False, "status_text": "This report is already published."}
     try:
         tops_x10, pct_bps = _perf_onchain(rep)
         tx = chain.record(rep["cloud"], rep["gpu_name"].split(".")[0], FAIL, rep["measured_class"], rep["cores"],
@@ -355,13 +369,115 @@ def approve_poll(body: DeviceIn):
         store.delete(vote_key)
         store.delete(pub_key)
         log.error("publishing fail %s failed: %s", rep["report_id"], e)
-        return {"status": "approved", "published": False, "status_text": "Publishing failed; approve again."}
+        return {"status": "approved", "published": False, "retry": True, "status_text": "Publishing failed; try again."}
     via = chain.write_path()
     rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex(),
-            "approved_at": int(now())}
+            "approved_at": int(now())} | extra
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
-    return _finish(body.device_id, d, {"status": "approved", "published": True, "tx": tx, "via": via,
-                                       "status_text": "Recorded on Marks."})
+    return {"status": "approved", "published": True, "tx": tx, "via": via, "status_text": "Recorded on Marks."}
+
+
+# ---- World mandate: one fresh approval lets a person's agents report failures for a while ---------------------------
+# What protects the record is one voice per person per GPU and per provider, not one scan per report: twenty agents
+# under one person are still one voice, and a GPU still needs two different people. The mandate is bounded (hours,
+# reports), revocable, and every report made under it says so.
+class MandateIn(BaseModel):
+    agent_token: str
+    hours: int = Field(24, ge=1, le=72)
+    max_reports: int = Field(20, ge=1, le=100)
+
+
+class TokenIn(BaseModel):
+    agent_token: str
+
+
+class AutoIn(BaseModel):
+    report_id: str
+    agent_token: str
+    listing: str | None = Field(default=None, max_length=2000)
+
+
+def _sub(agent_token: str) -> str:
+    sub = world.agent_sub(agent_token)
+    if sub is None:
+        raise HTTPException(401, "The agent token is invalid or expired; log in again.")
+    return sub
+
+
+def _mandate_key(sub: str) -> str:
+    return "mandate:" + hashlib.sha256(sub.encode()).hexdigest()
+
+
+def _mandate_view(m: dict | None) -> dict | None:
+    if not m:
+        return None
+    used = len([i for i in range(m["max_reports"]) if store.get(f"mandate-use:{m['id']}:{i}")])
+    active = not m.get("revoked_at") and now() < m["expires_at"] and used < m["max_reports"]
+    return {k: m.get(k) for k in ("id", "created_at", "expires_at", "max_reports", "revoked_at")} | {"used": used, "active": active}
+
+
+@app.post("/api/world/mandate/start")
+def mandate_start(body: MandateIn):
+    sub = _sub(body.agent_token)
+    return _new_device({"kind": "mandate", "sub": sub, "hours": body.hours, "max_reports": body.max_reports})
+
+
+@app.post("/api/world/mandate/poll")
+def mandate_poll(body: DeviceIn):
+    d, status, claims = _poll(body.device_id)
+    if d.get("kind") != "mandate":
+        raise HTTPException(404, "Unknown or expired device_id.")
+    if "result" in d:
+        return d["result"]
+    if status == "pending":
+        return {"status": "pending"}
+    if status != "approved":
+        return _finish(body.device_id, d, {"status": status, "mandate": None})
+    if now() - claims["auth_time"] >= FRESH_S:
+        return _finish(body.device_id, d, {"status": "approved", "mandate": None, "status_text": "The approval was not fresh; try again."})
+    if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
+        return _finish(body.device_id, d, {"status": "approved", "mandate": None,
+                                           "status_text": "The approving person is not the one logged in to these agents."})
+    t = int(now())
+    m = {"id": secrets.token_hex(6), "created_at": t, "expires_at": t + d["hours"] * 3600, "max_reports": d["max_reports"]}
+    store.put(_mandate_key(d["sub"]), m, d["hours"] * 3600 + 86400)  # a new mandate replaces the old one
+    return _finish(body.device_id, d, {"status": "approved", "mandate": _mandate_view(m)})
+
+
+@app.post("/api/world/mandate/status")
+def mandate_status(body: TokenIn):
+    return {"mandate": _mandate_view(store.get(_mandate_key(_sub(body.agent_token))))}
+
+
+@app.post("/api/world/mandate/revoke")
+def mandate_revoke(body: TokenIn):
+    key = _mandate_key(_sub(body.agent_token))
+    m = store.get(key)
+    if m and not m.get("revoked_at"):
+        m["revoked_at"] = int(now())
+        store.put(key, m, 86400)
+    return {"mandate": _mandate_view(m)}
+
+
+@app.post("/api/report/auto")
+def report_auto(body: AutoIn):
+    """An agent reports a failure under its person's mandate: the same checks as a scan approval, no phone."""
+    sub = _sub(body.agent_token)
+    m = store.get(_mandate_key(sub))
+    view = _mandate_view(m)
+    if not (view and view["active"]):
+        raise HTTPException(403, "No active World mandate: grant one, or approve this report yourself.")
+    rep = _fail_report(body.report_id)
+    if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
+        raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
+    rep = _take_listing(rep, body.listing, False)  # a mandate never overrides Jev: a contradiction needs the person
+    slot = next((i for i in range(m["max_reports"]) if store.add(f"mandate-use:{m['id']}:{i}", 1, m["expires_at"] - int(now()) + 86400)), None)
+    if slot is None:
+        raise HTTPException(403, "The World mandate has no reports left: grant a new one.")
+    out = _publish_fail(rep, sub, {"approved_via": "mandate", "mandate_id": m["id"], "mandate_expires_at": m["expires_at"]})
+    if not out["published"]:
+        store.delete(f"mandate-use:{m['id']}:{slot}")  # nothing was published: the report doesn't use the mandate
+    return out | {"mandate": _mandate_view(m)}
 
 
 # ---- control panel reads ------------------------------------------------------------------------------------
@@ -487,6 +603,11 @@ def _mb_gpus() -> list[dict]:
 
 
 def _hex0x(v) -> str:
+    """bytes32 from MultiBaas as 0x hex: it answers hex, bare hex, or a list of byte values ("[253, 55, ...]")."""
+    if isinstance(v, str) and v.startswith("["):
+        v = json.loads(v)
+    if isinstance(v, list):
+        return "0x" + bytes(int(b) for b in v).hex()
     v = str(v).lower()
     return v if v.startswith("0x") else "0x" + v
 
@@ -623,8 +744,8 @@ async def multibaas_webhook(request: Request):
             c = e.get("contract") or data.get("contract") or {}
             if e.get("name") != "Reported" or not {str(c.get("addressLabel")), str(c.get("address")).lower()} & marks:
                 continue
-            node = str(e["inputs"][0]["value"]).lower()  # Reported's first input is the node
-            hits.add(("0x" + node.removeprefix("0x"), str(data["transaction"]["txHash"]).lower()))
+            node = _hex0x(e["inputs"][0]["value"])  # Reported's first input is the node (hex or a byte list)
+            hits.add((node, str(data["transaction"]["txHash"]).lower()))
         except (AttributeError, KeyError, IndexError, TypeError):
             continue  # not an event we understand: ignore it
     marked = 0
