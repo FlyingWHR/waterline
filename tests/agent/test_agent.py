@@ -167,3 +167,11 @@ def test_world_wait_survives_a_dropped_connection(monkeypatch):
     monkeypatch.setattr(cli, "post", fake_post)
     monkeypatch.setattr(cli, "poll_s", lambda: 0)
     assert cli.world_flow("http://api", "/s", {}, "/p", "Log in")["status"] == "approved"
+
+
+def test_fail_with_web_flag_leaves_approval_to_the_web(make_api, env, capsys):
+    api = make_api(world="approved")
+    assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108", "--web") == 1
+    out = capsys.readouterr().out
+    assert "approve it on the web:" in out and "/#/check/r1" in out
+    assert not any(p.startswith("/api/world/") for p, _ in api.calls)  # no World login here

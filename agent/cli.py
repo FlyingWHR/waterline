@@ -181,9 +181,9 @@ def check(a, api, first=True):
         return 2
     fact("agent", paint(RED, f"listed as {claim}, measures as {measured}: stopping the rental"))
     stop_paying(a.stop_cmd or os.environ.get("WATERLINE_STOP_CMD"), a.pod_id)
-    token = load_token() or login(api)
-    if not token:
-        fact("agent", "not logged in with World: nothing published")
+    token = load_token() or (login(api) if not a.web and (sys.stdin.isatty() or os.environ.get("WATERLINE_LOGIN")) else None)
+    if not token:  # nobody logged in here: the person approves on the web instead
+        fact("world", f"approve it on the web: {api.rstrip('/')}/#/check/{rv['report_id']}")
         return 1
     # a failure accuses the provider of misselling this GPU: say what you rented, in the listing's own words
     text = a.listing or input("  paste the listing you rented (its URL or text): ").strip()
@@ -320,6 +320,7 @@ def main(argv=None):
     c.add_argument("--pod-id", help="the rental's id at the cloud, fills {pod_id} in the stop command")
     c.add_argument("--stop-cmd", help="on FAIL, run this at once to stop paying, e.g. 'runpodctl stop pod {pod_id}' "
                                       "(default: env WATERLINE_STOP_CMD). Never run on PASS.")
+    c.add_argument("--web", action="store_true", help="on FAIL, leave the approval to the web panel (no World login here)")
     c.add_argument("--every", help="a periodic series: re-check at this interval (e.g. 30m), jittered ±20%%, until Ctrl-C")
     c.add_argument("--times", type=int, help="with --every: stop after this many checks")
     md = sub.add_parser("mandate", help="let your agents report failures for a while, with one World approval")
