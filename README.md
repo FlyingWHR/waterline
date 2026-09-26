@@ -33,12 +33,12 @@ does the same over SSH, and also stops paying on a failure and picks the next GP
 
 ## Why
 
-- **Compute is becoming money. Buyers can't verify what they got.** GPU cloud is heading from $25B (2025) to ~$400B
+- **Compute is becoming money. Checking it is hard, gaming it is cheap, and there's no shared record.** GPU cloud is heading from $25B (2025) to ~$400B
   by 2031 ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
   banks lend against GPUs ([CoreWeave, $8.5B](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)),
   and H100 rentals trade as futures on CME from October 5, pending review ([CME](https://investor.cmegroup.com/news-releases/news-release-details/cme-group-and-silicon-data-launch-compute-futures-october-5)).
-  It all runs on the seller's word about what was delivered. Providers monitor their own fleets and auditors spot-check
-  a few, but a renter, a lender or an agent can't independently check a rental, and there's no open record to check.
+  Checking takes private monitoring, spot audits or benchmarks you run and read yourself. Gaming is cheap: pass one
+  benchmark, then swap or throttle the card. And each renter, lender or agent starts from zero.
 - **Renters mostly get less, not fake.** Throttled H100s at full price (1,755 → ~345 MHz under load:
   [matt.sh](https://matt.sh/cloud-gpu-thermal-throttling), [Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)),
   specs that don't match, broken NVSwitch ([Vast.ai](https://www.trustpilot.com/review/vast.ai),
