@@ -25,7 +25,7 @@ from . import chain, world
 from . import perf
 from .check import (claimed_models, class_check, classify, deadline_s, draw_samples, gpu_label, grade,
                     throughput)
-from .store import store
+from .store import redis_url, store
 
 log = logging.getLogger("waterline.api")
 SESSION_TTL = 3600
@@ -363,7 +363,7 @@ def _universal_resolver():
 @app.get("/api/health")
 def health():
     live, reporter, mb = chain.live(), chain.reporter_address(), os.environ.get("MB_URL")
-    return {"api": "ok", "store": "redis" if os.environ.get("REDIS_URL") else "memory",
+    return {"api": "ok", "store": "redis" if redis_url() else "memory",
             "chain": {"mode": "live" if live else "dry-run", "write_path": chain.write_path(), "chain_id": 11155111,
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},

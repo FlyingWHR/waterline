@@ -55,4 +55,11 @@ class RedisStore:
         self._r.delete(key)
 
 
-store = RedisStore(os.environ["REDIS_URL"]) if os.environ.get("REDIS_URL") else MemoryStore()
+def redis_url() -> str | None:
+    """REDIS_URL, or the prefixed name Vercel's Upstash integration creates (e.g. myproject_REDIS_URL)."""
+    if os.environ.get("REDIS_URL"):
+        return os.environ["REDIS_URL"]
+    return next((v for k, v in sorted(os.environ.items()) if k.endswith("_REDIS_URL") and v), None)
+
+
+store = RedisStore(redis_url()) if redis_url() else MemoryStore()
