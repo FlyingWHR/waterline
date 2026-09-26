@@ -51,6 +51,13 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   On approve: check `auth_time` is fresh (< 120 s), same human as the agent token, compute
   `gpuVoter = HMAC_SHA256(VOTER_SECRET, sub || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, sub ||
   providerNode)`; call Marks.record(fail). Denied/expired: nothing published.
+Mandate (one approval, many agents): `POST /api/world/mandate/start` in `{ "agent_token", "hours" (1-72), "max_reports"
+(1-100) }` -> device grant; `/api/world/mandate/poll` in `{ "device_id" }` -> `{ "status", "mandate": { id, created_at,
+expires_at, max_reports, used, active, revoked_at } | null }` (fresh `auth_time`, same person as the token; a new mandate
+replaces the old); `/api/world/mandate/status` and `/revoke` in `{ "agent_token" }`. `POST /api/report/auto` in
+`{ "report_id", "agent_token", "listing" }` publishes a failure under an active mandate with the same checks as approve
+(listing required, Jev contradiction -> 409 with no override, one voice per GPU); the report gets
+`approved_via: "mandate"`, `mandate_id`, `mandate_expires_at`. 403 when there is no active mandate or budget.
 World: World ID for Agents, OIDC device grant against `WORLD_ISSUER` (default `https://sandbox.auth.world.org`),
 endpoints `/api/v1/device_authorization`, `/api/v1/token`, JWKS `/.well-known/jwks.json`, scope `openid`, RS256 id_token.
 Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,

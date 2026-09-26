@@ -88,6 +88,10 @@ Sealed work, a deadline and a core count, run from inside the renter's rental.
   (RS256, issuer, audience, fresh `auth_time`), gives one voice per GPU and one per provider.
 - **Failures step up.** Passes and degraded results need no World check. A failure needs a fresh approval from the
   same person; deny or expiry publishes nothing; two different people mark a GPU failed.
+- **One person, many agents: the mandate.** Scanning a code for every failure doesn't work for someone running twenty
+  agents. One fresh World approval grants a mandate (hours, a report budget, revocable, shown in the panel's World ID
+  page and header); the agents then report failures at once, each as that person's one voice per GPU and per provider.
+  A mandate never overrides Jev, and every report made under it says so. `python -m agent mandate --hours 24 --max 20`.
 - **Accusations cost something.** The reporter pastes the listing they rented and accepts that the report is tied to
   their World ID. **Jev reads that listing**: if it contradicts the claim (an A100 listing reported "as H100"), the
   report stops unless they insist. The dashboard shows the listing, Jev's reading and the pseudonymous reporter.
