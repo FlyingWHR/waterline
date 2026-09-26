@@ -2,7 +2,7 @@
 
 # Waterline
 
-**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed. Each result is written to the GPU's ENS name, like gpu-53a4a8ee.lambda.waterline.eth.
+**Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed.
 
 *Heat slows a chip but can't remove cores, so the chip check is heat-proof and slowness reads as degraded. Failures
 need real people. Reputation rolls up to the provider, so renaming a chip hides nothing.*
