@@ -118,6 +118,8 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
   a per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`, each human
   counted once per provider. Two passes after a GPU's last failure = `recovered`. Providers may write
   `waterline.note` (NOTE role) on their own name, never a score.
+- A failure approval requires the listing (URL or text) and an acknowledgement; the check page shows it, the
+  reporter's pseudonymous id and their report count on that provider. Possible to abuse, never anonymous-free.
 - `core/vectors.json` is frozen; `python -m core.verify_vectors` must pass.
 
 ## Demo rules

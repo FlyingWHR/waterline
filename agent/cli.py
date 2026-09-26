@@ -147,7 +147,12 @@ def check(a, api):
     if not token:
         print("Not logged in: nothing published.")
         return 1
-    r = world_flow(api, "/api/report/approve/start", {"report_id": rv["report_id"], "agent_token": token},
+    # a failure accuses the provider of misselling this GPU: say what you rented, in the listing's own words
+    text = a.listing or input("Paste the listing you rented (its URL or text): ").strip()
+    print(f"You are reporting: listed as {listing.CLASSES.get(cls, cls)}, measures as {measured}. "
+          "This report is tied to your World ID and shown with the listing above.")
+    r = world_flow(api, "/api/report/approve/start",
+                   {"report_id": rv["report_id"], "agent_token": token, "listing": text},
                    "/api/report/approve/poll", "Approve this failure report")
     if r["status"] == "approved" and r.get("published"):
         tx = f" (tx {r['tx']})" if r.get("tx") else ""

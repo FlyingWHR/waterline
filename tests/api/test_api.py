@@ -142,7 +142,8 @@ def login(sub="human-1"):
 
 def approve(report_id, token, decision, sub="human-1"):
     world.MOCK.update(decision=decision, sub=sub)
-    d = post("/api/report/approve/start", {"report_id": report_id, "agent_token": token})
+    d = post("/api/report/approve/start", {"report_id": report_id, "agent_token": token,
+                                           "listing": "H100 80GB SXM5 · 1x · $2.49/h (test listing)"})
     if d.status_code != 200:
         return d
     return post("/api/report/approve/poll", {"device_id": d.json()["device_id"]})
@@ -230,10 +231,22 @@ def test_bad_agent_token_rejected():
 def test_world_unavailable_is_not_approval(monkeypatch):
     rep = run_check(uuid="GPU-F", claimed=1, probes=A100)
     tok = login()
-    d = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok}).json()
+    d = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok, "listing": "H100 80GB SXM (test)"}).json()
 
     def down(_):
         raise world.Unavailable()
     monkeypatch.setattr(world, "device_poll", down)
     r = post("/api/report/approve/poll", {"device_id": d["device_id"]})
     assert r.status_code == 503 and not chain.DRY_RUN_CALLS
+
+
+def test_reporting_needs_the_listing_and_shows_the_reporter():
+    rep = run_check(uuid="GPU-L", claimed=1, probes=A100)
+    tok = login()
+    r = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok})
+    assert r.status_code == 422 and "Paste the listing" in r.json()["error"]
+    assert approve(rep["report_id"], tok, "approve").json()["published"] is True
+    full = client.get(f"/api/reports/{rep['report_id']}").json()
+    assert full["listing"].startswith("H100 80GB SXM5") and full["reporter_reports"] >= 1 and full["approved_at"]
+    ev = client.get(f"/api/reports/{rep['report_id']}/evidence").json()
+    assert "listing" not in ev and "provider_voter" not in ev  # added after the verdict: outside the frozen hash

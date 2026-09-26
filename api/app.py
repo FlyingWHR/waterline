@@ -64,7 +64,8 @@ def _get(key: str, what: str):
 
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
-MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter"}
+MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
+           "approved_at"}
 
 
 def canonical(rep: dict) -> bytes:
@@ -209,6 +210,7 @@ class DeviceIn(BaseModel):
 class ApproveIn(BaseModel):
     report_id: str
     agent_token: str
+    listing: str | None = Field(default=None, max_length=2000)
 
 
 def _new_device(extra: dict) -> dict:
@@ -289,6 +291,13 @@ def approve_start(body: ApproveIn):
     rep = _fail_report(body.report_id)
     if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
         raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
+    # a failure accuses the provider of misselling this GPU: the reporter states what they rented, in the listing's
+    # own words, and it stays beside the report (anyone can compare it with the provider's real listing)
+    listing = (body.listing or rep.get("listing") or "").strip()
+    if len(listing) < 8:
+        raise HTTPException(422, "Paste the listing you rented (its URL or text) before reporting this GPU.")
+    if listing != rep.get("listing"):
+        store.put(f"report:{rep['report_id']}", rep | {"listing": listing}, REPORT_TTL)
     return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
 
 
@@ -331,7 +340,8 @@ def approve_poll(body: DeviceIn):
         log.error("publishing fail %s failed: %s", rep["report_id"], e)
         return {"status": "approved", "published": False, "status_text": "Publishing failed; approve again."}
     via = chain.write_path()
-    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex()}
+    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex(),
+            "approved_at": int(now())}
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
     return _finish(body.device_id, d, {"status": "approved", "published": True, "tx": tx, "via": via,
                                        "status_text": "Recorded on Marks."})
@@ -418,7 +428,10 @@ def reports(limit: int = Query(50, ge=1, le=INDEX_MAX)):
 
 @app.get("/api/reports/{report_id}")
 def report(report_id: str):
-    return _get(f"report:{report_id}", "report")
+    rep = _get(f"report:{report_id}", "report")
+    if rep.get("provider_voter"):  # pseudonymous, never a name: how many of this provider's GPUs this person reported
+        rep = rep | {"reporter_reports": sum(r.get("provider_voter") == rep["provider_voter"] for r in _reports(INDEX_MAX))}
+    return rep
 
 
 @app.get("/api/reports/{report_id}/evidence")

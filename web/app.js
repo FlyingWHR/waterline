@@ -422,7 +422,10 @@ async function checkDetail(id) {
     h("div", { className: "detail" },
       h("div", { className: "block" }, h("div", { className: "label" }, "Why"),
         r.reasons?.length ? h("ul", { className: "reasons" }, r.reasons.map((x) => h("li", {}, x))) : h("p", {}, "Every check passed: the work was done in time and the hardware matches the listing."),
-        kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)])),
+        kv(["Listed as", listed], ["Measured as", h("span", { className: r.claimed_class === r.measured_class ? "st-pass" : "st-fail" }, cls(r.measured_class))], ["Cloud", r.cloud], ["When", when(r.created_at)],
+          ...(r.listing ? [["Listing (reporter's words)", h("span", { className: "quote" }, r.listing)]] : []),
+          ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
+            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_at ? ` · approved ${when(r.approved_at)}` : "")]] : []))),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
         kv(["Cores (SMs)", String(p.sms ?? "—")], ["FP8 maths", p.fp8 == null ? "—" : p.fp8 ? "yes (Hopper)" : "no"],
           ["Clock", p.clock_ghz ? `${p.clock_ghz} GHz` : "—"], ["Copy bandwidth", p.bw_tbs ? `${p.bw_tbs} TB/s` : "—"],
@@ -911,6 +914,29 @@ async function device(startPath, body, pollPath, my, hint) {
   return { status: "expired" };
 }
 
+// A failure accuses the provider of misselling this GPU. Before World is asked, the reporter sees the accusation,
+// states what they rented in the listing's own words, and accepts that the report is tied to their World ID.
+function confirmReport(rep, my) {
+  return new Promise((done) => {
+    const text = h("textarea", { id: "world-listing", rows: 3, placeholder: "https://… or the listing text, e.g. 1x H100 80GB SXM5 · $2.49/h" });
+    const ack = h("input", { type: "checkbox", id: "world-ack" });
+    const go = h("button", { type: "button", className: "btn primary", disabled: true }, "Continue to World");
+    const ready = () => { go.disabled = !(ack.checked && text.value.trim().length >= 8); };
+    text.addEventListener("input", ready); ack.addEventListener("change", ready);
+    const box = h("div", { className: "confirm" },
+      h("p", {}, "You are reporting: ", h("b", {}, `listed as ${cls(rep.claimed_class)}`), " · ", h("b", { className: "st-fail" }, `measures as ${cls(rep.measured_class)}`), "."),
+      h("label", { className: "label", htmlFor: "world-listing" }, "The listing you rented (URL or text)"), text,
+      h("label", { className: "check", htmlFor: "world-ack" }, ack, " I rented this GPU from this listing. This report is tied to my World ID and shown with the listing."),
+      go);
+    $w("what").after(box);
+    const end = (v) => { box.remove(); done(v); };
+    go.addEventListener("click", () => end(text.value.trim()));
+    dlg.addEventListener("close", () => end(null), { once: true });
+    text.focus();
+    if (my !== flow) end(null);
+  });
+}
+
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
@@ -926,10 +952,13 @@ async function approveFlow(rep) {
       if (r.status !== "approved") return say(`Login ${r.status}. Nothing was published.`, "bad");
       token.set((tok = r.agent_token));
     }
+    $w("title").textContent = "Report this GPU";
+    const listing = await confirmReport(rep, my);
+    if (!listing) return;
     $w("title").textContent = "Approve with World";
     let r;
     try {
-      r = await device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok }, "/api/report/approve/poll", my,
+      r = await device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing }, "/api/report/approve/poll", my,
         "Approve this failure report: scan the code with World App or open the link.");
     } catch (e) {
       if (e.status !== 401) throw e;

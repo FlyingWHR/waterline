@@ -31,7 +31,7 @@ def test_check_local_fail_then_world(make_api, env, capsys, world, expect):
     paths = [p for p, _ in api.calls]
     assert paths.index("/api/world/login/poll") < paths.index("/api/report/approve/start")  # logged in first
     approve = next(b for p, b in api.calls if p == "/api/report/approve/start")
-    assert approve == {"report_id": "r1", "agent_token": "agent-tok"}
+    assert approve == {"report_id": "r1", "agent_token": "agent-tok", "listing": "H100 80GB SXM"}
 
 
 @pytest.mark.parametrize("text, code", [("H100 80GB HBM3 SXM5", 1), ("H100 80GB SXM", 1),

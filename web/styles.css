@@ -343,3 +343,8 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .partner b{font-weight:500; color:var(--c); letter-spacing:.02em;}
 .partner span{color:var(--muted); font-size:13px;}
 .try .oneline code{white-space:normal; overflow-wrap:anywhere; line-height:1.5;}
+.confirm{display:grid; gap:10px; margin:6px 0 4px;}
+.confirm textarea{width:100%; font-family:var(--mono); font-size:13px; color:var(--ink); background:var(--deep); border:1px solid var(--line); padding:10px; resize:vertical;}
+.confirm .check{display:flex; gap:10px; align-items:flex-start; font-size:13px; color:var(--body2);}
+.confirm .btn{justify-self:start;} .confirm .btn:disabled{opacity:.4; cursor:not-allowed;}
+.quote{font-style:italic; overflow-wrap:anywhere;}

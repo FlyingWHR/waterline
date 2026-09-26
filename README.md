@@ -97,6 +97,10 @@ Work only the claimed chip can finish in time, run from inside the renter's own 
   device code; World returns a private, stable, pairwise `sub` for our service, checked in our backend (RS256,
   issuer, audience, `auth_time`). From it the API derives two voter ids for a failure: one per GPU and one per
   provider, so one person is one voice per GPU and counts once per provider however many GPUs they report.
+- **A failure is an accusation, so it costs something.** Before World is asked, the reporter sees "listed as X ·
+  measures as Y", pastes the listing they rented (URL or text) and accepts that the report is tied to their World ID.
+  Anyone can still file a false one, but the dashboard shows it with the listing in their words and their
+  pseudonymous id, and how many of that provider's GPUs the same person has reported.
 - **Step-up:** renting, passing and degraded results need no World check. Publishing a failure steps up to a fresh
   device-code approval from the same person (a fresh `auth_time`, same `sub`). Deny or expiry publishes nothing. A GPU is marked failed only when two different people agree.
 
