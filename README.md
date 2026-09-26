@@ -86,8 +86,8 @@ Sealed work, a deadline and a core count, run from inside the renter's rental.
 ### People: World ID for Agents
 - **One person, one voice.** The agent logs in once by device code; World's pairwise `sub`, validated in our backend
   (RS256, issuer, audience, fresh `auth_time`), gives one voice per GPU and one per provider.
-- **Failures step up.** Passes and degraded results need no World check. A failure needs a fresh approval from the
-  same person; deny or expiry publishes nothing; two different people mark a GPU failed.
+- **Failures step up.** Passes and degraded results need no World check. A failure needs a fresh World approval, and
+  the person who approves is the reporter; deny or expiry publishes nothing; two different people mark a GPU failed.
 - **One person, many agents: the mandate.** Scanning a code for every failure doesn't work for someone running twenty
   agents. One fresh World approval grants a mandate (hours, a report budget, revocable, shown in the panel's World ID
   page and header); the agents then report failures at once, each as that person's one voice per GPU and per provider.

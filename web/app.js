@@ -1143,7 +1143,7 @@ function confirmReport(rep, my, label = "Continue to World") {
     const go = h("button", { type: "button", className: "btn primary", disabled: true }, label);
     const need = h("p", { className: "sub small", role: "status" });
     const ready = () => {
-      const missing = [text.value.trim().length < 8 ? "paste the listing you rented" : null, !ack.checked ? "tick the box" : null].filter(Boolean);
+      const missing = [text.value.trim().length < 8 ? "paste the listing you rented (at least 8 characters)" : null, !ack.checked ? "tick the box" : null].filter(Boolean);
       go.disabled = missing.length > 0;
       need.textContent = missing.length ? `To continue: ${missing.join(" and ")}.` : "";
     };
@@ -1209,6 +1209,7 @@ async function mandateFlow(hours, max) {
       "Approve with World App: scan the code or open the link.");
     if (!r) return;
     if (!r.mandate) return say(r.status_text || `${r.status}: no mandate.`, "bad");
+    if (r.agent_token) token.set(r.agent_token); // bound to the person who approved
     say(`Granted: up to ${r.mandate.max_reports} reports until ${when(r.mandate.expires_at)}.`, "good");
   } catch (e) {
     if (e.status === 401) { token.set(null); return say("Your World login has expired. Close this and log in again.", "bad"); }
@@ -1256,6 +1257,7 @@ async function approveFlow(rep) {
       } else throw e;
     }
     if (!r) return;
+    if (r.agent_token) token.set(r.agent_token); // this browser's login was someone else's (or stale): now the approver's
     if (r.status === "denied") return say("Denied. Nothing was published.", "bad");
     if (r.status === "expired") return say("Expired. Nothing was published.", "bad");
     if (!r.published) return say(r.status_text || "Approved, but nothing was published.", "bad");

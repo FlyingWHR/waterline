@@ -195,11 +195,12 @@ def test_deny_and_expired_publish_nothing():
     assert not chain.DRY_RUN_CALLS
 
 
-def test_other_human_approval_refused():
+def test_the_approver_is_the_reporter_and_a_stale_login_is_rebound():
     rep = run_check(uuid="GPU-C", claimed=1, probes=A100)
     r = approve(rep["report_id"], login("human-1"), "approve", sub="human-2").json()
-    assert r["published"] is False and "not the one logged in" in r["status_text"]
-    assert not chain.DRY_RUN_CALLS
+    assert r["published"] is True and world.agent_sub(r["agent_token"]) == "human-2"
+    node = bytes.fromhex(rep["node"][2:])
+    assert chain.DRY_RUN_CALLS[-1][6] == world.voter_id("human-2", node)  # counted as the person who approved
 
 
 def test_stale_auth_time_refused(monkeypatch):
@@ -305,7 +306,9 @@ def test_mandate_lets_agents_report_within_its_limits():
     rep = run_check(uuid="GPU-M0", claimed=1, probes=A100)
     assert auto(rep["report_id"], tok).status_code == 403  # no mandate yet
     assert grant(tok, "deny", sub="human-m")["mandate"] is None
-    assert grant(tok, sub="someone-else")["mandate"] is None  # another person's phone can't grant it
+    other = grant(tok, sub="someone-else")  # a mandate belongs to whoever approved it, never to the stale login
+    assert world.agent_sub(other["agent_token"]) == "someone-else"
+    assert post("/api/world/mandate/status", {"agent_token": tok}).json()["mandate"] is None
     m = grant(tok, sub="human-m", max_reports=2)["mandate"]
     assert m["active"] and m["used"] == 0 and m["max_reports"] == 2
     r = auto(rep["report_id"], tok).json()

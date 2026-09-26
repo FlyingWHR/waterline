@@ -250,6 +250,8 @@ def mandate(a, api):
     r = world_flow(api, "/api/world/mandate/start", {"agent_token": token, "hours": a.hours, "max_reports": a.max},
                    "/api/world/mandate/poll", f"Let your agents report up to {a.max} failures for {a.hours} h")
     m = r.get("mandate")
+    if r.get("agent_token"):  # the login bound to the person who approved the mandate
+        (home() / "agent.json").write_text(json.dumps({"agent_token": r["agent_token"]}))
     if not m:
         fact("mandate", paint(AMBER, r.get("status_text") or f"{r['status']}: no mandate"))
         return 1

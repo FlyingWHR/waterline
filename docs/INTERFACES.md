@@ -48,12 +48,13 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
 `POST /api/report/approve/start` in `{ "report_id", "agent_token" }` -> same shape as login/start (fresh World request)
 `POST /api/report/approve/poll` in `{ "device_id" }` ->
   `{ "status": "pending"|"approved"|"denied"|"expired", "published"?: bool, "tx"?: str, "status_text"?: str }`
-  On approve: check `auth_time` is fresh (< 120 s), same human as the agent token, compute
+  On approve: check `auth_time` is fresh (< 120 s); the approver is the reporter (a different login is rebound: the answer carries
+  a fresh `agent_token`); compute
   `gpuVoter = HMAC_SHA256(VOTER_SECRET, sub || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, sub ||
   providerNode)`; call Marks.record(fail). Denied/expired: nothing published.
 Mandate (one approval, many agents): `POST /api/world/mandate/start` in `{ "agent_token", "hours" (1-72), "max_reports"
 (1-100) }` -> device grant; `/api/world/mandate/poll` in `{ "device_id" }` -> `{ "status", "mandate": { id, created_at,
-expires_at, max_reports, used, active, revoked_at } | null }` (fresh `auth_time`, same person as the token; a new mandate
+expires_at, max_reports, used, active, revoked_at } | null }` (fresh `auth_time`; stored under the person who approved, who gets a fresh `agent_token`; a new mandate
 replaces the old); `/api/world/mandate/status` and `/revoke` in `{ "agent_token" }`. `POST /api/report/auto` in
 `{ "report_id", "agent_token", "listing" }` publishes a failure under an active mandate with the same checks as approve
 (listing required, Jev contradiction -> 409 with no override, one voice per GPU); the report gets

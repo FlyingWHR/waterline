@@ -344,10 +344,12 @@ def approve_poll(body: DeviceIn):
 
     if now() - claims["auth_time"] >= FRESH_S:
         return refuse("The approval was not fresh; approve again.")
-    if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
-        return refuse("The approving person is not the one logged in to this agent.")
+    # the person who approved is the reporter, whatever login started it; a different (or stale) login is rebound
     out = _publish_fail(_fail_report(d["report_id"]), claims["sub"], {"approved_via": "world"})
-    return out if out.get("retry") else _finish(body.device_id, d, out)
+    if out.get("retry"):
+        return out
+    rebound = not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode())
+    return _finish(body.device_id, d, out) | ({"agent_token": world.make_agent_token(claims["sub"])} if rebound else {})
 
 
 def _publish_fail(rep: dict, sub: str, extra: dict) -> dict:
@@ -435,13 +437,12 @@ def mandate_poll(body: DeviceIn):
         return _finish(body.device_id, d, {"status": status, "mandate": None})
     if now() - claims["auth_time"] >= FRESH_S:
         return _finish(body.device_id, d, {"status": "approved", "mandate": None, "status_text": "The approval was not fresh; try again."})
-    if not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode()):
-        return _finish(body.device_id, d, {"status": "approved", "mandate": None,
-                                           "status_text": "The approving person is not the one logged in to these agents."})
+    # the mandate belongs to the person who approved it; the caller gets a login bound to them (a stale one is replaced)
     t = int(now())
     m = {"id": secrets.token_hex(6), "created_at": t, "expires_at": t + d["hours"] * 3600, "max_reports": d["max_reports"]}
-    store.put(_mandate_key(d["sub"]), m, d["hours"] * 3600 + 86400)  # a new mandate replaces the old one
-    return _finish(body.device_id, d, {"status": "approved", "mandate": _mandate_view(m)})
+    store.put(_mandate_key(claims["sub"]), m, d["hours"] * 3600 + 86400)  # a new mandate replaces the old one
+    return _finish(body.device_id, d, {"status": "approved", "mandate": _mandate_view(m)}) | {
+        "agent_token": world.make_agent_token(claims["sub"])}
 
 
 @app.post("/api/world/mandate/status")
