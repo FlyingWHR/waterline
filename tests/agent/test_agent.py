@@ -75,8 +75,8 @@ def test_choose_decides_from_history_only(capsys, monkeypatch, tmp_path):
     assert history.choose(listings, hist, max_price=0.1)[0] is None
 
     f = tmp_path / "listings.json"
-    monkeypatch.setattr(history, "fetch", lambda: hist)
-    monkeypatch.setattr(history, "fetch_providers", lambda: {})
+    monkeypatch.setattr(history, "fetch", lambda **k: hist)
+    monkeypatch.setattr(history, "fetch_providers", lambda **k: {})
     monkeypatch.setattr(listing, "parse_jev", lambda t, k: (_ for _ in ()).throw(AssertionError("no LLM")))
     f.write_text(json.dumps([dict(li, listing="H100 80GB SXM") for li in listings]))
     assert main(["choose", "--listings", str(f), "--max-price", "5"]) == 0
@@ -175,3 +175,18 @@ def test_fail_with_web_flag_leaves_approval_to_the_web(make_api, env, capsys):
     out = capsys.readouterr().out
     assert "approve it on the web:" in out and "/#/check/r1" in out
     assert not any(p.startswith("/api/world/") for p, _ in api.calls)  # no World login here
+
+
+def test_history_without_multibaas_keys_reads_through_the_api(monkeypatch):
+    monkeypatch.delenv("MB_URL", raising=False)
+    monkeypatch.delenv("MB_API_KEY", raising=False)
+    seen = []
+    def get(api, path):
+        seen.append(api + path)
+        return {"gpus": [{"node": "0xab", "passes": 1, "fails": 0, "active": 0, "last_verdict": 3}]} if path == "/api/gpus" \
+            else {"providers": [{"provider_node": "0xcd", "gpus": 2, "failed_gpus": 1}]}
+    monkeypatch.setattr(history, "_api_get", get)
+    rows = history.fetch(api="https://w.example")
+    assert history.status(rows["0xab"]) == "degraded"
+    assert history.fetch_providers(api="https://w.example")["0xcd"]["failed_gpus"] == 1
+    assert seen == ["https://w.example/api/gpus", "https://w.example/api/providers"]

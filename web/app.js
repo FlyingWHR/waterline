@@ -84,7 +84,7 @@ const table = (cols, rows) => {
 
 // ---- router ------------------------------------------------------------------------------------------------
 const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
-  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], world: [worldView, "World ID"], about: [worldView, "World ID"] };
+  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], world: [worldView, "Reporting"], about: [worldView, "Reporting"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
@@ -248,7 +248,7 @@ function flowDiagram() {
       tipCard("ens", logo("ens", "ENS"), "ENSv2", "Every GPU gets a name",
         "Marks resolves gpu-….<provider>.waterline.eth and <provider>.waterline.eth as a wildcard resolver: nothing is registered per GPU. ENSv2 roles decide who writes: the reporter writes records, a provider may write only its own note."),
       tipCard("world", logo("world", "World"), "World ID for Agents", "A person behind every failure",
-        "No failure goes onchain without a person: a fresh World approval per report, or a bounded mandate that lets their agents report. Either way one person is one voice per GPU and per provider, pseudonymous in public."),
+        "No failure goes onchain without a person: a fresh World approval per report, or an agent permission: one approval that lets their agents report for a set time. Either way one person is one voice per GPU and per provider, pseudonymous in public."),
       tipCard("mb", logo("curvegrid", "Curvegrid"), "Curvegrid MultiBaas", "History agents can query",
         "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it directly to skip bad GPUs and providers."),
       tipCard("chain", isoGlyph(GLYPHS.chain), "Ethereum Sepolia", "Where the record lives",
@@ -558,7 +558,7 @@ async function checks() {
   const reps = await api("/api/reports?limit=100");
   const pending = reps.filter(needsApproval).length;
   return [
-    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. Failures wait here for a World approval; deny or ignore, and nothing is published.")),
+    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. Failures wait here until a person approves them; deny or ignore, and nothing is published.")),
     section("All checks", pending ? `${pending} waiting for approval` : `${reps.length} shown`,
       reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet."),
       h("div", {}, h("button", { type: "button", className: "btn", onclick: () => route(false) }, "Refresh"))),
@@ -572,10 +572,32 @@ const gauge = (label, value, pct, tone, aria) =>
   h("div", { className: "gauge" }, h("div", { className: "gauge-hd" }, h("span", { className: "label" }, label), h("b", { className: tone || "" }, value)),
     h("div", { className: "bar " + (tone === "st-fail" ? "over" : ""), role: "img", "aria-label": aria }, h("i", { style: `width:${Math.max(0.5, Math.min(100, pct || 0))}%` })));
 
+// A failure accuses the provider, so the page shows who stands behind it: two slots, because two different people
+// mark a GPU failed. Only the pseudonymous per-provider id is shown, never who the person is.
+function peopleStrip(r, gpu) {
+  const active = r.published ? Math.max(1, gpu?.active ?? 1) : 0;
+  const how = r.approved_via === "mandate"
+    ? `reported by their agent, with their permission · ${when(r.approved_at)}`
+    : `approved in World · ${when(r.approved_at)}`;
+  const slot = (on, who, sub) => h("div", { className: "person " + (on ? "on" : "off") },
+    h("b", { className: on ? "mono" : "" }, who), h("span", {}, sub));
+  const first = r.published
+    ? slot(true, "person " + short("0x" + r.provider_voter), how + (r.flags?.length ? " · flagged, see below" : ""))
+    : slot(false, "waiting for approval", "nothing is public until a verified person approves it");
+  const second = active >= 2 ? slot(true, "a second person", "reported it separately")
+    : slot(false, "a second person", r.published ? "needed to mark this GPU failed" : "then needed to mark it failed");
+  const state = gpu?.status && r.published ? gpu.status : r.published ? "suspect · 1 of 2 humans" : "not published";
+  return h("div", { className: "people-strip" },
+    h("div", { className: "people-head" }, h("span", { className: "label" }, "People behind this failure"), pill(state)),
+    h("div", { className: "people" }, first, second),
+    gpu?.active === 0 && r.published ? h("p", { className: "sub small" }, "Since cleared: two passes after the last failure. The report stays in its history.") : null);
+}
+
 async function checkDetail(id) {
-  const [r, cmp, recent] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
+  const [r, cmp, recent, gpus] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
     api(`/api/compare/${encodeURIComponent(id)}`).catch(() => null), // the check still shows if comparing fails
-    api("/api/reports?limit=500").catch(() => [])]);
+    api("/api/reports?limit=500").catch(() => []), api("/api/gpus").catch(() => null)]);
+  const gpu = gpus?.gpus?.find((x) => x.node === r.node);
   const seriesOf = recent;
   const p = r.probes || {};
   const kv = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
@@ -596,7 +618,8 @@ async function checkDetail(id) {
       h("p", { className: "diagnosis" }, diagnosis),
       r.fingerprint_changed ? h("p", { className: "sub" }, "Its timing fingerprint changed since the last check. Noted, not judged: it can mean a different card behind the name.") : null,
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
-      needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve with World")) : null),
+      needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve")) : null,
+      r.verdict === "fail" ? peopleStrip(r, gpu) : null),
     h("section", { className: "test" },
       h("p", { className: "principle" }, "The test: sealed work under a deadline, a random slice re-graded, and a core count."),
       h("div", { className: "specline" },
@@ -624,7 +647,7 @@ async function checkDetail(id) {
           ...(r.flags?.length ? [["Flagged", h("ul", { className: "flags" }, r.flags.map((f) => h("li", {}, f.text,
             f.report_id ? [" ", h("a", { href: `#/check/${f.report_id}` }, "see that check")] : null)))]] : []),
           ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
-            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_via === "mandate" ? h("span", { className: "world-c", title: `mandate ${r.mandate_id}, valid until ${when(r.mandate_expires_at)}` }, ` · reported by their agent under a World mandate ${when(r.approved_at)}`)
+            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_via === "mandate" ? h("span", { className: "world-c", title: `agent permission ${r.mandate_id}, valid until ${when(r.mandate_expires_at)}` }, ` · reported by their agent, with their World permission, ${when(r.approved_at)}`)
               : r.approved_at ? ` · approved with World ${when(r.approved_at)}` : "")]] : []))),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
         kv(["Cores (SMs)", String(p.sms ?? "—")], ["FP8 maths", p.fp8 == null ? "—" : p.fp8 ? "yes (Hopper)" : "no"],
@@ -1041,7 +1064,7 @@ async function modelsView() {
   ];
 }
 
-// ---- World ID: this browser's session, and the mandate that lets your agents report ------------------------------
+// ---- World ID: this browser's session, and the agent permission that lets your agents report ------------------------------
 async function mandateNow() {
   const tok = token.get();
   if (!tok) return { tok: null, m: null };
@@ -1053,7 +1076,7 @@ async function mandateNow() {
   }
 }
 const left = (t) => { const s = t - Date.now() / 1000; return s <= 0 ? "ended" : s >= 5400 ? `${Math.round(s / 3600)} h left` : `${Math.max(1, Math.round(s / 60))} min left`; };
-const mandateState = (m) => (!m ? "none" : m.revoked_at ? "revoked" : m.active ? "active" : m.used >= m.max_reports ? "used up" : "ended");
+const mandateState = (m) => (!m ? "off" : m.revoked_at ? "revoked" : m.active ? "on" : m.used >= m.max_reports ? "used up" : "ended");
 
 // the header badge: who is logged in here, and whether their agents may report
 async function sessionBadge() {
@@ -1062,14 +1085,14 @@ async function sessionBadge() {
   el.hidden = false;
   el.className = "session" + (tok ? " on" : "");
   el.replaceChildren(h("i", { "aria-hidden": "true" }),
-    !tok ? "Log in with World" : m?.active ? `World ID · mandate ${m.used}/${m.max_reports} · ${left(m.expires_at)}` : "World ID · no mandate");
+    !tok ? "Log in" : m?.active ? `Agents may report · ${m.max_reports - m.used} reports · ${left(m.expires_at)}` : "Logged in");
 }
 
 async function worldView() {
   const [{ tok, m }, hl] = await Promise.all([mandateNow(), getHealth(true).catch(() => null)]);
   const state = mandateState(m);
   const sessionBox = h("div", { className: "block" }, h("div", { className: "label world-c" }, "This browser"),
-    tok ? h("p", {}, pill("logged in", "pass"), " with World. Pseudonymous: the record only ever sees a per-GPU and a per-provider id, never who you are.")
+    tok ? h("p", {}, pill("logged in", "pass"), " Pseudonymous: the record only sees a per-GPU and a per-provider id, never who you are.")
         : h("p", {}, pill("not logged in", "unknown"), " Log in once to approve failure reports, or to let your agents report them."),
     h("div", { className: "row" }, tok
       ? h("button", { type: "button", className: "btn", onclick: () => { token.set(null); route(false); } }, "Log out")
@@ -1077,27 +1100,25 @@ async function worldView() {
   const hours = h("select", { id: "md-hours" }, [[1, "1 hour"], [8, "8 hours"], [24, "24 hours"], [72, "3 days"]].map(([v, t]) => h("option", { value: v, selected: v === 24 }, t)));
   const max = h("select", { id: "md-max" }, [5, 20, 50, 100].map((v) => h("option", { value: v, selected: v === 20 }, `${v} reports`)));
   const grant = h("button", { type: "button", className: "btn world", disabled: !tok, onclick: () => mandateFlow(+hours.value, +max.value) },
-    m?.active ? "Replace with World" : "Grant with World");
-  const mandateBox = h("div", { className: "block mandate" }, h("div", { className: "label world-c" }, "Agent mandate"),
-    h("p", {}, pill(state, { active: "pass", none: "unknown", revoked: "fail" }[state] || "degraded"),
-      m ? ` since ${when(m.created_at)} · until ${when(m.expires_at)}${m.active ? ` · ${left(m.expires_at)}` : ""}` : " Your agents ask you before every failure report."),
-    m ? gauge("Failure reports used", `${m.used} of ${m.max_reports}`, (m.used / m.max_reports) * 100, "", `${m.used} of ${m.max_reports} reports used`) : null,
+    m?.active ? "Replace" : "Allow");
+  const mandateBox = h("div", { className: "block mandate" }, h("div", { className: "label world-c" }, "Agent permission"),
+    h("p", {}, pill(state, { on: "pass", off: "unknown", revoked: "fail" }[state] || "degraded"),
+      m?.active ? ` ${left(m.expires_at)}` : " Your agents ask you before every failure report."),
+    m?.active ? gauge("Failure reports used", `${m.used} of ${m.max_reports}`, (m.used / m.max_reports) * 100, "", `${m.used} of ${m.max_reports} reports used`) : null,
     m?.active ? h("div", { className: "row" }, h("button", { type: "button", className: "btn", onclick: async () => {
-      await api("/api/world/mandate/revoke", { agent_token: tok }); route(false); } }, "Revoke now")) : null,
+      await api("/api/world/mandate/revoke", { agent_token: tok }); route(false); } }, "Take it back now")) : null,
     h("div", { className: "grant" },
       h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-hours" }, "Lasts"), hours),
       h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-max" }, "Covers up to"), max), grant),
-    h("p", { className: "sub small" }, tok ? ["Agents use it through the login saved by ", h("code", {}, "python -m agent login"), ", or grant it there: ",
-      h("code", {}, "python -m agent mandate --hours 24 --max 20"), "."] : "Log in first."));
+    h("p", { className: "sub small" }, tok ? ["From the terminal: ", h("code", {}, "python -m agent allow --hours 24 --max 20")] : "Log in first."));
   return [
-    head("World ID", "One person, many agents, one voice",
-      h("p", { className: "sub" }, "A failure accuses a provider, so it needs a real person. Approve reports one at a time with World App, or grant your agents a mandate: one approval, a time limit and a report budget. Either way you count once per GPU and once per provider.")),
+    head("Reporting", "One person, many agents, one voice",
+      h("p", { className: "sub" }, "A failure accuses a provider, so a person verified with World ID has to approve it. Approve each report yourself, or let your agents report for a set time. Either way you count once per GPU and once per provider.")),
     section("Your session", tok ? (m?.active ? "agents may report" : "reports wait for you") : "not logged in", h("div", { className: "detail" }, sessionBox, mandateBox)),
-    section("How people count", "the same rules with or without a mandate", h("ol", { className: "how" }, [
+    section("How people count", null, h("ol", { className: "how" }, [
       "One voice per person per GPU, and once per provider however many of its GPUs you report. Twenty agents under one person are still one voice.",
       "Two different people mark a GPU failed. One report makes it suspect.",
-      "Every report carries the listing in the reporter's words. When Jev reads it as another GPU, only you can report anyway; a mandate never does.",
-      "A mandate is bounded (hours, reports) and revocable, and reports made under it say so on the check.",
+      "Every report carries the listing in the reporter's words. When Jev reads it as another GPU, only you can report anyway; your agents never can.",
       "Two passes after the last failure mark a GPU recovered; its history stays public.",
     ].map((x) => h("li", {}, h("span", {}, x))))),
     section("What the statuses mean", null, kvList(["pass", "At least one check passed and nobody has reported it."],
@@ -1207,7 +1228,7 @@ function reportAnyway(message, my) {
 }
 
 async function login(my) {
-  $w("title").textContent = "Log in with World";
+  $w("title").textContent = "Log in";
   const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "Scan the code with World App or open the link.");
   if (!r) return null;
   if (r.status !== "approved") { say(`Login ${r.status}.`, "bad"); return null; }
@@ -1229,19 +1250,19 @@ async function loginFlow() {
 async function mandateFlow(hours, max) {
   const my = ++flow;
   $w("code").hidden = true;
-  $w("title").textContent = "Grant a mandate";
-  $w("what").textContent = `Let your agents report up to ${max} failures in the next ${hours} h, as your one voice per GPU. You can revoke it at any time.`;
+  $w("title").textContent = "Let your agents report";
+  $w("what").textContent = `Your agents may report up to ${max} failures in the next ${hours} h without asking you each time. Each report still counts as your one voice per GPU. You can take it back at any time.`;
   say("");
   dlg.showModal();
   try {
     const r = await device("/api/world/mandate/start", { agent_token: token.get(), hours, max_reports: max }, "/api/world/mandate/poll", my,
-      "Approve with World App: scan the code or open the link.");
+      "Scan the code with World App or open the link.");
     if (!r) return;
-    if (!r.mandate) return say(r.status_text || `${r.status}: no mandate.`, "bad");
+    if (!r.mandate) return say(r.status_text || `${r.status}: nothing changed.`, "bad");
     if (r.agent_token) token.set(r.agent_token); // bound to the person who approved
-    say(`Granted: up to ${r.mandate.max_reports} reports until ${when(r.mandate.expires_at)}.`, "good");
+    say(`Done: your agents may report up to ${r.mandate.max_reports} failures until ${when(r.mandate.expires_at)}.`, "good");
   } catch (e) {
-    if (e.status === 401) { token.set(null); return say("Your World login has expired. Close this and log in again.", "bad"); }
+    if (e.status === 401) { token.set(null); return say("Your login has expired. Close this and log in again.", "bad"); }
     if (my === flow) say(e.message, "bad");
   }
 }
@@ -1249,7 +1270,7 @@ async function mandateFlow(hours, max) {
 async function approveFlow(rep) {
   const my = ++flow;
   $w("code").hidden = true;
-  $w("what").textContent = `Report ${rep.gpu_name}? It goes public only with your World approval.`;
+  $w("what").textContent = `Report ${rep.gpu_name}? It goes public only once you approve it.`;
   say("");
   dlg.showModal();
   try {
@@ -1257,20 +1278,20 @@ async function approveFlow(rep) {
     if (!tok) return;
     const { m } = await mandateNow();
     $w("title").textContent = "Report this GPU";
-    const listing = await confirmReport(rep, my, m?.active ? `Report under my mandate (${m.max_reports - m.used} left)` : "Continue to World");
+    const listing = await confirmReport(rep, my, m?.active ? `Report it (agent permission, ${m.max_reports - m.used} left)` : "Continue");
     if (!listing) return;
     if (m?.active) {  // one voice, same checks; a listing Jev reads as another GPU still needs the person (below)
       try {
         const r = await api("/api/report/auto", { report_id: rep.report_id, agent_token: tok, listing });
         if (!r.published) return say(r.status_text || "Nothing was published.", "bad");
-        return say("Published under your World mandate. ", "good", r.tx ? h("a", { href: `${SCAN}/tx/${r.tx}`, target: "_blank", rel: "noopener" }, "View the transaction") : "(dry run: no transaction sent)",
+        return say("Published with your agent permission. ", "good", r.tx ? h("a", { href: `${SCAN}/tx/${r.tx}`, target: "_blank", rel: "noopener" }, "View the transaction") : "(dry run: no transaction sent)",
           ` · ${r.mandate.used} of ${r.mandate.max_reports} used`);
       } catch (e) {
         if (!(e.status === 409 && /report anyway/.test(e.message)) && e.status !== 403) throw e;
-        say(e.status === 403 ? e.message : "A mandate can't override Jev's reading; approve it yourself with World.", "bad");
+        say(e.status === 403 ? e.message : "Jev reads your listing as another GPU, so this one needs your own approval.", "bad");
       }
     }
-    $w("title").textContent = "Approve with World";
+    $w("title").textContent = "Approve this report";
     let r;
     const start = (extra) => device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing, ...extra },
       "/api/report/approve/poll", my, "Approve this failure report: scan the code with World App or open the link.");
@@ -1282,7 +1303,7 @@ async function approveFlow(rep) {
         r = await start({ report_anyway: true });
       } else if (e.status === 401) {
         token.set(null);
-        return say("Your World login has expired. Close this and press Approve again to log in.", "bad");
+        return say("Your login has expired. Close this and press Approve again to log in.", "bad");
       } else throw e;
     }
     if (!r) return;

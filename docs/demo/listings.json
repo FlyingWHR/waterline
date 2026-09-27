@@ -1,5 +1,4 @@
 [
-  {"gpu": "gpu-REPLACE_A1.cloud-a", "listing": "1x H100 80GB SXM5", "price": 2.49},
-  {"gpu": "gpu-REPLACE_B1.cloud-b", "listing": "1x H100 80GB SXM5", "price": 2.19},
-  {"gpu": "gpu-REPLACE_B2.cloud-b", "listing": "1x H100 80GB SXM", "price": 1.99}
+  {"gpu": "gpu-be3ada35.runpod", "listing": "1x H100 80GB SXM5", "price": 2.49},
+  {"gpu": "gpu-56fdee9a.runpod", "listing": "1x H100 80GB SXM", "price": 1.99}
 ]

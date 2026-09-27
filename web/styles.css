@@ -446,3 +446,14 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 /* automatic flags on a failure report */
 .stag.flag{color:var(--warn);}
 .flags{margin:0; padding-left:18px; color:var(--warn);} .flags li{margin:2px 0;}
+
+/* failed check: the people behind it (two slots: two different people mark a GPU failed) */
+.people-strip{margin-top:22px; max-width:760px; display:grid; gap:10px;}
+.people-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.people{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.person{border:1px solid var(--line); padding:12px 14px; display:grid; gap:3px; min-width:0;}
+.person b{font-weight:400; overflow-wrap:anywhere;}
+.person span{font-size:13px; color:var(--muted);}
+.person.on{border-color:var(--world); background:var(--world-fill);}
+.person.off{border-style:dashed;} .person.off b{color:var(--muted);}
+@media (max-width:640px){ .people{grid-template-columns:1fr;} }

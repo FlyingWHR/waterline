@@ -475,14 +475,14 @@ def report_auto(body: AutoIn):
     m = store.get(_mandate_key(sub))
     view = _mandate_view(m)
     if not (view and view["active"]):
-        raise HTTPException(403, "No active World mandate: grant one, or approve this report yourself.")
+        raise HTTPException(403, "Your agents don't have permission to report right now (none given, or it ended). Approve this report yourself with World.")
     rep = _fail_report(body.report_id)
     if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
         raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
     rep = _take_listing(rep, body.listing, False)  # a mandate never overrides Jev: a contradiction needs the person
     slot = next((i for i in range(m["max_reports"]) if store.add(f"mandate-use:{m['id']}:{i}", 1, m["expires_at"] - int(now()) + 86400)), None)
     if slot is None:
-        raise HTTPException(403, "The World mandate has no reports left: grant a new one.")
+        raise HTTPException(403, "Your agent permission has no reports left. Approve this report yourself, or give a new permission.")
     out = _publish_fail(rep, sub, {"approved_via": "mandate", "mandate_id": m["id"], "mandate_expires_at": m["expires_at"]})
     if not out["published"]:
         store.delete(f"mandate-use:{m['id']}:{slot}")  # nothing was published: the report doesn't use the mandate

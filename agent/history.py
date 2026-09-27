@@ -79,14 +79,28 @@ def hex32(v):
     return v if v.startswith("0x") else "0x" + v
 
 
-def fetch(mb_url=None, key=None):
-    """{node: row} for every GPU with a report."""
-    return _post(QUERY, mb_url, key, "node")
+def _mb_configured(mb_url, key):
+    return bool((mb_url or os.environ.get("MB_URL")) and (key or os.environ.get("MB_API_KEY")))
 
 
-def fetch_providers(mb_url=None, key=None):
+def _api_get(api, path):
+    with urllib.request.urlopen(api.rstrip("/") + path, timeout=20) as r:
+        return json.loads(r.read())
+
+
+def fetch(mb_url=None, key=None, api=None):
+    """{node: row} for every GPU with a report. Straight from MultiBaas with your own keys; otherwise the same
+    MultiBaas rows through the Waterline API, so a renter needs no keys."""
+    if _mb_configured(mb_url, key) or not api:
+        return _post(QUERY, mb_url, key, "node")
+    return {g["node"]: g | {"verdict": g.get("last_verdict")} for g in _api_get(api, "/api/gpus")["gpus"]}
+
+
+def fetch_providers(mb_url=None, key=None, api=None):
     """{provider node: row} for every provider with a report (each human counted once per provider)."""
-    return _post(PROVIDER_QUERY, mb_url, key, "provider")
+    if _mb_configured(mb_url, key) or not api:
+        return _post(PROVIDER_QUERY, mb_url, key, "provider")
+    return {p["provider_node"]: p for p in _api_get(api, "/api/providers")["providers"]}
 
 
 def full_name(gpu):

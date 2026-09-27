@@ -31,12 +31,12 @@ cores. Heat slows a chip; it can't remove cores. Cores name the chip. The clock 
 ## 4 · Fail · Approve · 1:20 (45 s) · [TERMINAL laptop → SITE → World]
 
 Do: run the agent on B2 with `--web`, open the printed link, Approve, paste the listing, tick, Deny in World, then
-Approve. Show the World ID tab (the mandate) at the end.
+Approve. Show the Reporting tab (agent permission) at the end.
 
 "Now a cheat. This pod is listed as an H100; it's an A100 I relabelled myself, playing the dishonest host. A hundred
 and eight cores, no FP8: caught, and my agent stops paying. A failure accuses someone, so a real person must stand
 behind it. Jev confirms the listing says H100. I approve with World ID. Deny, and nothing goes public. Approve, and
-it's onchain. Twenty agents? One approval, one mandate, still one voice."
+it's onchain. Twenty agents? One approval gives them permission, and it's still one voice."
 
 ## 5 · Record · Compare · 2:05 (45 s) · [SITE GPUs → Providers → B2's check]
 
@@ -50,15 +50,17 @@ there. All onchain, all checkable against the report's hash."
 
 ## 6 · Use · 2:50 (20 s) · [MultiBaas console → TERMINAL]
 
-Do: show the indexed event in MultiBaas, then run `python -m agent choose --listings docs/demo/listings.json`.
+Do: in the MultiBaas console, point at B2's failure, read from the contract. Then run
+`python -m agent choose --listings docs/demo/listings.json` and point at the two lines: skips B2, rents A1.
 
-"MultiBaas indexes every verdict. Next rental, my agent reads the history, skips that GPU and picks the other cloud.
-The record decides, not a language model."
+"So what's the record good for? Next time I rent, my agent looks it up first. Curvegrid's MultiBaas reads every
+result from our contract and keeps a tally for each GPU. The cheapest H100 on offer is the one we just caught, so the
+agent skips it and rents the one that passed. It goes by the record, not an AI's opinion."
 
 ## 7 · Close · 3:10 (15 s) · [SLIDE 6]
 
 "Waterline. Proof of delivered compute. Any renter can check, and the result stays on the GPU's name for whoever
-needs it next: a renter, a lender, or an agent."
+needs it next: a renter, a lender, an agent, or even a GPU credit provider."
 
 ---
 

@@ -126,7 +126,7 @@ flowchart LR
 - **One person, many agents: the mandate.** One fresh approval grants a mandate (1 hour to 3 days, 5 to 100 reports,
   revocable). The person's agents then report failures at once, each still that person's one voice. The panel's
   **World ID** page and header show the session and the mandate (used, left, expiry); every report made under it says
-  so. `python -m agent mandate --hours 24 --max 20`.
+  so. `python -m agent allow --hours 24 --max 20`.
 - **Accusations cost something.** The reporter pastes the listing they rented and accepts that the report is tied to
   their World ID. **Jev (TypeSafe) reads that listing**: if it reads as another GPU, the report stops unless the person
   insists, and a mandate never overrides it. The panel shows the listing, Jev's reading and the pseudonymous reporter.
@@ -142,7 +142,7 @@ flowchart LR
 ```bash
 export WATERLINE_API=https://waterline-eth.vercel.app
 python -m agent login                                   # once, with World App
-python -m agent mandate --hours 24 --max 20             # optional: let your agents report failures
+python -m agent allow --hours 24 --max 20             # optional: let your agents report failures
 python -m agent check --pod ssh://root@host:port --cloud vastai --listing "1x H100 80GB SXM5"
 python -m agent check ... --every 30m --times 6         # a periodic series
 python -m agent check ... --web                         # leave any approval to the web panel
