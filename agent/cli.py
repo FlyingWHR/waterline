@@ -7,8 +7,8 @@
   python -m agent choose --listings listings.json [--max-price 3.0]
 
 The LLM never decides; the history does. `choose` ranks on MultiBaas history and price only; Jev (or the rules)
-only reads listing text into a claimed GPU class. On a FAIL the agent stops paying: it runs the stop command for
-the rental, then publishes the failure with the listing you rented.
+only turns listing text into a claimed GPU class. On a FAIL the agent runs the rental's stop command, then
+publishes the failure with the listing you rented.
 
 Env (all optional): WATERLINE_API (default the live API), MB_URL + MB_API_KEY (history/choose read MultiBaas
 directly; without them they read the same rows through the API), TYPESAFE_API_KEY (Jev; without it, built-in rules
@@ -213,7 +213,7 @@ def choose(a):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="agent", description="Waterline agent. The LLM never decides; the history does.")
+    ap = argparse.ArgumentParser(prog="agent", description="Waterline agent: check a rented GPU, read GPU history, pick a listing.")
     ap.add_argument("--api", default=os.environ.get("WATERLINE_API", "https://waterline-eth.vercel.app"),
                     help="Waterline API (default: env WATERLINE_API, else the live one)")
     sub = ap.add_subparsers(dest="cmd", required=True)

@@ -2,7 +2,7 @@
 
 `Marks` stores renter-sourced GPU reports and is the ENS resolver for `*.waterline.eth` (ENSIP-10 wildcard),
 so `gpu-<id>.<cloud>.waterline.eth` resolves without registering each GPU. Only the reporter (the Waterline API)
-can record; a failure carries two voter IDs (one verified person, counted once per GPU and once per provider).
+can record. Each failure report carries two voter IDs, one counted once per GPU and one once per provider.
 
 ```
 forge test --no-match-contract EnsFork                                  # unit tests

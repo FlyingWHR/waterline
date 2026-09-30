@@ -3,10 +3,8 @@
 #   scripts/deploy_marks.sh                  # deploy + commit, wait 65 s, register
 #   scripts/deploy_marks.sh --register-only  # retry just the register step (same NAME_SECRET, Marks from deployments/sepolia.json)
 # Reads .env (DEPLOYER_KEY, REPORTER_ADDRESS, NAME_SECRET, SEPOLIA_RPC, optional NAME_LABEL). Prints no secrets.
-# Idempotency: DeployAndCommit refuses ("name is taken: set NAME_LABEL") once the name is registered, before it
-# sends anything, so a re-run can't deploy a second Marks for a name we already own. If someone else holds
-# waterline.eth, NAME_LABEL=<other> works for the contract, but the API names GPUs under waterline.eth
-# (api/app.py), so change that too: last resort only.
+# Re-runs are safe: once the name is registered, DeployAndCommit refuses before sending anything. If someone else
+# holds waterline.eth, NAME_LABEL=<other> works for the contract, but the API hard-codes waterline.eth (api/app.py).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$root/.env" ] || { echo "No .env: cp .env.example .env and fill it in."; exit 1; }

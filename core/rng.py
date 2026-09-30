@@ -1,4 +1,4 @@
-"""Counter-based int8 matrix generator. Must match the CUDA kernel in gpu_check.py bit for bit.
+"""Counter-based int8 matrix generator. Must match the CUDA kernel in prover/gpu.py bit for bit.
 
 entry(tag, step, r, c) = low byte of mix64(key ^ ((base*n + r)*n + c)) as int8,
 where key = mix64(seed) and base = (tag << 20) + step.

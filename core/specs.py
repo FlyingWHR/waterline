@@ -1,4 +1,4 @@
-"""Read-only view of core/gpu_specs.json (35 models, confusable pairs). Shared by prover/ and api/."""
+"""Read-only view of core/gpu_specs.json (models and confusable pairs). Shared by prover/ and api/."""
 import json
 import pkgutil
 import re

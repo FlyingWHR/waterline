@@ -225,7 +225,7 @@ function flowDiagram() {
   const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
   const att = (layer, name, what, mark) => h("div", { className: "att c-" + layer }, h("b", {}, mark, name), h("small", {}, what));
   return h("div", { className: "panel" },
-    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. MultiBaas indexes Marks' history." },
+    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's challenge. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. MultiBaas indexes Marks' history." },
       h("div", { className: "stage" }, node("people", "Agent", "renter's laptop")),
       wire("starts over SSH"),
       h("div", { className: "stage" }, node("pod", "Profiler", "in the rented pod")),
@@ -238,18 +238,18 @@ function flowDiagram() {
     h("div", { className: "legend" }, h("span", {}, h("i", { className: "sw-proof" }), "proof path"), h("span", {}, h("i", { className: "sw-att" }), "attached to a step")),
     h("div", { className: "cards partners", "aria-label": "Built on" },
       tipCard("ens", logo("ens", "ENS"), "ENSv2", "Every GPU gets a name",
-        "Marks resolves gpu-….<provider>.waterline.eth and <provider>.waterline.eth as a wildcard resolver: nothing is registered per GPU. ENSv2 roles decide who writes: the reporter writes records, a provider may write only its own note."),
+        "Marks is the wildcard resolver for every <provider>.waterline.eth and the GPU and check names under it, so none is registered one by one. ENSv2 roles set who writes: the reporter writes the records, a provider only its own note."),
       tipCard("mb", logo("curvegrid", "Curvegrid"), "Curvegrid MultiBaas", "History agents can query",
-        "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it directly to skip bad GPUs and providers."),
+        "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it to skip bad GPUs and providers."),
       tipCard("chain", isoGlyph(GLYPHS.chain), "Ethereum Sepolia", "Where the record lives",
         "Marks, one contract, holds every verdict, the per-GPU and per-provider tallies and the evidence hash of the latest check, and answers the ENS names.")),
     h("div", { className: "cards rules" },
       tipCard("pass", null, "A pass needs real silicon", "Passes publish at once",
-        "Correct answers, re-graded by us on a random slice, inside the deadline: that takes the work itself on a real GPU, so a pass publishes at once."),
+        "Correct answers inside the deadline, re-graded on a random slice. Only the work itself, done on a real GPU, gets there."),
       tipCard("degraded", null, "Chip class is heat-proof", "Slow is degraded, not failed",
         "Heat, power caps and sharing slow a chip but can't remove cores or FP8. A wrong chip fails; the right chip running slow is degraded, published with its numbers."),
       tipCard("fail", null, "A failure carries its listing, and rolls up", "Two failure reports mark a GPU failed",
-        "Every failure is published with the listing the renter rented, read against the claim. Two failure reports mark a GPU failed, and each one also lands on its provider, so renaming a chip doesn't clean the provider.")));
+        "Every failure is published with the listing the renter rented, read against the claim. Each report also counts on the provider, so renaming a chip doesn't clean its record.")));
 }
 
 // The sponsors' own marks (web/logos: from ens.domains/brand, docs.curvegrid.com), unaltered.
@@ -324,18 +324,18 @@ async function gpus() {
   return [
     head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two failure reports mark a GPU failed; two passes after that bring it back as recovered.")),
     ...(g.gpus.length ? [section("The name tree", "every level keeps its own score",
-      h("p", { className: "sub" }, "Each GPU is named under its provider, and every report counts on both: two failure reports mark a GPU failed, and each also lands on the provider. A renamed chip gets a new GPU name, not a clean provider. Open any name for its record, read live from ENS."),
+      h("p", { className: "sub" }, "Each GPU is named under its provider and every report counts on both, so a renamed chip gets a new GPU name, not a clean provider. Open any name for its live ENS record."),
       nameTree(pv, g.gpus, look))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
       rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
-    section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "A GPU or provider name (e.g. cloud-b), read live from Sepolia through the ENS Universal Resolver."), form, out),
+    section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "A GPU or provider name (e.g. cloud-b), resolved through the ENS Universal Resolver."), form, out),
   ];
 }
 
-// The ENS name tree: waterline.eth, its providers, their GPUs. Every node is a real name Marks resolves, with its own score;
-// performance comes from the same waterline.pct_of_spec the chain stores, so reading the tree is comparing the clouds.
+// The ENS name tree: waterline.eth, its providers, their GPUs. Every node is a name Marks resolves, with its own score;
+// performance is the same waterline.pct_of_spec the chain stores.
 function nameTree(pv, gpus, look) {
   const groups = new Map(pv.providers.map((p) => [p.provider_node, { p, gpus: [] }]));
   for (const x of gpus) {
@@ -343,7 +343,7 @@ function nameTree(pv, gpus, look) {
     groups.get(x.provider_node).gpus.push(x);
   }
   const median = (xs) => { xs = xs.filter((v) => v != null).sort((a, b) => a - b); return xs.length ? xs[(xs.length - 1) >> 1] : null; };
-  const name = (label, full) => full ? h("a", { className: "tn", href: `#/name/${full}`, title: `${full}: its page, read live from ENS` }, label) : h("span", { className: "tn" }, label);
+  const name = (label, full) => full ? h("a", { className: "tn", href: `#/name/${full}`, title: `${full}: its live ENS record` }, label) : h("span", { className: "tn" }, label);
   const provider = ({ p, gpus: gs }) => {
     const full = p.name || (gs[0]?.gpu_name || "").split(".").slice(1).join(".");
     const pct = median(gs.map((x) => x.pct_of_spec));
@@ -357,13 +357,11 @@ function nameTree(pv, gpus, look) {
             x.pct_of_spec != null ? ` · ${num(x.pct_of_spec)}% of rating` : ""))))));
   };
   return h("div", { className: "tree" },
-    h("div", { className: "tnode root" }, h("b", { className: "mono" }, "waterline.eth"), h("span", { className: "facts" }, "resolver: Marks · nothing below is registered, all of it resolves onchain")),
+    h("div", { className: "tnode root" }, h("b", { className: "mono" }, "waterline.eth"), h("span", { className: "facts" }, "resolver: Marks · no name below is registered")),
     h("ul", {}, [...groups.values()].map(provider)));
 }
 
-// #/name/<name>: the page of one ENS name, a GPU or a provider. The facts are read live from ENS; history and the
-// subtree come from the API. The record itself stays raw onchain; this is its human view.
-// A single check's own name, <n>.gpu-….<provider>.waterline.eth: read live from ENS, like its GPU and provider.
+// #/name/<n>.gpu-….<provider>.waterline.eth: one check's own name, read live from ENS.
 async function checkNamePage(n) {
   const gpu = n.split(".").slice(1).join(".");
   const box = h("div", { className: "namefacts" }, h("p", { className: "sub" }, "Reading the record from Sepolia…"));
@@ -380,12 +378,13 @@ async function checkNamePage(n) {
   }).catch((e) => box.replaceChildren(h("p", { className: "err" }, e.message)));
   return [
     head("ENS name · check", h("span", { className: "mono namehead" }, n), statusBox,
-      h("p", { className: "sub" }, "One check, with its own name under its GPU. Nothing was registered: the Marks contract answers for every name below waterline.eth.")),
+      h("p", { className: "sub" }, "One check, named under its GPU. Marks answers for it, as for every name below waterline.eth.")),
     section("The record", "read live from ENS", box),
     section("Its GPU", null, h("p", {}, h("a", { href: `#/name/${gpu}`, className: "mono" }, gpu), h("span", { className: "sub" }, " · every check of this card, its status and its provider"))),
   ];
 }
 
+// #/name/<name>: a GPU or provider name. Facts are read live from ENS; history and the subtree come from the API.
 async function namePage(full) {
   const hl = await getHealth();
   const n = String(full || "").toLowerCase();
@@ -413,7 +412,7 @@ async function namePage(full) {
   return [
     head(isProvider ? "ENS name · provider" : "ENS name · GPU", h("span", { className: "mono namehead" }, n), statusBox,
       !isProvider && mine[0]?.uuid ? h("p", { className: "sub small mono", title: "NVIDIA UUID, as the host's driver reports it" }, `card ${mine[0].uuid}`) : null,
-      h("p", { className: "sub" }, isProvider ? "Every GPU this provider rents out is named under it; its score is the roll-up of theirs."
+      h("p", { className: "sub" }, isProvider ? "Every checked GPU from this provider is named under it; its score rolls up theirs."
         : h("span", {}, "Named under ", h("a", { href: `#/name/${n.split(".").slice(1).join(".")}` }, n.split(".").slice(1).join(".")), ". Resolved by Marks, written only by its reporter role."))),
     section("The record", "read live from ENS on Sepolia", facts),
     ...(isProvider ? [section("Its GPUs", "each with its own record", nameTree({ providers: provNode ? [provNode] : [] }, g.gpus.filter((x) => x.gpu_name?.endsWith("." + n)), () => {}))] : []),
@@ -462,7 +461,7 @@ function onChain(r, kv) {
       h("div", { className: "row" },
         h("a", { className: "btn sm", href: `/api/reports/${encodeURIComponent(r.report_id)}/evidence`, download: `waterline-report-${r.report_id}.json` }, "Download evidence"),
         h("button", { type: "button", className: "btn sm primary", onclick: verify }, "Verify")), out,
-      h("p", { className: "sub small" }, "keccak256 of the downloaded file is the report hash. Verify reads waterline.report from the GPU's ENS name, straight from the chain."))
+      h("p", { className: "sub small" }, "The downloaded file's keccak256 is the report hash. Verify compares it with waterline.report on the GPU's ENS name."))
     : h("span", { className: "sub" }, "This check was made before reports carried an evidence hash.");
   return section("On chain", null, kv(["Written", written], ["Transaction", txLink(r.tx, r.published)], ["MultiBaas", indexed],
     ["ENS node", h("span", { className: "mono", title: r.node }, short(r.node))], ["GPU name", r.gpu_name], ["Evidence", evidence]));
@@ -512,7 +511,7 @@ function ensLookup(initial = "") {
 // ---- checks ------------------------------------------------------------------------------------------------
 // Periodic checks (--every): the same rental re-checked at jittered intervals. A tag in tables, and a timeline where a
 // throttle or a swapped card shows as a break in the line.
-// Automatic flags on a failure (worked out by the API when read; the record never changes): weigh before trusting it.
+// Automatic flags on a failure, computed by the API on read; the record itself never changes.
 const flagTag = (r) => r.flags?.length ? h("span", { className: "stag flag", title: r.flags.map((f) => f.text).join("\n") }, "⚑ flagged") : null;
 const seriesTag = (r) => r.series ? h("span", { className: "stag", title: `Periodic series ${r.series}` }, `↻ #${r.seq}`) : null;
 
@@ -547,7 +546,7 @@ async function checks() {
   const reps = await api("/api/reports?limit=100");
   const pending = reps.filter(needsListing).length;
   return [
-    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. A failure publishes with the listing you rented; until then, nothing is public.")),
+    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. A failure publishes with the listing you rented; until then it stays off chain.")),
     section("All checks", pending ? `${pending} waiting for a listing` : `${reps.length} shown`,
       reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet."),
       h("div", {}, h("button", { type: "button", className: "btn", onclick: () => route(false) }, "Refresh"))),
@@ -584,7 +583,7 @@ async function checkDetail(id) {
     head("Check " + short(r.report_id), r.gpu_name || "Unknown GPU",
       h("div", { className: "verdict st-" + r.verdict }, r.verdict),
       h("p", { className: "diagnosis" }, diagnosis),
-      r.fingerprint_changed ? h("p", { className: "sub" }, "Its timing fingerprint changed since the last check. Noted, not judged: it can mean a different card behind the name.") : null,
+      r.fingerprint_changed ? h("p", { className: "sub" }, "Its timing fingerprint changed since the last check, which can mean a different card behind the name. Noted, not judged.") : null,
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
       needsListing(r) ? h("div", {}, h("button", { type: "button", className: "btn primary", onclick: () => publishFlow(r) }, "Publish with your listing")) : null,
       r.verdict === "fail" && r.published && gpu?.active === 1 ? h("p", { className: "sub" }, "One more failure report marks this GPU failed.") : null),
@@ -625,7 +624,7 @@ async function checkDetail(id) {
       h("p", { className: "sub" }, "One busy block per core: past the core count, blocks queue and the time jumps. Heat slows a chip; it can't move this step."),
       r.staircase ? staircase(r.staircase, p.sms) : h("p", { className: "empty" }, "The profiler did not send staircase timings for this check.")),
     ...(r.series ? [section("Periodic series", `↻ check #${r.seq} of series ${r.series}`,
-      h("p", { className: "sub" }, "The same rental, re-checked at jittered intervals so the host can't time it. Each bar is one check: its height is the share of the rating it delivered, its colour the verdict."),
+      h("p", { className: "sub" }, "The same rental, re-checked at jittered intervals so the host can't time it. Bar height is the share of the rating delivered; colour is the verdict."),
       seriesStrip(seriesOf, r.series, r.report_id))] : []),
     perfSection(r, cmp),
     healthSection(r.health),
@@ -695,7 +694,7 @@ function healthSection(hr) {
   const chips = (b.reasons_seen || []).map((x) => h("span", { className: "pill " + (RED_REASONS.includes(x) ? "st-fail" : AMBER_REASONS.includes(x) ? "st-suspect" : "st-unknown") }, x));
   const flags = healthFlags(hr);
   return wrap(
-    h("p", { className: "sub" }, "Standard checks: a sustained burn, NVIDIA's counters (NVML) and DCGM when installed. The host's machine reports them, so they inform but never decide.",
+    h("p", { className: "sub" }, "A sustained burn, NVIDIA's counters (NVML), and DCGM when installed.",
       hr.source === "simulated" ? h("span", {}, " ", pill("simulated · CPU test run", "suspect")) : null),
     h("ul", { className: "flags" }, flags.length ? flags.map(([lv, x]) => h("li", { className: lv === "bad" ? "st-fail" : "st-suspect" }, x))
       : h("li", { className: "st-pass" }, "Nothing unusual reported.")),
@@ -783,7 +782,7 @@ const UNITS = { int8_tops_verified: "TOPS", int8_tops: "TOPS", bf16_tflops: "TFL
   hbm_read_tbs: "TB/s", h2d_gbs: "GB/s", d2h_gbs: "GB/s", launch_us: "µs", mem_alloc_gib: "GiB", sm_count: "SMs", stability_cv: "%" };
 const TRUST = {
   verified: "Verified: from work the API re-graded and timed on its own clock. The host can't inflate it.",
-  measured: "Measured: timed by our code inside the pod. A rigged driver could, in principle, lie.",
+  measured: "Measured: timed by our code inside the pod. A rigged driver could skew it.",
   reported: "Reported: read from the driver. The host can fake it.",
 };
 const mname = (k) => METRICS[k]?.[0] || k;
@@ -1034,10 +1033,10 @@ async function reportingView() {
   const hl = await getHealth(true).catch(() => null);
   return [
     head("Reporting", "Every failure carries its listing",
-      h("p", { className: "sub" }, "A failure accuses a provider of misselling a GPU, so it is published with the listing the renter rented, in the listing's own words. Passes and degraded results need nothing: they publish at once.")),
+      h("p", { className: "sub" }, "A failure accuses a provider of misselling a GPU, so it is published with the listing the renter rented, in its own words. Passes and degraded results publish at once.")),
     section("How failures count", null, h("ol", { className: "how" }, [
       "A failed check publishes once the renter adds the listing they rented. The agent does it on the spot; on the web, press Publish on the check.",
-      "Jev reads the listing. When it reads as another GPU than the one reported, the report stops until the renter chooses to report anyway, and the check says so.",
+      "The listing is read for its GPU. If it names a different GPU from the one reported, publishing stops until the renter chooses to report anyway, and the check shows it.",
       "Two failure reports mark a GPU failed. One makes it suspect. Each also counts on its provider.",
       "Two passes after the last failure mark a GPU recovered; its history stays public.",
     ].map((x) => h("li", {}, h("span", {}, x))))),
@@ -1047,10 +1046,10 @@ async function reportingView() {
       ["recovered", "Failure reports, then two passes after the last one. The reports stay in its history."],
       ["unknown", "No published check yet."],
       ["provider (cloud-b.waterline.eth)", "GPUs failed now, and the failure reports against any of them. Descriptive: GPUs are judged one by one."])),
-    section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
+    section("For providers", "your name and your note, never your score", h("p", { className: "sub" },
       "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
-    section("For agents and integrations", "read it anywhere", h("p", { className: "sub" },
-      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers."),
+    section("For agents and integrations", "ENS, MultiBaas or the API", h("p", { className: "sub" },
+      "Read any name on ENS: a GPU answers waterline.status, class, cores, tops, pct_of_spec, passes, degraded, fails, recoveries, fingerprint, report and checks; a provider adds gpus, failed_gpus and note; a check answers verdict, class, cores, tops, pct_of_spec, at and report. Or query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers."),
       hl ? kvList(["Marks contract", scan("address", hl.chain.marks) || "—"], ["ENS parent", hl.ens.parent], ["Indexed by", hl.multibaas.configured ? "Curvegrid MultiBaas" : "—"]) : null),
   ];
 }
@@ -1122,7 +1121,7 @@ async function publishFlow(rep) {
       r = await publish({});
     } catch (e) {
       if (!(e.status === 409 && /report anyway/.test(e.message))) throw e;
-      if (!(await reportAnyway(e.message, my))) return say("Not reported. Nothing was published.", "bad");  // Jev read another GPU
+      if (!(await reportAnyway(e.message, my))) return say("Not reported. Nothing was published.", "bad");  // the listing reads as another GPU
       r = await publish({ report_anyway: true });
     }
     if (my !== flow) return;

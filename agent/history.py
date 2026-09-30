@@ -97,7 +97,7 @@ def fetch(mb_url=None, key=None, api=None):
 
 
 def fetch_providers(mb_url=None, key=None, api=None):
-    """{provider node: row} for every provider with a report (each human counted once per provider)."""
+    """{provider node: row} for every provider with a report (each failure report counted once per provider)."""
     if _mb_configured(mb_url, key) or not api:
         return _post(PROVIDER_QUERY, mb_url, key, "provider")
     return {p["provider_node"]: p for p in _api_get(api, "/api/providers")["providers"]}

@@ -28,19 +28,19 @@ curl -fsSL waterline-eth.vercel.app/run | python3 - <provider> <gpu>
 # e.g. python3 - runpod h100   ·   python3 - vastai a100   ·   python3 - lambda h200
 ```
 
-- **Nothing to install or clean up.** The profiler is fetched from our API and imported from memory; nothing is
-  written to the pod. It needs numpy and torch (every PyTorch image has them) and adds CuPy once if missing.
+- **Nothing written to the pod.** The profiler is fetched from our API and imported from memory. It needs numpy
+  and torch (every PyTorch image has them) and installs CuPy once if missing.
 - **25 NVIDIA GPU classes:** H100 SXM, H100 PCIe, H100 NVL, H200, GH200, B200, B300, GB200, GB300, A100, L40S, L40,
   L4, A40, A10, A10G, T4, RTX 6000 Ada, RTX PRO 6000 Blackwell, RTX 5090, 4090, 3090, A6000, A5000, A4000
   (`core/gpu_classes.json`). The exam is CUDA INT8, so V100 and AMD are not covered yet.
 - **63 known providers** (`core/providers.json`, from the hyperscalers to RunPod and Vast.ai) keep names
-  consistent; any other name is still recorded as typed and marked "unlisted".
+  consistent; any other name is recorded as typed and marked "unlisted".
 - **Options:** `--gpu 3` checks the fourth card of a multi-GPU pod; `--every 30m` re-checks at jittered intervals
   (a periodic series, shown as a timeline); `--times N` stops after N checks.
 - **What you get:** a short receipt (verdict, the GPU's ENS name, the transaction, the report link). A pass or a
   degraded result is published at once; a failure publishes with the listing you rented (below).
 
-The web panel builds the command for you: pick the provider and GPU from the two drop-downs in the hero.
+The web panel builds the command from two drop-downs in its hero: provider and GPU.
 
 ## Why
 
@@ -48,8 +48,8 @@ The web panel builds the command for you: pick the provider and GPU from the two
   by 2031 ([Synergy](https://www.srgresearch.com/articles/neocloud-market-forecast-to-approach-400b-by-2031-driven-by-surging-ai-infrastructure-demand)),
   banks lend against GPUs ([CoreWeave, $8.5B](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)),
   and H100 rental futures are scheduled on CME from October 5 ([CME](https://investor.cmegroup.com/news-releases/news-release-details/cme-group-and-silicon-data-launch-compute-futures-october-5)).
-  Buyers rely on the provider's own monitoring, periodic audits and benchmarks that are easy to game. There is no
-  independent, shared record.
+  Buyers rely on the provider's own monitoring, periodic audits and easily gamed benchmarks, with no independent,
+  shared record.
 - **Renters mostly get less, not fake.** Throttled H100s at full price (1,755 → ~345 MHz under load:
   [matt.sh](https://matt.sh/cloud-gpu-thermal-throttling), [Spheron](https://www.spheron.network/blog/sustained-load-gpu-throttling-we-measured-the-hidden-clock-t/)),
   specs that don't match, broken NVSwitch ([Vast.ai](https://www.trustpilot.com/review/vast.ai),
@@ -102,12 +102,12 @@ flowchart LR
 - **Wildcard resolution, three levels.** `Marks` is the ENSIP-10 resolver for `waterline.eth`: every
   `<provider>.waterline.eth`, `gpu-<id>.<provider>.waterline.eth` and each check, `<n>.gpu-<id>.<provider>.waterline.eth`,
   resolves with no registration. A check's name answers `waterline.verdict`, `class`, `cores`, `tops`, `pct_of_spec`,
-  `at` and its own `report` hash; the GPU answers `waterline.checks` (how many). Text records: `waterline.status`, `class`, `cores`,
-  `pct_of_spec`, `passes`, `degraded`, `fails`, `humans` (distinct failure reports), `recoveries`, `fingerprint`, `report`; providers add `gpus`,
-  `failed_gpus`, `note`.
+  `at` and its own `report` hash. A GPU's name answers `waterline.status`, `class`, `cores`, `pct_of_spec`, `passes`,
+  `degraded`, `fails`, `humans` (distinct failure reports), `recoveries`, `fingerprint`, `report` and `checks` (how
+  many); a provider's name adds `gpus`, `failed_gpus` and `note`.
 - **The tree is the roll-up.** A GPU's node derives from its provider's, so every report also scores the provider
-  (GPUs checked, failed now, degraded, failure reports). Renaming a chip hides nothing. Two passes
-  after a failure mark a GPU `recovered`.
+  (GPUs checked, failed now, degraded, failure reports), and relabelling a GPU can't move it out of its provider.
+  Two passes after a failure mark a GPU `recovered`.
 - **Enhanced Access Control.** Only the REPORTER role writes scores (our API today; grantable per GPU or per provider).
   A provider's NOTE role edits only `waterline.note`, never a score. Class names are an admin-set table, so new GPUs
   need no redeploy.
@@ -115,11 +115,10 @@ flowchart LR
   panel opens any check from that hash (`/#/r/<hash>`).
 
 ### Failures carry the listing
-- **Passes carry evidence; failures carry the listing.** A failure accuses the provider of misselling the GPU, so it
-  is published with the listing the renter rented, in its own words. The agent adds it on the spot; on the web,
-  **Publish** on the check.
-- **Jev (TypeSafe) reads that listing.** When it reads as another GPU than the one reported, the report stops until
-  the renter chooses to report anyway, and the check shows it either way.
+- **A failure accuses the provider of misselling the GPU**, so it is published with the listing the renter rented,
+  in its own words. The agent adds it on the spot; on the web, **Publish** on the check.
+- **Jev (TypeSafe) reads that listing.** If it reads as a different GPU than the one reported, the report waits until
+  the renter chooses to report anyway; the check shows Jev's reading either way.
 - **Two reports mark a GPU failed.** One makes it suspect; each report also counts on the provider. Automatic flags
   mark a listing that names no GPU, one that contradicts the claim, and a card that passed under another listing.
 
@@ -219,8 +218,8 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
   roll up into its real provider.
 - ENSv2 Enhanced Access Control splits who may write what: REPORTER (scores), NOTE (a provider's own words),
   class-name admin; roles can be granted per name.
-- Anyone reads the record with any ENS client through the Universal Resolver; the panel's name pages and lookup do
-  exactly that, live from Sepolia.
+- Any ENS client reads the record through the Universal Resolver; the panel's name pages and lookup do the same,
+  live from Sepolia.
 
 ## How we used MultiBaas
 
@@ -263,5 +262,5 @@ Unprivileged Topology Certificates (arXiv 2606.24934) and DrawnApart for GPU fin
 (NVML, DCGM, gpu-fryer-style burns) for the health report. What's new is combining them into a renter-run check
 whose passes carry evidence and whose failures carry the listing, recorded onchain where no host can write.
 
-Brand marks: ENS and Curvegrid logos in `web/logos/` are their owners' and are shown only to credit the
-technologies this project is built on.
+Brand marks: the ENS and Curvegrid logos in `web/logos/` belong to their owners and credit the technologies this
+project builds on.

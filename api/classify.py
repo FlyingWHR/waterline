@@ -107,7 +107,7 @@ def evidence(f: dict) -> str:
 
 
 def models_table() -> list[dict]:
-    """For GET /api/models: id, name, sms, fp8, mem_gb, bw_tbs and dense int8/bf16/fp8 ratings."""
+    """Every model: id, name, sms, fp8, mem_gb, bw_tbs and dense int8/bf16/fp8 ratings."""
     return [{"id": mid, "name": m["name"], "sms": m["sms"], "fp8": m["fp8"], "mem_gb": m["mem_gb"],
              "bw_tbs": m["bw_tbs"], "int8_tops": m["dense"].get("int8_tops"),
              "bf16_tflops": m["dense"].get("bf16_tflops"), "fp8_tflops": m["dense"].get("fp8_tflops")}

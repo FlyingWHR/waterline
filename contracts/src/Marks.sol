@@ -4,22 +4,19 @@ pragma solidity ^0.8.25;
 import {EnhancedAccessControl} from "@ensdomains/contracts-v2/access-control/EnhancedAccessControl.sol";
 
 /// @title Marks
-/// @notice Stores renter-sourced GPU reports and serves them as ENS text records for *.waterline.eth.
-///         Set as the resolver of waterline.eth, it answers every `gpu-<id>.<cloud>.waterline.eth` name, and every
-///         `<cloud>.waterline.eth` provider name, by wildcard (ENSIP-10), so nothing needs its own registration.
+/// @notice Stores GPU check results and serves them as ENS text records for *.waterline.eth.
+///         As the resolver of waterline.eth it answers `<cloud>.waterline.eth`, `gpu-<id>.<cloud>.waterline.eth` and
+///         `<n>.gpu-<id>.<cloud>.waterline.eth` by wildcard (ENSIP-10), so no name needs registering.
 ///
-///         Two layers. Measurement: the chip class comes only from heat-proof probes (core count, FP8), so heat can
-///         make a GPU DEGRADED (right chip, correct answers, deadline missed) but never FAIL. Aggregation: trust is
-///         asymmetric. A pass needs real silicon (the API's timed exam), so any reporter may record one; so may a
-///         degraded result, which carries its numbers and never counts toward failed.
-///         A failure is published with the listing the renter rented; two failure reports mark a GPU failed.
-///         Reputation rolls up the ENS tree: the contract derives a GPU's node from its provider's, so a failure
-///         always lands on `<cloud>.waterline.eth` too, where each voter counts once however many GPUs they report.
-///         Renaming a chip gives it a clean GPU record, not a clean provider.
+///         The chip class comes only from heat-proof probes (core count, FP8): heat can make a GPU DEGRADED (right
+///         chip, correct answers, deadline missed) but never FAIL. A pass or a degraded result carries its own
+///         evidence, so one report records it. A failure carries the listing the renter rented, and it takes two
+///         failure reports to mark a GPU failed. Every failure also counts against `<cloud>.waterline.eth`, so a
+///         renamed chip gets a clean GPU record but not a clean provider.
 ///
-///         Roles (ENSv2 Enhanced Access Control, resource = a name's node, root grant = every name):
+///         Roles (ENSv2 Enhanced Access Control; resource = a name's node, root = every name):
 ///         REPORTER writes reports (today only the Waterline API; a grant on a provider node covers its GPUs).
-///         NOTE lets a provider write `waterline.note` on its own provider name: a voice, never the verdict.
+///         NOTE lets a provider write `waterline.note` on its own name, beside the record and never part of it.
 contract Marks is EnhancedAccessControl {
     uint8 public constant PASS = 1;
     uint8 public constant FAIL = 2;
@@ -33,7 +30,7 @@ contract Marks is EnhancedAccessControl {
     uint256 public constant ROLE_NOTE_ADMIN = ROLE_NOTE << 128;
     uint256 public constant ROLE_CLASSES = 1 << 8; // names the class codes; granted to the admin at the root
 
-    /// Display name per class code (waterline.class). Codes are permanent; new GPUs get new codes, no redeploy.
+    /// Display name per class code (waterline.class). Codes are permanent; a new GPU gets a new code, no redeploy.
     mapping(uint8 => string) public classNames;
 
     /// namehash of the parent name (waterline.eth); providers are its children, GPUs its grandchildren.
@@ -46,7 +43,7 @@ contract Marks is EnhancedAccessControl {
         bytes32 fingerprint;
         uint32 passes;
         uint32 fails;
-        uint32 humans; // distinct voters who ever reported a failure (history)
+        uint32 humans; // failure reports ever, one per voter (kept after recovery)
         uint32 active; // failure reports counting toward status since the last recovery
         uint32 sinceFail; // passes since the last failure
         uint32 recoveries;
@@ -76,7 +73,7 @@ contract Marks is EnhancedAccessControl {
     struct Provider {
         uint32 gpus; // distinct GPUs with at least one report
         uint32 failedGpus; // GPUs whose status is failed right now
-        uint32 humans; // distinct voters who reported any of its GPUs (each counts once)
+        uint32 humans; // distinct voters across its GPUs
         uint32 passes;
         uint32 fails;
         uint32 degraded;
@@ -131,10 +128,10 @@ contract Marks is EnhancedAccessControl {
         node = keccak256(abi.encodePacked(provider, gpuLabel));
     }
 
-    /// @notice Record one verified report. A pass carries its own evidence (voters ignored). A failure needs two voter
-    ///         IDs derived by the API from the report: one for its GPU, one for its provider.
-    ///         topsX10 / pctBps: verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
-    ///         reportHash: keccak256 of the full report, so anyone can check the off-chain evidence wasn't edited.
+    /// @notice Record one verified report. Voter IDs are ignored on a pass; a failure needs both, derived by the API
+    ///         from the report (one for the GPU, one for the provider).
+    ///         topsX10 / pctBps: verified INT8 TOPS x 10 and percent of spec x 100.
+    ///         reportHash: keccak256 of the full off-chain report.
     function record(
         bytes32 cloudLabel,
         bytes32 gpuLabel,
@@ -175,8 +172,7 @@ contract Marks is EnhancedAccessControl {
         return keccak256(abi.encodePacked(gpuNode, keccak256(bytes(_uint(n)))));
     }
 
-    /// @notice A provider's own words on its provider name. Needs ROLE_NOTE on that name (granted by the admin to the
-    ///         provider's account). It can't touch any count or status.
+    /// @notice A provider's note on its own name. Needs ROLE_NOTE on that name; changes no count or status.
     function setNote(bytes32 providerNode, string calldata note) external {
         _checkRoles(uint256(providerNode), ROLE_NOTE, msg.sender);
         if (bytes(note).length > NOTE_MAX) revert NoteTooLong();
@@ -184,7 +180,7 @@ contract Marks is EnhancedAccessControl {
         emit NoteSet(providerNode, note);
     }
 
-    /// @notice Name class codes (e.g. 5 -> "H200"). Only changes a label: never a count or a status.
+    /// @notice Name class codes (e.g. 5 -> "H200"). Changes labels only.
     function setClassNames(uint8[] calldata codes, string[] calldata names) external {
         _checkRoles(ROOT_RESOURCE, ROLE_CLASSES, msg.sender);
         if (codes.length != names.length) revert LengthMismatch();
@@ -212,7 +208,7 @@ contract Marks is EnhancedAccessControl {
                 g.recoveries += 1;
             }
         } else if (verdict == DEGRADED) {
-            g.degraded += 1; // neither a pass (no recovery credit) nor a failure (no votes, never "failed")
+            g.degraded += 1; // no recovery credit, no vote
             p.degraded += 1;
         } else if (verdict == FAIL) {
             _vote(node, pnode, gpuVoter, providerVoter);

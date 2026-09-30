@@ -109,8 +109,8 @@ def main(argv=None):
     cls = CLASS.get(model)
     keys = ", ".join(f'"{k}": {d}' for k in ([str(cls)] if cls else []) + [model])
     print(f"\nset on the API (Vercel env), then redeploy:\n  CHECK_STEPS={steps}\n  DEADLINES='{{{keys}}}'")
-    print("  (DEADLINES pins these steps for the class: a check with other n/steps is refused. Calibrate on the GPU"
-          " model the listings claim; the relabelled pod gets that model's deadline.)")
+    print("  (DEADLINES fixes the deadline for the class outright, so it only fits CHECK_STEPS. Calibrate on the"
+          " GPU model the listings claim; a relabelled pod gets that model's deadline.)")
     return 0
 
 

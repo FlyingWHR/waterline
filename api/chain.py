@@ -12,7 +12,7 @@ from eth_account import Account
 from eth_utils import keccak, to_checksum_address
 
 log = logging.getLogger("waterline.chain")
-# Marks v2: the contract derives node = keccak(keccak(parent, cloudLabel), gpuLabel), so a GPU always rolls up to its provider
+# Marks derives node = keccak(keccak(parent, cloudLabel), gpuLabel), so a GPU always rolls up to its provider
 SIGNATURE = "record(bytes32,bytes32,uint8,uint8,uint16,bytes32,bytes32,bytes32,uint32,uint16,bytes32)"
 SELECTOR = keccak(text=SIGNATURE)[:4]
 ARG_TYPES = ["bytes32", "bytes32", "uint8", "uint8", "uint16", "bytes32", "bytes32", "bytes32", "uint32", "uint16",

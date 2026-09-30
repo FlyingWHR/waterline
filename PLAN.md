@@ -13,13 +13,13 @@ goes on a record the provider can't edit.
   ([CoreWeave](https://investors.coreweave.com/news/news-details/2026/CoreWeave-Closes-Landmark-8-5-Billion-Financing-Facility-Achieving-First-Investment-Grade-Rated-GPU-backed-Financing/default.aspx)). Use as stakes only: its rating rested on customer contracts.
 - The "same" H100 costs $1.49–$6.98/hr; one network found ~400,000 spoofed GPUs.
 - Clouds test their own fleets and reviewers audit them now and then; **the renter can't check their own rental**.
-  (Say "a claim the renter can't check", not "nobody checks": the latter is refutable.)
+  (Say "a claim the renter can't check", never "nobody checks", which is refutable.)
 
 ## Three pillars
 | Pillar | Question | Carried by | Built as |
 |---|---|---|---|
 | **Proof** | Is this GPU what was sold? | Profiler | Secret INT8 exam under a deadline on the API's clock; seal (Merkle root), then 8 random rows re-graded; core-count staircase + FP8; performance profile vs 37 models; health report advisory only |
-| **Place** | Where does truth live? | ENSv2 | Marks is the resolver of `waterline.eth`: every `gpu-….waterline.eth` resolves with no registration (wildcard). Writing is governed by ENSv2's **Enhanced Access Control**: a REPORTER role, scoped per GPU name, held today only by our API |
+| **Place** | Where does truth live? | ENSv2 | Marks is the resolver of `waterline.eth`: every `gpu-….<provider>.waterline.eth` resolves with no registration (wildcard). Writing is governed by ENSv2's **Enhanced Access Control**: a REPORTER role, scoped per GPU name, held today only by our API |
 | **Use** | How does truth become action? | Curvegrid MultiBaas | Indexer (history the agent chooses from), listener (webhook confirms each report), and write path (MultiBaas builds each write with nonce and gas; we check and sign; it submits). The history decides, not the LLM. On a FAIL the agent stops paying for that rental |
 
 Deliberately not used: soulbound names, aliasing (ENS); Intercepta (no payment to screen). Jev only reads listing
@@ -53,8 +53,8 @@ prover/     in the rented pod: exam, staircase, FP8, performance profile, health
 api/        Vercel Python + Upstash Redis: exam, verdict, classification, failure publishing, writes via MultiBaas,
             MultiBaas webhook listener, compare / leaderboard endpoints, serves web/
 contracts/  Marks: report store + ENSIP-10 wildcard resolver for *.waterline.eth + ENSv2 Enhanced Access Control
-web/        control panel: Overview, GPUs, Checks (Publish a failure with its listing), Check detail (performance, vs models,
-            vs same model, health), Providers (roll-up + by model), Models, Settings
+web/        control panel: Overview, GPUs, Checks (performance vs rating and same model, health, evidence; Publish a
+            failure with its listing), Providers (roll-up + by model), Reporting
 core/       challenge maths, frozen vectors, gpu_specs.json (37 models)
 ```
 Details: `docs/INTERFACES.md` (spec), `docs/METRICS.md` (measurement method), `docs/GPU_REFERENCE.md` (specs + sources).
@@ -75,7 +75,7 @@ Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops pay
 Full script: the showcase's Demo tab. Video rules: 2–4 min (auto-reject outside), ≥720p, own voice, no speed-up,
 no phone recording.
 
-## Status (Sat 14:30 JST)
+## Status (Sat 14:30 JST; superseded by the README's "Deployed")
 Built and tested locally: all five pieces, 122 Python tests + 14 contract tests + the ENS test on a Sepolia fork.
 Not yet live: nothing deployed, no real GPU run, MultiBaas only simulated.
 
@@ -93,7 +93,8 @@ If the pods slip past 20:00, record the check beat with whatever real run exists
 
 ## Go-live sequence
 Done: Marks `0xb69D2F0690b3d8F96Ff041eA524657391FB521c1` deployed, `waterline.eth` registered (resolver = Marks),
-reporter holds the REPORTER role, Marks linked in MultiBaas (indexing from block 11784289).
+reporter holds the REPORTER role, Marks linked in MultiBaas (indexing from block 11784289). That was the first
+deploy; the live Marks is `0x5E26AD29CBfCD7F0193d8950672f048621a604c4` (MultiBaas alias `marks4`).
 1. Vercel project + fixed domain; `vercel --prod` with env: REDIS_URL, REPORTER_KEY,
    MARKS_ADDRESS, SEPOLIA_RPC, PUBLIC_SEPOLIA_RPC, ENS_UNIVERSAL_RESOLVER, MB_URL, MB_API_KEY, MB_MARKS_ALIAS,
    MB_MARKS_LABEL, CHECK_STEPS (ALLOW_CLIENT_SIZES unset).
@@ -108,15 +109,15 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
 - Pass/fail comes from the check only. Telemetry, Jev and self-reported data never decide a verdict.
 - Parts to check are chosen with the API's secret randomness after the answer is locked in.
 - The profiler runs only in the renter's pod, launched by the renter's agent.
-- Only holders of the ENSv2 REPORTER role write to Marks (today: our API). A failure needs the listing the renter
-  rented; each report is its own voter; two failure reports mark a GPU failed.
-- Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = FAIL (needs
-  the listing). Right chip, right answers, too slow = DEGRADED (published at once with its numbers, never counts toward
-  failed; throttle flags explain it, never decide it). Pass = in time.
-- Asymmetry: passes need real silicon, failures need the listing. Each failure report gives a per-GPU and a
-  per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`. Two passes after a GPU's last failure = `recovered`. Providers may write
-  `waterline.note` (NOTE role) on their own name, never a score.
-- A failure requires the listing (URL or text); the check page shows it with Jev's reading and any automatic flags.
+- Only holders of the ENSv2 REPORTER role write to Marks (today: our API).
+- Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = FAIL. Right chip,
+  right answers, too slow = DEGRADED (published at once with its numbers, never counts toward failed; throttle flags
+  explain it, never decide it). Pass = in time.
+- Asymmetry: passes need real silicon, failures need the listing the renter rented (URL or text); the check page shows
+  it with Jev's reading and any automatic flags.
+- Each failure report is its own voter, with a per-GPU and a per-provider voter id; two mark a GPU failed. Marks rolls
+  every report up to `<cloud>.waterline.eth`. Two passes after a GPU's last failure = `recovered`. Providers may
+  write `waterline.note` (NOTE role) on their own name, never a score.
 - `core/vectors.json` is frozen; `python -m core.verify_vectors` must pass.
 
 ## Demo rules

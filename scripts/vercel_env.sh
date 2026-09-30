@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Set the API's Vercel production env from .env without printing values. Re-runnable.
 #   bash scripts/vercel_env.sh            # after `vercel link`
-# Removes every non-Upstash var Vercel imported from .env.example (placeholders, script-only keys like DEPLOYER_KEY),
-# then adds back only what the API reads (old World ID vars are removed and not re-added). ALLOW_CLIENT_SIZES stays unset in production.
+# Removes every non-Upstash var Vercel imported from .env.example (placeholders, script-only keys, retired World ID
+# and token vars), then adds back only what the API reads. ALLOW_CLIENT_SIZES stays unset in production.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 vc() { env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy vercel "$@"; }

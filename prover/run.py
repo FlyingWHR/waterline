@@ -3,13 +3,10 @@
   python -m prover.run --api URL --cloud cloud-b --claimed 1          # GPU (CuPy + torch)
   python -m prover.run --api URL --cloud cloud-b --claimed 1 --cpu    # CPU, core/ maths, fixed probes
 
-Probes run first (they are not part of the timed work). Then: start -> compute every step -> commit
-(root + probes) -> reveal the rows the API picked. Prints the API's final JSON on stdout; progress goes to
-stderr. Writes result.json (probes, staircase timings in ms, API result) for the agent and the web chart.
-The staircase (blocks -> ms) also goes to the API as probes.staircase, for the web chart.
-After commit (the deadline clock has stopped) it collects a health report (prover/health.py: NVML, a sustained
-burn, DCGM; CPU mode: simulated) and the performance profile (prover/perf.py, docs/METRICS.md; CPU mode:
-simulated from core/gpu_specs.json) and sends both with the reveal.
+Probes run first, outside the timed work. Then: start -> compute every step -> commit (root + probes, with the
+staircase for the web chart) -> reveal the rows the API picked. Between commit and reveal, with the deadline
+clock stopped, it collects the health report (prover/health.py) and the performance profile (prover/perf.py);
+CPU mode simulates both. The API's final JSON goes to stdout, progress to stderr; --out writes result.json.
 """
 import argparse
 import hashlib
@@ -231,7 +228,7 @@ def main(argv=None):
              + (f" via {rv['via']}" if rv.get("via") not in (None, "dry-run") else ""))
     fact("report", link)
     if rv["verdict"] == "fail":
-        log(paint(AMBER, "  → nothing is published yet: open the report and add the listing you rented to publish"))
+        log(paint(AMBER, "  → not published yet: open the report and add the listing you rented"))
     if not sys.stdout.isatty():  # machine-readable for the agent; a person on a terminal gets the receipt only
         print(json.dumps(rv))
     return 0

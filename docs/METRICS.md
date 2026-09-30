@@ -1,6 +1,6 @@
 # Waterline metrics: definitions, methods, trust
 
-This is the contract for every number in the performance profile (`metrics` in a report, shape in
+The contract for every number in the performance profile (`metrics` in a report, shape in
 `docs/INTERFACES.md` > "Performance profile"). Code: `prover/perf.py` (GPU), `prover/metrics.py` (statistics,
 staircase, CPU simulation), `api/perf.py` (spec, %-of-spec, flags, verified metric, cohorts),
 `api/classify.py` (model match), `api/check.py` (verdict, deadline).
@@ -22,8 +22,8 @@ staircase, CPU simulation), `api/perf.py` (spec, %-of-spec, flags, verified metr
 - **Warm-up** before every timed series (first-call JIT, cuBLASLt heuristics, clock ramp-up), then
   `torch.cuda.synchronize()`.
 - **L2 flush between trials**: zero a device buffer of `max(256 MiB, 2 × reported L2)` before each trial (outside
-  the events). 256 MiB is ≥ 2× every L2 in the table (H100 50 MB, B200 about 126 MB). The reported L2 size only
-  sizes the flush; if a driver under-reports it, the 256 MiB floor still covers every known part.
+  the events). 256 MiB is ≥ 2× every L2 in the table (H100 50 MB, B200 about 126 MB), so a driver that
+  under-reports L2 still gets a full flush.
 - **Buffers defeat caches**: bandwidth buffers are 4 GiB (≫ any L2; 80× H100's), shrunk only when free memory
   forces it (the actual size is in the metric's `bytes`).
 - **Context**: each metric carries `context: {start, end}`, NVML snapshots taken right before and after it:
@@ -149,8 +149,8 @@ is wider. **Calibrate every range on real pods** and edit `EXPECTED` in `api/per
 ## Classification (`api/classify.py`)
 
 Features, measured only: `sm_count` (staircase), FP8 (throughput rule above; falls back to the commit probe
-"it ran"), `mem_alloc_gib`, `hbm_copy_tbs` (falls back to the commit probe's copy bandwidth), `int8_tops`, and
-the clock-independent `fp8_tflops / int8_tops` ratio, and `h2d_gbs` (separates NVLink-C2C Grace parts from PCIe
+"it ran"), `mem_alloc_gib`, `hbm_copy_tbs` (falls back to the commit probe's copy bandwidth), `int8_tops`, the
+clock-independent `fp8_tflops / int8_tops` ratio, and `h2d_gbs` (separates NVLink-C2C Grace parts from PCIe
 hosts; without it H100 NVL and GH200 tie). Each model's expected values: its `sms`, `fp8`,
 `0.97 × mem_gb` GiB, `0.86 × bw_tbs`, `0.72 × int8`, its spec FP8/INT8 ratio and `0.83 ×` its host link. Per feature a z-score:
 `(sms − spec)/2 SMs`; FP8 mismatch = 5; else `ln(measured/expected) / ln(1 + tol)` with tol 6 % memory, 12 %

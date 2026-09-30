@@ -69,4 +69,4 @@ timestamps more than 5 min off (401). For each `Reported` event from Marks (alia
 `MARKS_ADDRESS`), the report with that node + tx hash gets `indexed: true, indexed_at` (shown in `/api/reports`).
 Other events are ignored with 200: `{ok, indexed: <count>}`.
 
-A full honest run end to end (commit + reveal) is in `tests/api/test_api.py::run_check`.
+A full honest run (start, commit, reveal) is `tests/api/test_api.py::run_check`.

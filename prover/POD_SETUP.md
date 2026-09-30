@@ -3,12 +3,10 @@
 Shortest path, nothing to copy or clone (runs from memory; installs cupy once if the image lacks it):
 
 ```bash
-curl -fsSL waterline-eth.vercel.app/run | python3 - cloud-b h100
+curl -fsSL waterline-eth.vercel.app/run | python3 - runpod h100   # <provider> <gpu>
 ```
 
-The rest of this page is for the agent's SSH path and for calibration.
-
-The agent copies `core/` and `prover/` to `~/waterline` over scp. On a fresh pod, once:
+The rest of this page covers the agent's SSH path and calibration. The agent copies `core/` and `prover/` to `~/waterline` over scp. On a fresh pod, once:
 
 ```bash
 nvidia-smi                                  # driver present, note the CUDA version (12.x)
@@ -20,7 +18,7 @@ python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 python3 -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
 ```
 
-First, calibrate (runs the GPU self-check, then times the exam at n = 16384):
+Calibrate first (runs the GPU self-check, then times the exam at n = 16384):
 
 ```bash
 cd ~/waterline
@@ -31,7 +29,7 @@ Run it on the H100 (the model both listings claim). Put the printed `CHECK_STEPS
 (Vercel env) and redeploy. `--net S` changes the network allowance (default 1 s); `--model <id>` if the SM count
 doesn't identify the card.
 
-Check the GPU path matches the CPU maths bit for bit, and look at the probe numbers:
+To check the GPU path against the CPU maths bit for bit and see the probe numbers on their own:
 
 ```bash
 cd ~/waterline

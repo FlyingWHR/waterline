@@ -71,7 +71,7 @@ contract MarksTest is Test {
         marks.record(cloudB, gpu, 1, 1, 132, fp, 0, 0, 14105, 7125, bytes32(0));
     }
 
-    /// one voter -> a per-GPU voter id and a per-provider voter id
+    /// one voter -> a per-GPU voter ID and a per-provider voter ID
     function fail(bytes32 gpu, string memory human) internal {
         vm.prank(api);
         marks.record(cloudB, gpu, 2, 3, 108, fp, keccak256(abi.encode(human, gpu)), keccak256(abi.encode(human, "cloud-b")), 0, 0, 0);
@@ -147,7 +147,7 @@ contract MarksTest is Test {
 
     function test_oneHumanCountsOncePerProvider() public {
         fail(gpu1, "human-1");
-        fail(gpu2, "human-1"); // a heavy renter flags a second bad pod: allowed per GPU...
+        fail(gpu2, "human-1"); // the same voter on a second GPU: allowed per GPU...
         assertEq(marks.text(node2, "waterline.status"), unicode"suspect · 1 of 2 reports");
         assertEq(marks.text(provider, "waterline.humans"), "1"); // ...but counts once for the provider
         assertEq(marks.text(provider, "waterline.fails"), "2");

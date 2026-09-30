@@ -1,21 +1,22 @@
 # GPU reference for Waterline
 
-Generated 2026-09-26. Machine-readable version: `core/gpu_specs.json` (35 model entries, 28 confusable pairs).
+Generated 2026-09-26. Machine-readable version: `core/gpu_specs.json` (now 37 model entries and 32 confusable pairs;
+the JSON has since added separate V100 16 GB entries, which this page folds into the V100 rows).
 
 ## 1. Which GPUs are rented, and how much of the market this covers
 
 ### Method
 
-Nobody publishes rental volume (GPU-hours or revenue) broken out by GPU model. SemiAnalysis ClusterMAX 3.0, Silicon Data, Ornn, gputracker and AIMultiple all publish prices, provider ratings or listing counts, but none of them give a split by model. So the ranking uses three proxies:
+No public source we found breaks rental volume (GPU-hours or revenue) out by GPU model. SemiAnalysis ClusterMAX 3.0, Silicon Data, Ornn, gputracker and AIMultiple publish prices, provider ratings or listing counts, not a split by model. So the ranking uses three proxies:
 
 1. **Provider breadth**: how many clouds list the model, from getdeploying.com (index updated 2026-09-26; per-GPU pages dated 2026-09-25). It tracks 108 models across 85 providers and 4,913 configurations.
 2. **Idle marketplace inventory**: rentable offers on Vast.ai, pulled from its public API on 2026-09-26. These are GPUs that are **not** rented, so they measure supply, not demand. Without a key the API caps each query at 64 offers.
 3. **Hyperscaler SKUs and indices**: AWS, GCP and Azure instance families; which GPUs Silicon Data and Ornn chose to index; SemiAnalysis ClusterMAX coverage; Epoch AI shipment estimates (about 4M Hopper and 3M Blackwell GPUs shipped by Oct 2025).
 
-### Coverage estimate (this is an estimate, not an official statistic)
+### Coverage estimate
 
 - **By provider listings.** The 26 GPU families here account for 549 provider listings on getdeploying. The named models left out (P100, RTX 3080, RTX PRO 5000, RTX 4000 Ada, Gaudi 2, A16, MI250, P4) account for 27. That leaves about 73 other tracked models; assuming 1 to 2 providers each gives 73 to 146 more. **Coverage by listing count: about 76–85%.** This metric overweights the tail, because a single small host with one old card counts the same as AWS.
-- **By installed rental capacity (GPU count).** Weighting by capacity, the set covers **95% or more**. Most rented capacity is Hopper, Blackwell and A100 in hyperscaler and neocloud fleets. The GPUs left out are legacy cards (P100, P4, K80, M60), small consumer cards, or parts with no rental presence. This is an inference from shipment volumes and fleet composition, not a measured share.
+- **By installed rental capacity (GPU count).** Weighted by capacity, the set covers an inferred **95% or more** (from shipment volumes and fleet composition). Most rented capacity is Hopper, Blackwell and A100 in hyperscaler and neocloud fleets; the GPUs left out are legacy cards (P100, P4, K80, M60), small consumer cards, or parts with no rental presence.
 
 ### Ranked list
 
@@ -208,7 +209,7 @@ Notes on the unverified fields:
 - **B300/GB300 memory:** derived from the 2.1 TB HGX and 20 TB NVL72 totals. **GH200:** the bandwidth (4.0 TB/s for 96 GB) and compute come from secondary sources.
 - **TDP** for B200 (1,000 W), B300 (1,100 W) and GB200 (1,200 W) comes from secondary sources.
 - **cc for V100 (7.0) and A10G (8.6):** these parts are not on NVIDIA's current CUDA GPU page.
-- **full_die_sms** for GA100 (128), GA102 (84), GA104 (48), TU104 (48), GV100 (84), AD104 (60) and the MI300 die (320 CUs) are from architecture whitepapers that were not re-fetched this session.
+- **full_die_sms** for GA100 (128), GA102 (84), GA104 (48), TU104 (48), GV100 (84), AD104 (60) and the MI300 die (320 CUs) are from architecture whitepapers not re-checked for this table.
 
 ## 5. Sources
 

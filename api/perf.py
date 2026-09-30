@@ -148,7 +148,7 @@ def cohort(report: dict, past: list[dict]) -> dict:
 
 
 def compare(report: dict, past: list[dict]) -> dict:
-    """GET /api/compare/{id}: vs spec, spec values of the relevant models, cohort percentiles."""
+    """Vs spec, spec values of the relevant models, cohort percentiles. (app.compare serves the route.)"""
     metrics = report.get("metrics") or {}
     cls = report.get("classification") or {}
     ids = [cls.get("best_match"), report.get("claimed_model"), *cls.get("ambiguous_with", []),
@@ -162,7 +162,8 @@ def compare(report: dict, past: list[dict]) -> dict:
 
 
 def leaderboard(reports: list[dict], model: str | None = None) -> list[dict]:
-    """Per (model, cloud): n, median verified INT8 TOPS, median pct of spec, pass rate. Best first."""
+    """Per (model, cloud): n, median verified INT8 TOPS, median pct of spec, pass rate. Best first.
+    (app.leaderboard serves the route.)"""
     groups = {}
     for r in reports:
         mid = _model(r)

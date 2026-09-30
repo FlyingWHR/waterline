@@ -1,15 +1,12 @@
 """Link Marks in MultiBaas: upload the ABI, alias the address, link with a startingBlock, create the webhook.
 
   .venv/bin/python scripts/multibaas_link.py [--dry-run]
-
   .venv/bin/python scripts/multibaas_link.py --skip-webhook   # before the Vercel URL exists; re-run later for it
 
-Env (or .env): MB_URL, MB_API_KEY (admin), MARKS_ADDRESS, API_URL (the deployed API, for the webhook; unset = skip it),
-MB_MARKS_ALIAS / MB_MARKS_LABEL (default marks). Endpoints and bodies follow
-https://data.multibaas.com/api/v0/openapi.yaml: POST /contracts/{label}, POST /chains/ethereum/addresses,
-POST /chains/ethereum/addresses/{alias}/contracts, GET+POST /webhooks. Safe to re-run: an existing contract
-version, alias or link counts as done once GET /chains/ethereum/addresses/{alias} confirms it points at
-MARKS_ADDRESS; an existing webhook to the same URL is kept.
+Env (or .env): MB_URL, MB_API_KEY (admin), MARKS_ADDRESS, API_URL (for the webhook; unset skips it),
+MB_MARKS_ALIAS / MB_MARKS_LABEL (default marks). Bodies follow https://data.multibaas.com/api/v0/openapi.yaml.
+Safe to re-run: an existing ABI version, alias or link counts as done once the alias is confirmed to point at
+MARKS_ADDRESS, and an existing webhook to the same URL is kept.
 """
 import argparse
 import json

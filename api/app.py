@@ -65,14 +65,14 @@ def _get(key: str, what: str):
 
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
-# approved_at, approved_via, mandate_id, mandate_expires_at: only on reports from before failures published directly
+# approved_*, mandate_*: legacy fields on older stored reports; kept here so their hashes still match.
 MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
            "listing_reads_as", "approved_at", "approved_via", "mandate_id", "mandate_expires_at", "check_no", "check_name"}
 
 
 def canonical(rep: dict) -> bytes:
-    """The report as evidence: minus MUTABLE fields, JSON with sorted keys, no whitespace, UTF-8.
-    Round-tripped through JSON first so it is byte-identical to what any later read of the store gives."""
+    """The report as evidence: minus MUTABLE fields, sorted keys, no whitespace, UTF-8. Round-tripped through JSON
+    first so the bytes match any later read from the store."""
     frozen = {k: v for k, v in json.loads(json.dumps(rep)).items() if k not in MUTABLE}
     return json.dumps(frozen, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
@@ -238,13 +238,13 @@ def _fail_report(report_id: str) -> dict:
 
 
 def _take_listing(rep: dict, listing: str | None, report_anyway: bool) -> dict:
-    """A failure accuses the provider of misselling this GPU: the reporter states what they rented, in the listing's
-    own words, and it stays beside the report (anyone can compare it with the provider's real listing)."""
+    """A failure accuses the provider of misselling this GPU, so the reporter states what they rented in the
+    listing's own words. It stays beside the report for anyone to compare with the provider's real listing."""
     listing = (listing or rep.get("listing") or "").strip()
     if len(listing) < 8:
         raise HTTPException(422, "Paste the listing you rented (its URL or text) before reporting this GPU.")
-    # Jev reads the listing: reporting an A100 listing "as H100" is the cheap way to smear a provider, so a confident
-    # contradiction stops here unless the reporter insists, and the dashboard shows it either way
+    # Reporting an A100 listing "as H100" is the cheap way to smear a provider: a confident contradiction stops
+    # here unless the reporter insists, and the dashboard flags it either way.
     code, conf, src = listings.parse(listing)
     reads = {"class": code, "confidence": round(conf, 2), "source": src,
              "contradicts": bool(code) and code != rep["claimed_class"] and conf >= 0.8}
@@ -368,8 +368,8 @@ def health():
 
 
 def _flags(rep: dict, reps: list[dict]) -> list[dict]:
-    """Automatic flags on a failure report, worked out when it is read (the record itself never changes): what a
-    reader should weigh before trusting it. Advisory: they change no count or status."""
+    """Advisory flags on a failure report, computed on read: what to weigh before trusting it. They change no
+    count or status, and the stored record never changes."""
     if rep.get("verdict") != "fail":
         return []
     out, reads = [], rep.get("listing_reads_as") or {}
@@ -405,7 +405,7 @@ def report_by_hash(report_hash: str):
     for r in _reports(INDEX_MAX):  # ponytail: scans the 500-report index; a hash:<h> key if the index grows
         if (r.get("report_hash") or "").lower() == h:
             return {k: r.get(k) for k in SUMMARY}
-    raise HTTPException(404, "No check with that report hash here")
+    raise HTTPException(404, "No check with that report hash.")
 
 
 @app.get("/api/reports/{report_id}/evidence")
@@ -695,8 +695,6 @@ def leaderboard(model: str | None = Query(None, max_length=64)):
             "models": [{"id": k, "name": MODELS[k]["name"], "n": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]}
 
 
-# Static page (web/) served from the same deployment; Vercel promotes StaticFiles mounts to its CDN.
-# Mounted last: routes are matched in order, so every /api/* route above wins over the mount.
 # ---- one-line check: the pod runs `curl -fsSL <api>/run.py | python3 - ...`; nothing of ours is written to disk ----
 _ROOT = Path(__file__).resolve().parent.parent
 _BUNDLE = {}
@@ -726,6 +724,8 @@ def run_py(request: Request):
                     media_type="text/x-python")
 
 
+# web/ from the same deployment (Vercel serves StaticFiles mounts from its CDN). Mounted last, so every route
+# above wins over it.
 _web = Path(__file__).resolve().parent.parent / "web"
 if _web.is_dir():
     app.mount("/", StaticFiles(directory=_web, html=True), name="web")
