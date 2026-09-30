@@ -16,7 +16,7 @@ shared record."
 
 Do: on the Overview hero pick **cloud-a** and **H100 SXM**, press Copy, paste it in A1's terminal.
 
-"Waterline changes that. I pick my provider and GPU, copy one line, and run it on the rented machine. Seconds
+"I pick my provider and GPU, copy one line, and run it on the rented machine. Seconds
 later: pass. The right chip, on time, onchain under this GPU's own ENS name. It re-checks at random times, so the
 host can't just behave for the test."
 

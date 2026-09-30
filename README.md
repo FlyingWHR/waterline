@@ -246,11 +246,8 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 
 ## How we built it
 
-Architecture, design decisions and product direction by the builder: the provider-independent design, the
-evidence-vs-listing rule for passes and failures, per-GPU ENS names with only the contract able to write the verdict,
-the health report, and the five-piece system. Implementation was
-assisted by Claude Code, working from our specs (`PLAN.md`, `docs/INTERFACES.md`); the prompts are in `docs/prompts/`.
-All code was written during the event.
+Designed by the builder and implemented with Claude Code from the specs (`PLAN.md`, `docs/INTERFACES.md`); the
+prompts are in `docs/prompts/`. All code was written during the event.
 
 ## Team
 
@@ -259,8 +256,7 @@ All code was written during the event.
 ## Builds on
 
 Unprivileged Topology Certificates (arXiv 2606.24934) and DrawnApart for GPU fingerprinting; standard GPU tooling
-(NVML, DCGM, gpu-fryer-style burns) for the health report. What's new is combining them into a renter-run check
-whose passes carry evidence and whose failures carry the listing, recorded onchain where no host can write.
+(NVML, DCGM, gpu-fryer-style burns) for the health report.
 
 Brand marks: the ENS and Curvegrid logos in `web/logos/` belong to their owners and credit the technologies this
 project builds on.

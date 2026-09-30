@@ -38,7 +38,7 @@ as another GPU stops the report unless the renter reports anyway. Each report is
 ## Pitch
 - **One line:** your agent proves the H100 you're paying for is really an H100, and the verdict goes on a public
   record the provider can't edit.
-- **Versus OpenBook:** OpenBook guarantees the data is fresh; Waterline guarantees the machine is real.
+- **Versus OpenBook:** OpenBook checks the data is fresh; Waterline checks the machine is the one listed.
 - **Per sponsor:** ENS: every GPU has a public name only our API can write. Curvegrid: serverless backend, so MultiBaas is our indexer, our listener, and builds and submits every write. (Don't say "nonce manager": its concurrent nonce management needs MultiBaas-hosted wallets.)
 - **Closer:** proof, place, use.
 - **Next stage (last 15 s or Q&A only):** every renter's container becomes a verifier; the ENSv2 REPORTER role goes
@@ -65,7 +65,7 @@ Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops pay
 |---|---|---|
 | 0:00 | Problem | "Compute is becoming a financial asset. Its delivery is still self-reported." |
 | 0:20 | Setup | 4 pods, 2 clouds. "B2 is an A100 I relabelled myself." |
-| 0:30 | Overview | "Proof of delivered compute. Permissionless: any renter checks." |
+| 0:30 | Overview | "Proof of delivered compute. Any renter can run the check." |
 | 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
 | 1:10 | The exam | "The cores decide the chip; the clock decides the speed." |
 | 1:35 | Fail · Publish | Agent on B2: fail, stops paying, listing pasted, Jev agrees, published. |
