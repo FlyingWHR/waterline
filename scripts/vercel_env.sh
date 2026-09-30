@@ -2,7 +2,7 @@
 # Set the API's Vercel production env from .env without printing values. Re-runnable.
 #   bash scripts/vercel_env.sh            # after `vercel link`
 # Removes every non-Upstash var Vercel imported from .env.example (placeholders, script-only keys like DEPLOYER_KEY),
-# then adds back only what the API reads. WORLD_MOCK / ALLOW_CLIENT_SIZES stay unset in production.
+# then adds back only what the API reads (old World ID vars are removed and not re-added). ALLOW_CLIENT_SIZES stays unset in production.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 vc() { env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy vercel "$@"; }
@@ -39,8 +39,6 @@ add ENS_UNIVERSAL_RESOLVER "$(val ENS_UNIVERSAL_RESOLVER 0xeEeEEEeE14D718C2B47D9
 add REPORTER_KEY           "$(val REPORTER_KEY)"
 add MARKS_ADDRESS          "$(val MARKS_ADDRESS)"
 add API_URL                "$API_URL"
-add VOTER_SECRET           "$(val VOTER_SECRET)"
-add AGENT_TOKEN_SECRET     "$(val AGENT_TOKEN_SECRET)"
 add MB_URL                 "$(val MB_URL)"
 add MB_API_KEY             "$(val MB_API_KEY)"
 add MB_MARKS_ALIAS         "$(val MB_MARKS_ALIAS marks)"
@@ -48,8 +46,5 @@ add MB_MARKS_LABEL         "$(val MB_MARKS_LABEL marks)"
 add MB_WEBHOOK_SECRET      "$(val MB_WEBHOOK_SECRET)"
 add CHECK_STEPS            "$(val CHECK_STEPS)"
 add DEADLINES              "$(val DEADLINES)"
-add WORLD_ISSUER           "$(val WORLD_ISSUER https://sandbox.auth.world.org)"
-add WORLD_CLIENT_ID        "$(val WORLD_CLIENT_ID)"
-add WORLD_CLIENT_SECRET    "$(val WORLD_CLIENT_SECRET)"
 add TYPESAFE_API_KEY       "$(val TYPESAFE_API_KEY)"   # Jev reads reporters' listings
 echo "Done. Deploy: vercel --prod"

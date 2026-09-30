@@ -14,8 +14,8 @@ def classify(pr):
 
 
 class FakeApi:
-    def __init__(self, world="approved"):
-        self.world = world  # outcome of report/approve/poll
+    def __init__(self, publish="published"):
+        self.publish = publish  # outcome of report/publish: published | contradicts
         self.sessions, self.calls = {}, []
         api = self
 
@@ -78,15 +78,9 @@ class FakeApi:
             return 200, {"report_id": "r1", "verdict": "pass" if ok else "fail", "measured_class": cls,
                          "reasons": reasons, "gpu_name": "gpu-12345678.cloud-b.waterline.eth",
                          "node": "0x" + "ab" * 32, "published": ok, "tx": "0xpass" if ok else None}
-        if path in ("/api/world/login/start", "/api/report/approve/start"):
-            return 200, {"device_id": "d1", "user_code": "WXYZ-1234",
-                         "verification_uri_complete": "https://world.example/device?code=WXYZ-1234",
-                         "expires_in": 600}
-        if path == "/api/world/login/poll":
-            return 200, {"status": "approved", "agent_token": "agent-tok"}
-        if path == "/api/report/approve/poll":
-            if self.world == "approved":
-                return 200, {"status": "approved", "published": True, "tx": "0xfail",
-                             "status_text": "suspect · 1 of 2 humans"}
-            return 200, {"status": self.world}
+        if path == "/api/report/publish":
+            if self.publish == "contradicts" and not b.get("report_anyway"):
+                return 409, {"error": "Your listing reads as A100 SXM (rules), but you are reporting it as H100 SXM. "
+                                      "Check the listing, or report anyway."}
+            return 200, {"published": True, "tx": "0xfail", "status_text": "Recorded on Marks."}
         return 404, {"error": "Unknown path."}

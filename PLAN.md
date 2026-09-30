@@ -15,45 +15,45 @@ goes on a record the provider can't edit.
 - Clouds test their own fleets and reviewers audit them now and then; **the renter can't check their own rental**.
   (Say "a claim the renter can't check", not "nobody checks": the latter is refutable.)
 
-## Four pillars
+## Three pillars
 | Pillar | Question | Carried by | Built as |
 |---|---|---|---|
 | **Proof** | Is this GPU what was sold? | Profiler | Secret INT8 exam under a deadline on the API's clock; seal (Merkle root), then 8 random rows re-graded; core-count staircase + FP8; performance profile vs 37 models; health report advisory only |
 | **Place** | Where does truth live? | ENSv2 | Marks is the resolver of `waterline.eth`: every `gpu-….waterline.eth` resolves with no registration (wildcard). Writing is governed by ENSv2's **Enhanced Access Control**: a REPORTER role, scoped per GPU name, held today only by our API |
-| **People** | Who may say it's false? | World ID for Agents | Stable, private, pairwise ID (Human Continuity OIDC): any number of agents, one human voice per GPU. Renting and passing need no World check; publishing a failure steps up to a fresh approval. Deny publishes nothing |
 | **Use** | How does truth become action? | Curvegrid MultiBaas | Indexer (history the agent chooses from), listener (webhook confirms each report), and write path (MultiBaas builds each write with nonce and gas; we check and sign; it submits). The history decides, not the LLM. On a FAIL the agent stops paying for that rental |
 
-Deliberately not used: soulbound names, aliasing (ENS); IDKit credentials, MCP flow, Monad credits (World);
-Intercepta (no payment to screen). Jev only reads listing text; it never picks a GPU.
+Deliberately not used: soulbound names, aliasing (ENS); Intercepta (no payment to screen). Jev only reads listing
+text; it never picks a GPU.
+
+Failures carry the listing: a failed check publishes with the listing the renter rented; Jev reads it, and a reading
+as another GPU stops the report unless the renter reports anyway. Each report is its own voter; two mark a GPU failed.
 
 ## Principles and limits
-- Evidence decides; the machine's claims only inform. Passes carry evidence; failures need verified humans.
+- Evidence decides; the machine's claims only inform. Passes carry evidence; failures carry the listing.
 - No provider cooperation; the host never writes the score.
 - **Limits, said first:** the switch attack (mitigated by random in-job checks; hardware attestation closes it);
-  no exact serial proof yet; bribed humans; World checked in our backend; the demo's "fake H100" is an A100 we
-  listed ourselves.
+  no exact serial proof yet; failure reports carry no identity, so one renter can file both that mark a GPU failed;
+  the demo's "fake H100" is an A100 we listed ourselves.
 
 ## Pitch
 - **One line:** your agent proves the H100 you're paying for is really an H100, and the verdict goes on a public
   record the provider can't edit.
 - **Versus OpenBook:** OpenBook guarantees the data is fresh; Waterline guarantees the machine is real.
-- **Per sponsor:** ENS: every GPU has a public name only our API can write. World: any number of agents, one human
-  voice per GPU. Curvegrid: serverless backend, so MultiBaas is our indexer, our listener, and builds and submits every write. (Don't say "nonce manager": its concurrent nonce management needs MultiBaas-hosted wallets.)
-- **Closer:** proof, place, people, use.
+- **Per sponsor:** ENS: every GPU has a public name only our API can write. Curvegrid: serverless backend, so MultiBaas is our indexer, our listener, and builds and submits every write. (Don't say "nonce manager": its concurrent nonce management needs MultiBaas-hosted wallets.)
+- **Closer:** proof, place, use.
 - **Next stage (last 15 s or Q&A only):** every renter's container becomes a verifier; the ENSv2 REPORTER role goes
-  from our one API to many independent verifiers (already one `grantRoles` call per GPU or for all), World keeps
-  each a distinct human. That network is the delivered-quality layer for GPU lending and compute futures
+  from our one API to many independent verifiers (already one `grantRoles` call per GPU or for all). That network is the delivered-quality layer for GPU lending and compute futures
   (Watermark). No tokens or data sales in the hackathon pitch.
 
 ## Architecture: five pieces, one chain (Ethereum Sepolia)
 ```
-agent/      renter's laptop: World login once -> Jev reads the listing -> SSH: run the profiler in the pod
-            -> FAIL: stop paying (stop command), ask the human to approve via World -> choose next GPU from history
+agent/      renter's laptop: Jev reads the listing -> SSH: run the profiler in the pod
+            -> FAIL: stop paying (stop command), publish the failure with the listing -> choose next GPU from history
 prover/     in the rented pod: exam, staircase, FP8, performance profile, health report (CuPy + torch, NVML)
-api/        Vercel Python + Upstash Redis: exam, verdict, classification, World login/step-up, writes via MultiBaas,
+api/        Vercel Python + Upstash Redis: exam, verdict, classification, failure publishing, writes via MultiBaas,
             MultiBaas webhook listener, compare / leaderboard endpoints, serves web/
 contracts/  Marks: report store + ENSIP-10 wildcard resolver for *.waterline.eth + ENSv2 Enhanced Access Control
-web/        control panel: Overview, GPUs, Checks (Approve with World), Check detail (performance, vs models,
+web/        control panel: Overview, GPUs, Checks (Publish a failure with its listing), Check detail (performance, vs models,
             vs same model, health), Providers (roll-up + by model), Models, Settings
 core/       challenge maths, frozen vectors, gpu_specs.json (37 models)
 ```
@@ -68,24 +68,24 @@ Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops pay
 | 0:30 | Overview | "Proof of delivered compute. Permissionless: any renter checks." |
 | 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
 | 1:10 | The exam | "The cores decide the chip; the clock decides the speed." |
-| 1:35 | Fail · Approve | Agent on B2: fail, stops paying, listing pasted, Jev agrees, World Deny then Approve. |
-| 2:15 | Record · Compare | The ENS name tree: B2 suspect, one voice on cloud-b, % of rating per cloud; Verify the hash. |
+| 1:35 | Fail · Publish | Agent on B2: fail, stops paying, listing pasted, Jev agrees, published. |
+| 2:15 | Record · Compare | The ENS name tree: B2 suspect, one failure report on cloud-b, % of rating per cloud; Verify the hash. |
 | 3:00 | Use | MultiBaas indexed; `agent choose` skips B2. |
 | 3:20 | Close | "Proof of Delivered Compute." |
 Full script: the showcase's Demo tab. Video rules: 2–4 min (auto-reject outside), ≥720p, own voice, no speed-up,
-no phone recording (mirror the phone to the Mac for the World ID app).
+no phone recording.
 
 ## Status (Sat 14:30 JST)
 Built and tested locally: all five pieces, 122 Python tests + 14 contract tests + the ENS test on a Sepolia fork.
-Not yet live: nothing deployed, no real GPU run, World and MultiBaas only simulated or mocked.
+Not yet live: nothing deployed, no real GPU run, MultiBaas only simulated.
 
 ## Remaining schedule (to Sun 09:00 JST)
 | When (JST) | Do | Needs from you |
 |---|---|---|
 | Sat now → 16:00 | Deploy Marks + register waterline.eth; link in MultiBaas; webhook | **Fund deployer + reporter; MultiBaas deployment + keys** |
-| Sat 16:00–18:00 | Deploy API + web to Vercel with Redis; World sandbox client; live Deny/Approve | **Vercel project + domain; World sandbox client + TestFlight** |
+| Sat 16:00–18:00 | Deploy API + web to Vercel with Redis; a live failure published | **Vercel project + domain** |
 | Sat 18:00–22:00 | GPU pods: `python -m prover.gpu` self-check, calibrate steps/deadline, real H100 vs A100 runs, real numbers into the demo | **Rent H100 SXM + A100 pods** |
-| Sat 22:00–Sun 02:00 | Fix what the live runs expose; README links; MultiBaas + World feedback in your words | |
+| Sat 22:00–Sun 02:00 | Fix what the live runs expose; README links; MultiBaas feedback in your words | |
 | Sun 02:00–04:00 | Sleep (minimum) | |
 | Sun 04:00–08:00 | Rehearse, record the video (3:30), final README, push to GitHub | **GitHub repo** |
 | Sun 08:00–08:45 | Submit (15 min buffer before 09:00) | |
@@ -94,9 +94,9 @@ If the pods slip past 20:00, record the check beat with whatever real run exists
 ## Go-live sequence
 Done: Marks `0xb69D2F0690b3d8F96Ff041eA524657391FB521c1` deployed, `waterline.eth` registered (resolver = Marks),
 reporter holds the REPORTER role, Marks linked in MultiBaas (indexing from block 11784289).
-1. Vercel project + fixed domain; `vercel --prod` with env: REDIS_URL, VOTER_SECRET, AGENT_TOKEN_SECRET, REPORTER_KEY,
+1. Vercel project + fixed domain; `vercel --prod` with env: REDIS_URL, REPORTER_KEY,
    MARKS_ADDRESS, SEPOLIA_RPC, PUBLIC_SEPOLIA_RPC, ENS_UNIVERSAL_RESOLVER, MB_URL, MB_API_KEY, MB_MARKS_ALIAS,
-   MB_MARKS_LABEL, WORLD_ISSUER, WORLD_CLIENT_ID, WORLD_CLIENT_SECRET, CHECK_STEPS (WORLD_MOCK and ALLOW_CLIENT_SIZES unset).
+   MB_MARKS_LABEL, CHECK_STEPS (ALLOW_CLIENT_SIZES unset).
 2. `API_URL` in .env → `.venv/bin/python scripts/multibaas_link.py` (creates the webhook, prints its secret once) →
    `vercel env add MB_WEBHOOK_SECRET production` → `vercel --prod`.
 3. `.venv/bin/python scripts/check_live.py` until all ✓.
@@ -108,23 +108,20 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
 - Pass/fail comes from the check only. Telemetry, Jev and self-reported data never decide a verdict.
 - Parts to check are chosen with the API's secret randomness after the answer is locked in.
 - The profiler runs only in the renter's pod, launched by the renter's agent.
-- Only holders of the ENSv2 REPORTER role write to Marks (today: our API). A failure needs a fresh approval;
-  one voice per human per GPU; two humans to mark a GPU failed.
+- Only holders of the ENSv2 REPORTER role write to Marks (today: our API). A failure needs the listing the renter
+  rented; each report is its own voter; two failure reports mark a GPU failed.
 - Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = FAIL (needs
-  people). Right chip, right answers, too slow = DEGRADED (published at once with its numbers, never counts toward
+  the listing). Right chip, right answers, too slow = DEGRADED (published at once with its numbers, never counts toward
   failed; throttle flags explain it, never decide it). Pass = in time.
-- Asymmetry: passes need real silicon, failures need real people. One approval (the World `sub`) gives a per-GPU and
-  a per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`, each human
-  counted once per provider. Two passes after a GPU's last failure = `recovered`. Providers may write
+- Asymmetry: passes need real silicon, failures need the listing. Each failure report gives a per-GPU and a
+  per-provider voter id; Marks rolls every report up to `<cloud>.waterline.eth`. Two passes after a GPU's last failure = `recovered`. Providers may write
   `waterline.note` (NOTE role) on their own name, never a score.
-- A failure approval requires the listing (URL or text) and an acknowledgement; the check page shows it, the
-  reporter's pseudonymous id and their report count on that provider. Possible to abuse, never anonymous-free.
+- A failure requires the listing (URL or text); the check page shows it with Jev's reading and any automatic flags.
 - `core/vectors.json` is frozen; `python -m core.verify_vectors` must pass.
 
 ## Demo rules
-- Solo: no teammates. The failed GPU ends as `suspect · 1 of 2 humans`.
+- Solo: no teammates. The failed GPU ends as `suspect · 1 of 2 reports`.
 - Neutral names (Cloud A / Cloud B); say on stage the A100 was relabelled by us.
-- World: Deny first (required path), then Approve.
 - Pods rented before the demo; every number on screen comes from the live run.
 - No overclaims: "the renter can't check", "backed by evidence", "the host can't see who reported".
 
@@ -132,9 +129,5 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
 - ENSv2: addresses from tag `sepolia-deployment-2026-09-15`, kept in one config file (no hard-coded values is a
   prize rule). waterline.eth: MockUSDC mint -> approve -> commit -> wait 60 s -> register (min 28 days).
   Wildcard resolvers must support ERC-165 `0x9061b923`. Marks inherits ENSv2's EnhancedAccessControl (remapped from contracts-v2); the role grant is `grantRoles(uint256(node), ROLE_REPORTER, verifier)` or `grantRootRoles` for all GPUs. Use viem >= 2.35; the ensjs npm package is stale.
-- World: two portals. World ID for Agents (our prize) = the Human Continuity OIDC IdP at `sandbox.auth.world.org`,
-  clients registered at `sandbox.auth.world.org/portal` (device grant). developer.world.org is IDKit: its app ids
-  get `invalid_client` at the IdP. The event mocks proofs ("you don't need sandbox app anymore"), so Deny/Approve
-  runs in a browser; say on camera the identities are test ones. Pairwise `sub` = one stable id per human for us.
 - MultiBaas: link Marks right after deploy with a `startingBlock` (free plan looks back 100 blocks); sign
   locally; DApp User key only in the browser; add every frontend origin to CORS.

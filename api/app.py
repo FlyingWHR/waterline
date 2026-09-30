@@ -1,5 +1,4 @@
 """Waterline API (FastAPI). Vercel loads `app` via [tool.vercel] entrypoint; locally: uvicorn api.app:app."""
-import hashlib
 import hmac
 import json
 import logging
@@ -12,7 +11,6 @@ from typing import Any
 
 from eth_utils import keccak
 import httpx
-import jwt
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -26,7 +24,7 @@ from core import listing as listings
 from core import classes as gpu_classes
 from core import providers as providers_known
 
-from . import chain, world
+from . import chain
 from . import perf
 from .check import (claimed_models, class_check, classify, deadline_s, draw_samples, gpu_label, grade,
                     throughput)
@@ -35,8 +33,6 @@ from .store import redis_url, store
 log = logging.getLogger("waterline.api")
 SESSION_TTL = 3600
 REPORT_TTL = 7 * 24 * 3600
-VOTE_TTL = 365 * 24 * 3600
-FRESH_S = 120
 PASS, FAIL, DEGRADED = 1, 2, 3
 INDEX, INDEX_MAX = "reports:index", 500
 CHECK_N = 16384
@@ -69,6 +65,7 @@ def _get(key: str, what: str):
 
 
 # Fields that change after the verdict (publishing, indexing); everything else is the frozen evidence.
+# approved_at, approved_via, mandate_id, mandate_expires_at: only on reports from before failures published directly
 MUTABLE = {"published", "tx", "via", "indexed", "indexed_at", "status_text", "report_hash", "provider_voter", "listing",
            "listing_reads_as", "approved_at", "approved_via", "mandate_id", "mandate_expires_at", "check_no", "check_name"}
 
@@ -166,7 +163,7 @@ def check_reveal(body: RevealIn):
     classification, class_reasons = class_check(s["claimed_class"], s["probes"], body.metrics)
     measured = classify(s["probes"], body.metrics, s["claimed_class"])  # on-chain class code, the claim when consistent
     # Two layers. Class comes only from heat-proof probes (cores, FP8): wrong chip or wrong answers = fail, which
-    # needs people. Heat, power caps and sharing only slow a chip: right chip, right answers, too slow = degraded,
+    # needs the listing. Heat, power caps and sharing only slow a chip: right chip, right answers, too slow = degraded,
     # published with its numbers like a pass, never counted toward failed.
     reasons = work + class_reasons + late
     verdict = "fail" if work or class_reasons else "degraded" if late else "pass"
@@ -186,7 +183,7 @@ def check_reveal(body: RevealIn):
            "fingerprint_changed": bool(prev) and prev.get("fingerprint") != fp,
            "cores": s["probes"]["sms"], "fingerprint": s["probes"]["fingerprint"].lower(),
            "created_at": int(now()), "cloud": s["cloud"], "claimed_class": s["claimed_class"],
-           "status_text": "Waiting for a human approval. Nothing is published yet.",
+           "status_text": "Waiting for the listing you rented. Nothing is published yet.",
            "probes": s["probes"], "staircase": s.get("staircase"), "elapsed_s": s["elapsed_s"],
            "deadline_s": s["deadline_s"], "samples": [[st, r] for st, r, _ in s["samples"]], "n": s["n"],
            "steps": s["steps"], **throughput(s["n"], s["steps"], s["elapsed_s"], s["claimed_class"]),
@@ -212,73 +209,11 @@ def check_reveal(body: RevealIn):
                                 "published", "tx", "via", "report_hash")}
 
 
-# ---- World: login and approval (device grant) ---------------------------------------------------------------
-class DeviceIn(BaseModel):
-    device_id: str
-
-
-class ApproveIn(BaseModel):
+# ---- failure reports: published with the listing the reporter rented -----------------------------------------------
+class PublishIn(BaseModel):
     report_id: str
-    agent_token: str
     listing: str | None = Field(default=None, max_length=2000)
     report_anyway: bool = False  # the listing reads as another class than the one reported, and the reporter insists
-
-
-def _new_device(extra: dict) -> dict:
-    try:
-        d = world.device_start()
-    except world.Unavailable:
-        raise HTTPException(503, "World is unavailable; try again shortly.")
-    did = secrets.token_urlsafe(16)
-    store.put(f"dev:{did}", extra | {"device_code": d["device_code"], "interval": d["interval"], "next_poll": 0},
-              d["expires_in"])
-    return {"device_id": did, "user_code": d["user_code"],
-            "verification_uri_complete": d["verification_uri_complete"], "expires_in": d["expires_in"]}
-
-
-def _poll(device_id: str):
-    """-> (device record, status, claims). Terminal results are cached on the record (tokens never are)."""
-    key = f"dev:{device_id}"
-    d = _get(key, "device_id")
-    if "result" in d or now() < d["next_poll"]:
-        return d, "pending", None
-    try:
-        status, claims = world.device_poll(d["device_code"])
-    except world.Unavailable:
-        raise HTTPException(503, "World is unavailable; this is not an approval. Poll again.")
-    except jwt.PyJWTError:
-        status, claims = "denied", None  # World's answer did not verify
-    if status == "slow_down":
-        d["interval"] += 5
-        status = "pending"
-    d["next_poll"] = now() + d["interval"]
-    store.put(key, d, 1200)
-    return d, status, claims
-
-
-def _finish(device_id: str, d: dict, result: dict) -> dict:
-    d["result"] = {k: v for k, v in result.items() if k != "agent_token"}
-    store.put(f"dev:{device_id}", d, 1200)
-    return result
-
-
-@app.post("/api/world/login/start")
-def login_start():
-    return _new_device({"kind": "login"})
-
-
-@app.post("/api/world/login/poll")
-def login_poll(body: DeviceIn):
-    d, status, claims = _poll(body.device_id)
-    if d.get("kind") != "login":
-        raise HTTPException(404, "Unknown or expired device_id.")
-    if "result" in d:
-        return d["result"]
-    if status == "pending":
-        return {"status": "pending"}
-    if status != "approved":
-        return _finish(body.device_id, d, {"status": status})
-    return _finish(body.device_id, d, {"status": "approved", "agent_token": world.make_agent_token(claims["sub"])})
 
 
 def _check_name(rep: dict) -> dict:
@@ -296,24 +231,10 @@ def _hash_bytes(rep: dict) -> bytes:
 def _fail_report(report_id: str) -> dict:
     rep = _get(f"report:{report_id}", "report")
     if rep["verdict"] != "fail":
-        raise HTTPException(409, "Only failed reports need approval.")
+        raise HTTPException(409, "Only failed reports are published this way.")
     if rep["published"]:
         raise HTTPException(409, "This report is already published.")
     return rep
-
-
-@app.post("/api/report/approve/start")
-def approve_start(body: ApproveIn):
-    sub = world.agent_sub(body.agent_token)
-    if sub is None:
-        raise HTTPException(401, "The agent token is invalid or expired; log in again.")
-    rep = _fail_report(body.report_id)
-    if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
-        raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
-    # a failure accuses the provider of misselling this GPU: the reporter states what they rented, in the listing's
-    # own words, and it stays beside the report (anyone can compare it with the provider's real listing)
-    _take_listing(rep, body.listing, body.report_anyway)
-    return _new_device({"kind": "approve", "report_id": body.report_id, "sub": sub})
 
 
 def _take_listing(rep: dict, listing: str | None, report_anyway: bool) -> dict:
@@ -335,158 +256,33 @@ def _take_listing(rep: dict, listing: str | None, report_anyway: bool) -> dict:
     return rep
 
 
-@app.post("/api/report/approve/poll")
-def approve_poll(body: DeviceIn):
-    d, status, claims = _poll(body.device_id)
-    if d.get("kind") != "approve":
-        raise HTTPException(404, "Unknown or expired device_id.")
-    if "result" in d:
-        return d["result"]
-    if status == "pending":
-        return {"status": "pending"}
-    if status != "approved":
-        return _finish(body.device_id, d, {"status": status, "published": False})
-
-    def refuse(text):
-        return _finish(body.device_id, d, {"status": "approved", "published": False, "status_text": text})
-
-    if now() - claims["auth_time"] >= FRESH_S:
-        return refuse("The approval was not fresh; approve again.")
-    # the person who approved is the reporter, whatever login started it; a different (or stale) login is rebound
-    out = _publish_fail(_fail_report(d["report_id"]), claims["sub"], {"approved_via": "world"})
-    if out.get("retry"):
-        return out
-    rebound = not hmac.compare_digest(claims["sub"].encode(), d["sub"].encode())
-    return _finish(body.device_id, d, out) | ({"agent_token": world.make_agent_token(claims["sub"])} if rebound else {})
+@app.post("/api/report/publish")
+def report_publish(body: PublishIn):
+    return _publish_fail(_take_listing(_fail_report(body.report_id), body.listing, body.report_anyway))
 
 
-def _publish_fail(rep: dict, sub: str, extra: dict) -> dict:
-    """One person's failure report onchain: one voice per person per GPU, counted once per provider."""
+def _publish_fail(rep: dict) -> dict:
+    """A failure report onchain. Each report is its own voter, so two failure reports mark a GPU failed."""
     node = bytes.fromhex(rep["node"][2:])
     pnode = chain.namehash(f"{rep['cloud']}.waterline.eth")
-    vid, pvid = world.voter_id(sub, node), world.voter_id(sub, pnode)
-    vote_key, pub_key = f"vote:{vid.hex()}", f"published:{rep['report_id']}"
-    if not store.add(vote_key, 1, VOTE_TTL):
-        return {"status": "approved", "published": False, "status_text": "You have already reported this GPU: one voice per person per GPU."}
+    rid = rep["report_id"].encode()
+    vid, pvid = keccak(b"gpu:" + rid + node), keccak(b"provider:" + rid + pnode)
+    pub_key = f"published:{rep['report_id']}"
     if not store.add(pub_key, 1, REPORT_TTL):
-        store.delete(vote_key)
-        return {"status": "approved", "published": False, "status_text": "This report is already published."}
+        return {"published": False, "status_text": "This report is already published."}
     try:
         tops_x10, pct_bps = _perf_onchain(rep)
         tx = chain.record(rep["cloud"], rep["gpu_name"].split(".")[0], FAIL, rep["measured_class"], rep["cores"],
                           bytes.fromhex(rep["fingerprint"][2:]), vid, pvid, tops_x10, pct_bps, _hash_bytes(rep))
     except chain.ChainError as e:
-        store.delete(vote_key)
         store.delete(pub_key)
         log.error("publishing fail %s failed: %s", rep["report_id"], e)
-        return {"status": "approved", "published": False, "retry": True, "status_text": "Publishing failed; try again."}
+        return {"published": False, "retry": True, "status_text": "Publishing failed; try again."}
     via = chain.write_path()
-    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex(),
-            "approved_at": int(now())} | extra | _check_name(rep)
+    rep |= {"published": True, "tx": tx, "status_text": "Recorded on Marks.", "via": via, "provider_voter": pvid.hex()} \
+        | _check_name(rep)
     store.put(f"report:{rep['report_id']}", rep, REPORT_TTL)
-    return {"status": "approved", "published": True, "tx": tx, "via": via, "status_text": "Recorded on Marks."}
-
-
-# ---- World mandate: one fresh approval lets a person's agents report failures for a while ---------------------------
-# What protects the record is one voice per person per GPU and per provider, not one scan per report: twenty agents
-# under one person are still one voice, and a GPU still needs two different people. The mandate is bounded (hours,
-# reports), revocable, and every report made under it says so.
-class MandateIn(BaseModel):
-    agent_token: str
-    hours: int = Field(24, ge=1, le=72)
-    max_reports: int = Field(20, ge=1, le=100)
-
-
-class TokenIn(BaseModel):
-    agent_token: str
-
-
-class AutoIn(BaseModel):
-    report_id: str
-    agent_token: str
-    listing: str | None = Field(default=None, max_length=2000)
-
-
-def _sub(agent_token: str) -> str:
-    sub = world.agent_sub(agent_token)
-    if sub is None:
-        raise HTTPException(401, "The agent token is invalid or expired; log in again.")
-    return sub
-
-
-def _mandate_key(sub: str) -> str:
-    return "mandate:" + hashlib.sha256(sub.encode()).hexdigest()
-
-
-def _mandate_view(m: dict | None) -> dict | None:
-    if not m:
-        return None
-    used = len([i for i in range(m["max_reports"]) if store.get(f"mandate-use:{m['id']}:{i}")])
-    active = not m.get("revoked_at") and now() < m["expires_at"] and used < m["max_reports"]
-    return {k: m.get(k) for k in ("id", "created_at", "expires_at", "max_reports", "revoked_at")} | {"used": used, "active": active}
-
-
-@app.post("/api/world/mandate/start")
-def mandate_start(body: MandateIn):
-    sub = _sub(body.agent_token)
-    return _new_device({"kind": "mandate", "sub": sub, "hours": body.hours, "max_reports": body.max_reports})
-
-
-@app.post("/api/world/mandate/poll")
-def mandate_poll(body: DeviceIn):
-    d, status, claims = _poll(body.device_id)
-    if d.get("kind") != "mandate":
-        raise HTTPException(404, "Unknown or expired device_id.")
-    if "result" in d:
-        return d["result"]
-    if status == "pending":
-        return {"status": "pending"}
-    if status != "approved":
-        return _finish(body.device_id, d, {"status": status, "mandate": None})
-    if now() - claims["auth_time"] >= FRESH_S:
-        return _finish(body.device_id, d, {"status": "approved", "mandate": None, "status_text": "The approval was not fresh; try again."})
-    # the mandate belongs to the person who approved it; the caller gets a login bound to them (a stale one is replaced)
-    t = int(now())
-    m = {"id": secrets.token_hex(6), "created_at": t, "expires_at": t + d["hours"] * 3600, "max_reports": d["max_reports"]}
-    store.put(_mandate_key(claims["sub"]), m, d["hours"] * 3600 + 86400)  # a new mandate replaces the old one
-    return _finish(body.device_id, d, {"status": "approved", "mandate": _mandate_view(m)}) | {
-        "agent_token": world.make_agent_token(claims["sub"])}
-
-
-@app.post("/api/world/mandate/status")
-def mandate_status(body: TokenIn):
-    return {"mandate": _mandate_view(store.get(_mandate_key(_sub(body.agent_token))))}
-
-
-@app.post("/api/world/mandate/revoke")
-def mandate_revoke(body: TokenIn):
-    key = _mandate_key(_sub(body.agent_token))
-    m = store.get(key)
-    if m and not m.get("revoked_at"):
-        m["revoked_at"] = int(now())
-        store.put(key, m, 86400)
-    return {"mandate": _mandate_view(m)}
-
-
-@app.post("/api/report/auto")
-def report_auto(body: AutoIn):
-    """An agent reports a failure under its person's mandate: the same checks as a scan approval, no phone."""
-    sub = _sub(body.agent_token)
-    m = store.get(_mandate_key(sub))
-    view = _mandate_view(m)
-    if not (view and view["active"]):
-        raise HTTPException(403, "Your agents don't have permission to report right now (none given, or it ended). Approve this report yourself with World.")
-    rep = _fail_report(body.report_id)
-    if store.get(f"vote:{world.voter_id(sub, bytes.fromhex(rep['node'][2:])).hex()}"):
-        raise HTTPException(409, "You have already reported this GPU: one voice per person per GPU.")
-    rep = _take_listing(rep, body.listing, False)  # a mandate never overrides Jev: a contradiction needs the person
-    slot = next((i for i in range(m["max_reports"]) if store.add(f"mandate-use:{m['id']}:{i}", 1, m["expires_at"] - int(now()) + 86400)), None)
-    if slot is None:
-        raise HTTPException(403, "Your agent permission has no reports left. Approve this report yourself, or give a new permission.")
-    out = _publish_fail(rep, sub, {"approved_via": "mandate", "mandate_id": m["id"], "mandate_expires_at": m["expires_at"]})
-    if not out["published"]:
-        store.delete(f"mandate-use:{m['id']}:{slot}")  # nothing was published: the report doesn't use the mandate
-    return out | {"mandate": _mandate_view(m)}
+    return {"published": True, "tx": tx, "via": via, "status_text": "Recorded on Marks."}
 
 
 # ---- control panel reads ------------------------------------------------------------------------------------
@@ -526,12 +322,12 @@ MB_PROVIDER_QUERY = {"events": [{"eventName": PROVIDER_TALLY, "select": _mb_sele
 
 
 def gpu_status(active: int, fails: int, passes: int, last_verdict=None) -> str:
-    """Same rule as Marks.status: active humans since the last recovery decide; then a degraded latest check; a GPU
+    """Same rule as Marks.status: active failure reports since the last recovery decide; then a degraded latest check; a GPU
     that had failures and has no active ones has recovered (two passes after its last failure)."""
     if active >= 2:
         return "failed"
     if active == 1:
-        return "suspect · 1 of 2 humans"
+        return "suspect · 1 of 2 reports"
     if last_verdict in (DEGRADED, "degraded"):
         return "degraded"
     if fails > 0:
@@ -542,7 +338,7 @@ def gpu_status(active: int, fails: int, passes: int, last_verdict=None) -> str:
 def provider_status(p: dict) -> str:
     """Same words as Marks.providerStatus: descriptive, a provider is judged GPU by GPU."""
     g, h = p["gpus"], p["humans"]
-    return f"{p['failed_gpus']} of {g} GPU{'' if g == 1 else 's'} failed · reported by {h} {'person' if h == 1 else 'people'}"
+    return f"{p['failed_gpus']} of {g} GPU{'' if g == 1 else 's'} failed · {h} failure report{'' if h == 1 else 's'}"
 
 
 def _reports(limit: int) -> list[dict]:
@@ -564,8 +360,6 @@ def health():
             "chain": {"mode": "live" if live else "dry-run", "write_path": chain.write_path(), "chain_id": 11155111,
                       "marks": os.environ.get("MARKS_ADDRESS") or None, "reporter": reporter,
                       "reporter_balance_eth": chain.balance_eth(reporter) if live else None},
-            "world": {"mode": "mock" if world.mock_on() else "live" if os.environ.get("WORLD_CLIENT_ID")
-                      and os.environ.get("WORLD_CLIENT_SECRET") else "not-configured", "issuer": world.issuer()},
             "multibaas": {"configured": bool(mb and os.environ.get("MB_API_KEY")), "url": mb or None,
                           "webhook": bool(os.environ.get("MB_WEBHOOK_SECRET"))},
             "ens": {"parent": "waterline.eth", "universal_resolver": _universal_resolver(),
@@ -601,8 +395,6 @@ def reports(limit: int = Query(50, ge=1, le=INDEX_MAX)):
 @app.get("/api/reports/{report_id}")
 def report(report_id: str):
     rep, reps = _get(f"report:{report_id}", "report"), _reports(INDEX_MAX)
-    if rep.get("provider_voter"):  # pseudonymous, never a name: how many of this provider's GPUs this person reported
-        rep = rep | {"reporter_reports": sum(r.get("provider_voter") == rep["provider_voter"] for r in reps)}
     return rep | {"flags": _flags(rep, reps)}
 
 
@@ -661,7 +453,7 @@ def _mb_providers() -> list[dict]:
 
 def _local_tallies(reps: list[dict]) -> tuple[list[dict], list[dict]]:
     """Mirror of Marks' GPU and provider tallies from our own published reports, replayed in order (each published
-    fail is a distinct human for its GPU; provider humans come from the per-provider voter ids)."""
+    fail is its own voter, on its GPU and on its provider)."""
     g, prov = {}, {}
     for r in sorted(reversed(reps), key=lambda r: r.get("created_at", 0)):  # reps are newest first; ties keep order
         if not r["published"]:
@@ -737,7 +529,7 @@ def known_providers():
 
 @app.get("/api/providers")
 def providers():
-    """Reputation per provider (<cloud>.waterline.eth): each human counts once however many of its GPUs they reported."""
+    """Reputation per provider (<cloud>.waterline.eth): the roll-up of its GPUs' records."""
     reps = _reports(INDEX_MAX)
     source, error, rows = "local", None, None
     if os.environ.get("MB_URL") and os.environ.get("MB_API_KEY"):

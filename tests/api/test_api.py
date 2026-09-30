@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from api import app as appmod, chain, world
+from api import app as appmod, chain
 from core.challenge import Params, fingerprint_rows, leaf_hash, merkle_root, product
 
 client = TestClient(appmod.app)
@@ -13,7 +13,6 @@ A100 = {"sms": 108, "fp8": False, "clock_ghz": 1.41, "bw_tbs": 1.9, "fingerprint
 @pytest.fixture(autouse=True)
 def reset():
     chain.DRY_RUN_CALLS.clear()
-    world.MOCK.update(decision=None, sub=None)
 
 
 def post(path, body=None):
@@ -80,7 +79,7 @@ def test_right_chip_too_slow_is_degraded_not_fail(monkeypatch):
     r = run_check(slow=6.0, monkeypatch=monkeypatch)  # heat can slow a chip; it can't change its core count
     assert r["verdict"] == "degraded" and r["reasons"][0].startswith("Answer locked in after 6.")
     assert r["reasons"][0].endswith("; the deadline was 5.0 s.")
-    assert r["published"] is True and chain.DRY_RUN_CALLS[-1][2] == appmod.DEGRADED  # no human needed
+    assert r["published"] is True and chain.DRY_RUN_CALLS[-1][2] == appmod.DEGRADED  # no listing needed
     assert chain.DRY_RUN_CALLS[-1][6] == chain.ZERO
     g = next(x for x in client.get("/api/gpus").json()["gpus"] if x["node"] == r["node"])
     assert g["status"] == "degraded" and g["active"] == 0
@@ -132,47 +131,38 @@ def test_namehash_matches_ensip1():
     assert chain.namehash("eth").hex() == "93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae"
 
 
-def login(sub="human-1"):
-    world.MOCK.update(decision="approve", sub=sub)
-    d = post("/api/world/login/start").json()
-    r = post("/api/world/login/poll", {"device_id": d["device_id"]}).json()
-    assert r["status"] == "approved"
-    return r["agent_token"]
+LISTING = "H100 80GB SXM5 · 1x · $2.49/h (test listing)"
 
 
-def approve(report_id, token, decision, sub="human-1"):
-    world.MOCK.update(decision=decision, sub=sub)
-    d = post("/api/report/approve/start", {"report_id": report_id, "agent_token": token,
-                                           "listing": "H100 80GB SXM5 · 1x · $2.49/h (test listing)"})
-    if d.status_code != 200:
-        return d
-    return post("/api/report/approve/poll", {"device_id": d.json()["device_id"]})
+def publish(report_id, listing=LISTING, **extra):
+    return post("/api/report/publish", {"report_id": report_id, "listing": listing, **extra})
 
 
-def test_approve_publishes_fail():
+def test_publish_records_fail():
     rep = run_check(uuid="GPU-A", claimed=1, probes=A100)
-    r = approve(rep["report_id"], login(), "approve").json()
-    assert r["status"] == "approved" and r["published"] is True
+    assert rep["published"] is False and not chain.DRY_RUN_CALLS  # a failure waits for the listing
+    assert publish(rep["report_id"]).json()["published"] is True
     cloud, gpu, verdict, cls, cores, fp, gv, pv, *_ = chain.DRY_RUN_CALLS[-1]
-    assert (verdict, cls, cores) == (2, 3, 108)
-    node, pnode = bytes.fromhex(rep["node"][2:]), chain.namehash("cloud-b.waterline.eth")
-    assert gv == world.voter_id("human-1", node) and pv == world.voter_id("human-1", pnode)
+    assert (verdict, cls, cores) == (2, 3, 108) and gv != pv and gv != bytes(32)
+    r = publish(rep["report_id"])
+    assert r.status_code == 409 and "already published" in r.json()["error"]
+    assert len(chain.DRY_RUN_CALLS) == 1
 
 
-def test_one_human_counts_once_per_provider():
-    tok = login()
-    for uuid in ("GPU-P1", "GPU-P2"):  # a heavy renter reports two bad pods from one cloud
-        rep = run_check(uuid=uuid, claimed=1, probes=A100)
-        assert approve(rep["report_id"], tok, "approve").json()["published"] is True
-    pv = {c[7] for c in chain.DRY_RUN_CALLS}
-    assert len(pv) == 1 and len({c[6] for c in chain.DRY_RUN_CALLS}) == 2  # one provider voice, two GPU voices
+def test_each_failure_report_is_its_own_voter():
+    first, second = (run_check(uuid="GPU-D", claimed=1, probes=A100) for _ in range(2))
+    for r in (first, second):
+        assert publish(r["report_id"]).json()["published"] is True
+    assert len({c[6] for c in chain.DRY_RUN_CALLS}) == 2 and len({c[7] for c in chain.DRY_RUN_CALLS}) == 2
+    g = next(x for x in client.get("/api/gpus").json()["gpus"] if x["node"] == first["node"])
+    assert g["status"] == "failed"
     p = next(x for x in client.get("/api/providers").json()["providers"] if x["name"] == "cloud-b.waterline.eth")
-    assert p["humans"] == 1 and p["fails"] >= 2
+    assert p["humans"] == p["fails"] >= 2
 
 
 def test_two_passes_after_failure_recover():
     rep = run_check(uuid="GPU-R", claimed=1, probes=A100)
-    approve(rep["report_id"], login(), "approve")
+    publish(rep["report_id"])
     run_check(uuid="GPU-R")
     run_check(uuid="GPU-R")
     g = next(x for x in client.get("/api/gpus").json()["gpus"] if x["node"] == rep["node"])
@@ -187,81 +177,23 @@ def test_fingerprint_change_is_observed_not_judged():
     assert full["fingerprint_changed"] is True and first["report_id"] in reps
 
 
-def test_deny_and_expired_publish_nothing():
-    rep = run_check(uuid="GPU-B", claimed=1, probes=A100)
-    tok = login()
-    assert approve(rep["report_id"], tok, "deny").json() == {"status": "denied", "published": False}
-    assert approve(rep["report_id"], tok, "expire").json() == {"status": "expired", "published": False}
-    assert not chain.DRY_RUN_CALLS
-
-
-def test_the_approver_is_the_reporter_and_a_stale_login_is_rebound():
-    rep = run_check(uuid="GPU-C", claimed=1, probes=A100)
-    r = approve(rep["report_id"], login("human-1"), "approve", sub="human-2").json()
-    assert r["published"] is True and world.agent_sub(r["agent_token"]) == "human-2"
-    node = bytes.fromhex(rep["node"][2:])
-    assert chain.DRY_RUN_CALLS[-1][6] == world.voter_id("human-2", node)  # counted as the person who approved
-
-
-def test_stale_auth_time_refused(monkeypatch):
-    rep = run_check(uuid="GPU-G", claimed=1, probes=A100)
-    tok = login()
-    old = appmod.now() - 300
-    monkeypatch.setattr(world, "device_poll", lambda _: ("approved", {"sub": "human-1", "auth_time": old}))
-    r = approve(rep["report_id"], tok, "approve").json()
-    assert r["published"] is False and "not fresh" in r["status_text"] and not chain.DRY_RUN_CALLS
-
-
-def test_double_vote_same_human_same_gpu_rejected():
-    tok = login()
-    first = run_check(uuid="GPU-D", claimed=1, probes=A100)
-    assert approve(first["report_id"], tok, "approve").json()["published"] is True
-    second = run_check(uuid="GPU-D", claimed=1, probes=A100)  # same GPU, new failed check, same human
-    r = approve(second["report_id"], tok, "approve")  # refused before World is even asked
-    assert r.status_code == 409 and "already reported" in r.json()["error"]
-    assert len(chain.DRY_RUN_CALLS) == 1
-
-
-def test_bad_agent_token_rejected():
-    rep = run_check(uuid="GPU-E", claimed=1, probes=A100)
-    tok = login()
-    r = approve(rep["report_id"], tok[:-2] + ("AA" if not tok.endswith("AA") else "BB"), "approve")
-    assert r.status_code == 401
-
-
-def test_world_unavailable_is_not_approval(monkeypatch):
-    rep = run_check(uuid="GPU-F", claimed=1, probes=A100)
-    tok = login()
-    d = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok, "listing": "H100 80GB SXM (test)"}).json()
-
-    def down(_):
-        raise world.Unavailable()
-    monkeypatch.setattr(world, "device_poll", down)
-    r = post("/api/report/approve/poll", {"device_id": d["device_id"]})
-    assert r.status_code == 503 and not chain.DRY_RUN_CALLS
-
-
-def test_reporting_needs_the_listing_and_shows_the_reporter():
+def test_reporting_needs_the_listing():
     rep = run_check(uuid="GPU-L", claimed=1, probes=A100)
-    tok = login()
-    r = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok})
+    r = post("/api/report/publish", {"report_id": rep["report_id"]})
     assert r.status_code == 422 and "Paste the listing" in r.json()["error"]
-    assert approve(rep["report_id"], tok, "approve").json()["published"] is True
+    assert publish(rep["report_id"]).json()["published"] is True
     full = client.get(f"/api/reports/{rep['report_id']}").json()
-    assert full["listing"].startswith("H100 80GB SXM5") and full["reporter_reports"] >= 1 and full["approved_at"]
+    assert full["listing"].startswith("H100 80GB SXM5")
     ev = client.get(f"/api/reports/{rep['report_id']}/evidence").json()
     assert "listing" not in ev and "provider_voter" not in ev  # added after the verdict: outside the frozen hash
 
 
 def test_listing_that_contradicts_the_claim_needs_report_anyway():
     rep = run_check(uuid="GPU-J", claimed=1, probes=A100)  # reported "as H100"
-    tok = login()
-    body = {"report_id": rep["report_id"], "agent_token": tok, "listing": "1x NVIDIA A100 80GB PCIe · $1.19/h"}
-    r = post("/api/report/approve/start", body)
+    r = publish(rep["report_id"], "1x NVIDIA A100 80GB PCIe · $1.19/h")
     assert r.status_code == 409 and "reads as A100" in r.json()["error"] and "report anyway" in r.json()["error"]
-    world.MOCK.update(decision="approve", sub="human-1")
-    d = post("/api/report/approve/start", body | {"report_anyway": True}).json()
-    assert post("/api/report/approve/poll", {"device_id": d["device_id"]}).json()["published"] is True
+    assert not chain.DRY_RUN_CALLS
+    assert publish(rep["report_id"], "1x NVIDIA A100 80GB PCIe · $1.19/h", report_anyway=True).json()["published"] is True
     full = client.get(f"/api/reports/{rep['report_id']}").json()
     assert full["listing_reads_as"] == {"class": 3, "confidence": 0.95, "source": "rules", "contradicts": True}
 
@@ -291,58 +223,15 @@ def test_multibaas_bytes32_as_byte_list():
     assert appmod._hex0x(raw) == hex32(raw) == want and appmod._hex0x(want[2:]) == want
 
 
-def grant(token, decision="approve", sub="human-1", hours=24, max_reports=2):
-    world.MOCK.update(decision=decision, sub=sub)
-    d = post("/api/world/mandate/start", {"agent_token": token, "hours": hours, "max_reports": max_reports}).json()
-    return post("/api/world/mandate/poll", {"device_id": d["device_id"]}).json()
-
-
-def auto(report_id, token, listing="H100 80GB SXM5 · 1x · $2.49/h (test listing)"):
-    return post("/api/report/auto", {"report_id": report_id, "agent_token": token, "listing": listing})
-
-
-def test_mandate_lets_agents_report_within_its_limits():
-    tok = login(sub="human-m")
-    rep = run_check(uuid="GPU-M0", claimed=1, probes=A100)
-    assert auto(rep["report_id"], tok).status_code == 403  # no mandate yet
-    assert grant(tok, "deny", sub="human-m")["mandate"] is None
-    other = grant(tok, sub="someone-else")  # a mandate belongs to whoever approved it, never to the stale login
-    assert world.agent_sub(other["agent_token"]) == "someone-else"
-    assert post("/api/world/mandate/status", {"agent_token": tok}).json()["mandate"] is None
-    m = grant(tok, sub="human-m", max_reports=2)["mandate"]
-    assert m["active"] and m["used"] == 0 and m["max_reports"] == 2
-    r = auto(rep["report_id"], tok).json()
-    assert r["published"] is True and r["mandate"]["used"] == 1
-    full = client.get(f"/api/reports/{rep['report_id']}").json()
-    assert full["approved_via"] == "mandate" and full["mandate_id"] == m["id"]
-    # the same person, through any number of agents, is still one voice per GPU
-    rep2 = run_check(uuid="GPU-M0", claimed=1, probes=A100)
-    assert auto(rep2["report_id"], tok).status_code == 409
-    # a listing that contradicts the report is never auto-reported
-    rep3 = run_check(uuid="GPU-M1", claimed=1, probes=A100)
-    assert auto(rep3["report_id"], tok, listing="1x A100 80GB SXM4 · $1.29/h").status_code == 409
-    assert auto(rep3["report_id"], tok).json()["published"] is True  # 2 of 2 used
-    rep4 = run_check(uuid="GPU-M2", claimed=1, probes=A100)
-    assert auto(rep4["report_id"], tok).status_code == 403  # the mandate is used up
-    m = grant(tok, sub="human-m")["mandate"]  # a new mandate replaces it
-    assert post("/api/world/mandate/revoke", {"agent_token": tok}).json()["mandate"]["active"] is False
-    assert auto(rep4["report_id"], tok).status_code == 403
-    assert post("/api/world/mandate/status", {"agent_token": tok}).json()["mandate"]["revoked_at"]
-
-
 def test_gpu_label_is_the_nvidia_uuid_prefix():
     assert appmod.gpu_label("GPU-6f3c2a1b-9d0e-4c1a-8b2f-0123456789ab") == "gpu-6f3c2a1b"
     assert appmod.gpu_label("GPU-1").startswith("gpu-") and len(appmod.gpu_label("GPU-1")) == 12
 
 
 def test_suspicious_failures_are_flagged_not_blocked():
-    tok = login(sub="human-l")
     run_check(uuid="GPU-FLAG", claimed=3, probes=A100)  # the card passes as a listed A100
     rep = run_check(uuid="GPU-FLAG", claimed=1, probes=A100)  # then someone lists the same card as an H100
-    world.MOCK.update(decision="approve", sub="human-l")
-    d = post("/api/report/approve/start", {"report_id": rep["report_id"], "agent_token": tok, "listing": "apprcedsd"})
-    assert d.status_code == 200  # never blocked: flagged
-    assert post("/api/report/approve/poll", {"device_id": d.json()["device_id"]}).json()["published"] is True
+    assert publish(rep["report_id"], "apprcedsd").json()["published"] is True  # never blocked: flagged
     kinds = {f["kind"] for f in client.get(f"/api/reports/{rep['report_id']}").json()["flags"]}
     assert kinds == {"listing_no_gpu", "card_listed_twice"}
     row = next(r for r in client.get("/api/reports").json() if r["report_id"] == rep["report_id"])

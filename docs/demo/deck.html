@@ -2,7 +2,7 @@
 <style>
 @page { size: 1920px 1080px; margin: 0; }
 :root { --bg:#06111a; --panel:#0a1822; --deep:#030b11; --line:#1b3140; --ink:#e4edf1; --muted:#8ba1ad; --body:#c3d2d8;
-  --accent:#5fe3b9; --pass:#5fe3b9; --fail:#ff7b6b; --warn:#f2c14e; --ens:#2f9bdc; --world:#d9dee2; --mb:#f0443a; --chain:#9aa6c8;
+  --accent:#5fe3b9; --pass:#5fe3b9; --fail:#ff7b6b; --warn:#f2c14e; --ens:#2f9bdc; --mb:#f0443a; --chain:#9aa6c8;
   --sans:-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif; --mono:"SF Mono",Menlo,Consolas,monospace; }
 * { box-sizing:border-box; }
 html,body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -39,7 +39,7 @@ h2 { font-weight:400; font-size:72px; line-height:1.12; margin:26px 0 0; max-wid
 .sponsors { display:flex; gap:64px; align-items:center; margin-top:80px; }
 .sponsors div { display:flex; align-items:center; gap:18px; font-family:var(--mono); font-size:26px; color:var(--body); letter-spacing:.04em; }
 .sponsors .mk { height:56px; }
-.c-ens { --c:var(--ens); } .c-world { --c:var(--world); } .c-mb { --c:var(--mb); }
+.c-ens { --c:var(--ens); } .c-mb { --c:var(--mb); }
 </style></head><body>
 
 <section class="s"><div class="grid"></div>
@@ -88,28 +88,25 @@ h2 { font-weight:400; font-size:72px; line-height:1.12; margin:26px 0 0; max-wid
   <div class="verdicts">
     <div class="v" style="--c:var(--pass)"><b>PASS</b>The listed chip, on time. Published at once.</div>
     <div class="v" style="--c:var(--warn)"><b>DEGRADED</b>The listed chip, too slow. Published with its numbers.</div>
-    <div class="v" style="--c:var(--fail)"><b>FAIL</b>Another chip, or wrong answers. Needs a person.</div>
+    <div class="v" style="--c:var(--fail)"><b>FAIL</b>Another chip, or wrong answers. Published with the listing.</div>
   </div>
   <div class="foot"><span>25 NVIDIA GPU classes · one line in the pod</span><span>02</span></div>
 </section>
 
 <section class="s"><div class="grid"></div>
-  <div class="eyebrow">A person behind every failure</div>
-  <h2>A pass needs real silicon. A failure needs a real person.</h2>
+  <div class="eyebrow">Every failure carries its listing</div>
+  <h2>A pass needs real silicon. A failure needs the listing you rented.</h2>
   <div class="two">
-    <div class="card c-world"><div class="hd"><svg class="mk" aria-hidden="true" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="233 233 558 558">
-  
-  <path fill="#f6f6f6" d="M649.8,273.99c-42.16-24.65-88.09-36.99-137.8-36.99s-95.65,12.33-137.8,36.99c-42.16,24.66-75.56,58.07-100.22,100.22-24.66,42.16-36.99,88.09-36.99,137.8s12.32,95.65,36.99,137.8c24.65,42.15,58.06,75.55,100.22,100.22,42.15,24.65,88.08,36.98,137.8,36.98s95.64-12.33,137.8-36.98c42.15-24.66,75.55-58.07,100.22-100.22,24.65-42.15,36.99-88.08,36.99-137.8s-12.33-95.64-36.99-137.8c-24.66-42.15-58.07-75.55-100.22-100.22ZM525.72,608.04c-28.24,0-51.4-8.45-69.5-25.35-11.99-11.19-19.98-24.62-24.02-40.27h288.97c-3.07,23.05-9.69,44.92-19.88,65.62h-175.57ZM432.28,482.77c4.07-15.38,12.03-28.71,23.94-39.97,18.09-17.09,41.25-25.65,69.5-25.65h176.16c10.03,20.7,16.52,42.58,19.46,65.62h-289.05ZM328.87,404.33c18.69-32.81,44.24-58.76,76.65-77.85,32.41-19.09,67.9-28.63,106.48-28.63s74.06,9.54,106.48,28.63c15.53,9.15,29.44,19.92,41.82,32.21h-133.98c-31.42,0-59.35,6.56-83.81,19.69-24.46,13.12-43.45,31.12-56.97,53.99-9.2,15.55-15.19,32.38-18.13,50.41h-64.75c3.55-27.86,12.28-54.01,26.2-78.44ZM618.48,697.52c-32.42,19.09-67.91,28.63-106.48,28.63s-74.07-9.54-106.48-28.63c-32.42-19.09-57.97-45.04-76.65-77.85-13.73-24.09-22.39-49.84-26.04-77.25h64.58c2.94,18.04,8.93,34.86,18.13,50.41,13.52,22.87,32.51,40.86,56.97,53.99,24.46,13.12,52.39,19.69,83.81,19.69h132.73c-12.07,11.79-25.55,22.17-40.56,31.02Z"/>
-</svg>World ID for Agents</div><ul>
-      <li>A fresh World approval per failure, or one permission for your agents</li>
-      <li>One person, one voice per GPU and per provider</li>
-      <li>Two different people mark a GPU failed</li></ul></div>
-    <div class="card" style="--c:var(--accent)"><div class="hd">Accusations cost something</div><ul>
-      <li>The reporter pastes the listing; Jev reads it</li>
+    <div class="card" style="--c:var(--fail)"><div class="hd">The listing</div><ul>
+      <li>The reporter pastes the listing they rented</li>
+      <li>Jev reads it: another GPU stops the report</li>
+      <li>Shown beside the failure for anyone to compare</li></ul></div>
+    <div class="card" style="--c:var(--accent)"><div class="hd">Two reports to fail</div><ul>
+      <li>One report: suspect. Two: failed, on the GPU and its provider</li>
       <li>Suspicious reports are flagged automatically</li>
       <li>Two passes after a failure: recovered</li></ul></div>
   </div>
-  <div class="foot"><span>World ID for Agents · sandbox identities in this demo</span><span>03</span></div>
+  <div class="foot"><span>Failures publish with the listing</span><span>03</span></div>
 </section>
 
 <section class="s"><div class="grid"></div>
@@ -126,7 +123,7 @@ ENSv2</div>
 <div class="tree"><span class="m">waterline.eth</span>
 ├─ <span class="e">cloud-a.waterline.eth</span>  <span class="m">0 of 2 failed</span>
 │  └─ gpu-…  <span class="ok">pass</span> · H100 SXM
-└─ <span class="e">cloud-b.waterline.eth</span>  <span class="m">1 person</span>
+└─ <span class="e">cloud-b.waterline.eth</span>  <span class="m">1 report</span>
    └─ gpu-…  <span class="sus">suspect · 1 of 2</span></div></div>
     <div class="card c-mb"><div class="hd"><svg class="mk" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27.4 28" role="img" aria-label="Curvegrid"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6933 0.363129C6.13218 0.363129 0 6.49531 0 14.0566C0 21.618 6.13218 27.75 13.6933 27.75C21.2548 27.75 27.3869 21.6182 27.3869 14.0566H22.4658C22.4658 18.9007 18.5376 22.8291 13.6933 22.8291C8.84965 22.8289 4.92104 18.9007 4.92104 14.0566C4.92104 9.21278 8.84948 5.28417 13.6933 5.28417V0.363129V0.363129ZM17.8673 4.53693H23.2131V9.88267H17.8673V4.53693V4.53693Z" fill="#EE2121"/></svg>
 Curvegrid MultiBaas</div><ul>
@@ -161,10 +158,7 @@ Curvegrid MultiBaas</div><ul>
 <path d="M103.571 228.526L167.095 124.003C167.593 123.183 168.751 123.092 169.369 123.825C174.961 130.465 195.796 158.715 170.015 184.463C146.49 207.957 116.526 224.709 105.421 230.498C104.161 231.155 102.834 229.74 103.571 228.526Z" fill="#0080BC"/>
 <path d="M107.154 0.930762C105.886 0.0433954 104.324 1.5567 105.174 2.84902C119.363 24.4301 166.529 96.2354 173.044 107.014C179.471 117.646 192.11 135.315 193.165 150.432C193.27 151.941 195.357 152.247 195.882 150.828C196.728 148.539 197.63 145.808 198.47 142.687C209.074 103.293 193.673 61.4905 160.225 38.078L107.154 0.930762Z" fill="#0080BC"/>
 </svg>
-ENSv2</div><div><svg class="mk" aria-hidden="true" id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="233 233 558 558">
-  
-  <path fill="#f6f6f6" d="M649.8,273.99c-42.16-24.65-88.09-36.99-137.8-36.99s-95.65,12.33-137.8,36.99c-42.16,24.66-75.56,58.07-100.22,100.22-24.66,42.16-36.99,88.09-36.99,137.8s12.32,95.65,36.99,137.8c24.65,42.15,58.06,75.55,100.22,100.22,42.15,24.65,88.08,36.98,137.8,36.98s95.64-12.33,137.8-36.98c42.15-24.66,75.55-58.07,100.22-100.22,24.65-42.15,36.99-88.08,36.99-137.8s-12.33-95.64-36.99-137.8c-24.66-42.15-58.07-75.55-100.22-100.22ZM525.72,608.04c-28.24,0-51.4-8.45-69.5-25.35-11.99-11.19-19.98-24.62-24.02-40.27h288.97c-3.07,23.05-9.69,44.92-19.88,65.62h-175.57ZM432.28,482.77c4.07-15.38,12.03-28.71,23.94-39.97,18.09-17.09,41.25-25.65,69.5-25.65h176.16c10.03,20.7,16.52,42.58,19.46,65.62h-289.05ZM328.87,404.33c18.69-32.81,44.24-58.76,76.65-77.85,32.41-19.09,67.9-28.63,106.48-28.63s74.06,9.54,106.48,28.63c15.53,9.15,29.44,19.92,41.82,32.21h-133.98c-31.42,0-59.35,6.56-83.81,19.69-24.46,13.12-43.45,31.12-56.97,53.99-9.2,15.55-15.19,32.38-18.13,50.41h-64.75c3.55-27.86,12.28-54.01,26.2-78.44ZM618.48,697.52c-32.42,19.09-67.91,28.63-106.48,28.63s-74.07-9.54-106.48-28.63c-32.42-19.09-57.97-45.04-76.65-77.85-13.73-24.09-22.39-49.84-26.04-77.25h64.58c2.94,18.04,8.93,34.86,18.13,50.41,13.52,22.87,32.51,40.86,56.97,53.99,24.46,13.12,52.39,19.69,83.81,19.69h132.73c-12.07,11.79-25.55,22.17-40.56,31.02Z"/>
-</svg>World ID for Agents</div><div><svg class="mk" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27.4 28" role="img" aria-label="Curvegrid"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6933 0.363129C6.13218 0.363129 0 6.49531 0 14.0566C0 21.618 6.13218 27.75 13.6933 27.75C21.2548 27.75 27.3869 21.6182 27.3869 14.0566H22.4658C22.4658 18.9007 18.5376 22.8291 13.6933 22.8291C8.84965 22.8289 4.92104 18.9007 4.92104 14.0566C4.92104 9.21278 8.84948 5.28417 13.6933 5.28417V0.363129V0.363129ZM17.8673 4.53693H23.2131V9.88267H17.8673V4.53693V4.53693Z" fill="#EE2121"/></svg>
+ENSv2</div><div><svg class="mk" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27.4 28" role="img" aria-label="Curvegrid"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6933 0.363129C6.13218 0.363129 0 6.49531 0 14.0566C0 21.618 6.13218 27.75 13.6933 27.75C21.2548 27.75 27.3869 21.6182 27.3869 14.0566H22.4658C22.4658 18.9007 18.5376 22.8291 13.6933 22.8291C8.84965 22.8289 4.92104 18.9007 4.92104 14.0566C4.92104 9.21278 8.84948 5.28417 13.6933 5.28417V0.363129V0.363129ZM17.8673 4.53693H23.2131V9.88267H17.8673V4.53693V4.53693Z" fill="#EE2121"/></svg>
 Curvegrid MultiBaas</div></div>
   <div class="foot"><span>waterline-eth.vercel.app</span><span>github.com/FlyingWHR/waterline</span></div>
 </section>

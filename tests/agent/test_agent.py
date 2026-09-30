@@ -20,19 +20,21 @@ def test_check_local_pass(make_api, env, capsys):
     assert not any(p.startswith("/api/report") for p, _ in api.calls)
 
 
-@pytest.mark.parametrize("world, expect", [("denied", "denied: nothing published"),
-                                           ("approved", "suspect · 1 of 2 humans")])
-def test_check_local_fail_then_world(make_api, env, capsys, world, expect):
-    api = make_api(world=world)
+def test_check_local_fail_publishes_with_the_listing(make_api, env, capsys):
+    api = make_api()
     assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108") == 1
     out = capsys.readouterr().out
     assert "listed as H100 SXM, measures as A100: stopping the rental" in out
     assert "your listing reads as H100 SXM: the claim stands" in out  # Jev (or rules) agrees with the claim
-    assert "WXYZ-1234" in out and expect in out
-    paths = [p for p, _ in api.calls]
-    assert paths.index("/api/world/login/poll") < paths.index("/api/report/approve/start")  # logged in first
-    approve = next(b for p, b in api.calls if p == "/api/report/approve/start")
-    assert approve == {"report_id": "r1", "agent_token": "agent-tok", "listing": "H100 80GB SXM"}
+    assert "published" in out and "0xfail" in out
+    assert [b for p, b in api.calls if p == "/api/report/publish"] == [{"report_id": "r1", "listing": "H100 80GB SXM"}]
+
+
+def test_contradicting_listing_is_not_reported_without_a_person(make_api, env, capsys):
+    api = make_api(publish="contradicts")
+    assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108") == 1
+    assert "not reported: nothing published" in capsys.readouterr().out
+    assert len([p for p, _ in api.calls if p == "/api/report/publish"]) == 1  # never retried with report_anyway
 
 
 @pytest.mark.parametrize("text, code", [("H100 80GB HBM3 SXM5", 1), ("H100 80GB SXM", 1),
@@ -68,7 +70,7 @@ def test_choose_decides_from_history_only(capsys, monkeypatch, tmp_path):
                 {"gpu": names[5], "price": 2.0}]
     pick, skipped = history.choose(listings, hist, max_price=5)
     assert pick["gpu"] == names[2] and pick["history"] == "4 passes, no failures"  # more passes beats cheaper
-    assert [w for _, w in skipped] == ["status failed (2 failure reports)", "status suspect · 1 of 2 humans (1 failure report)",
+    assert [w for _, w in skipped] == ["status failed (2 failure reports)", "status suspect · 1 of 2 reports (1 failure report)",
                                        "9/h is over your max price of 5/h"]
     pick, _ = history.choose(listings, hist, max_price=2)
     assert pick["gpu"] == names[5]
@@ -98,19 +100,19 @@ def test_choose_prefers_the_provider_with_fewer_failed_gpus_and_allows_recovered
     assert pick["gpu"] == a
 
 
-def test_stop_cmd_runs_on_fail_before_approval(make_api, env, capsys):
-    api = make_api(world="denied")
+def test_stop_cmd_runs_on_fail_before_reporting(make_api, env, capsys):
+    api = make_api()
     flag = env / "stopped"
     assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108", "--pod-id", "pod 42",
                      "--stop-cmd", f"echo {{pod_id}} > {flag}") == 1
     out = capsys.readouterr().out
     assert flag.read_text().strip() == "pod 42"
-    assert out.index("Stopped paying: rental pod 42 ended.") < out.index("WXYZ-1234")
+    assert out.index("Stopped paying: rental pod 42 ended.") < out.index("0xfail")
 
 
 def test_no_stop_cmd_on_fail_says_so(make_api, env, capsys, monkeypatch):
     monkeypatch.delenv("WATERLINE_STOP_CMD", raising=False)
-    run_check(make_api(world="denied"), env, "--listing", "H100 80GB SXM", "--sim-sms", "108")
+    run_check(make_api(), env, "--listing", "H100 80GB SXM", "--sim-sms", "108")
     assert "FAIL: end this rental now (no stop command configured)." in capsys.readouterr().out
 
 
@@ -154,27 +156,12 @@ def test_choose_skips_a_degraded_gpu_and_says_why():
     assert history.status(hist[history.namehash(g)]) == "degraded"
 
 
-def test_world_wait_survives_a_dropped_connection(monkeypatch):
-    from agent import cli
-    answers = iter([{"device_id": "d", "user_code": "C", "verification_uri_complete": "https://w", "expires_in": 60},
-                    OSError("SSL: UNEXPECTED_EOF"), {"status": "approved", "agent_token": "t"}])
-
-    def fake_post(api, path, body):
-        a = next(answers)
-        if isinstance(a, Exception):
-            raise a
-        return a
-    monkeypatch.setattr(cli, "post", fake_post)
-    monkeypatch.setattr(cli, "poll_s", lambda: 0)
-    assert cli.world_flow("http://api", "/s", {}, "/p", "Log in")["status"] == "approved"
-
-
-def test_fail_with_web_flag_leaves_approval_to_the_web(make_api, env, capsys):
-    api = make_api(world="approved")
+def test_fail_with_web_flag_leaves_publishing_to_the_web(make_api, env, capsys):
+    api = make_api()
     assert run_check(api, env, "--listing", "H100 80GB SXM", "--sim-sms", "108", "--web") == 1
     out = capsys.readouterr().out
-    assert "approve it on the web:" in out and "/#/check/r1" in out
-    assert not any(p.startswith("/api/world/") for p, _ in api.calls)  # no World login here
+    assert "publish it on the web" in out and "/#/check/r1" in out
+    assert not any(p == "/api/report/publish" for p, _ in api.calls)
 
 
 def test_history_without_multibaas_keys_reads_through_the_api(monkeypatch):

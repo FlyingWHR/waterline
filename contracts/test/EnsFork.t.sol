@@ -86,7 +86,7 @@ contract EnsForkTest is Test {
         string memory pname = string.concat("cloud-b.", label, ".eth");
         (out,) = ur.resolve(EnsNames.dnsEncode(pname),
             abi.encodeWithSelector(Marks.text.selector, EnsNames.namehash(pname), "waterline.status"));
-        assertEq(abi.decode(out, (string)), unicode"0 of 1 GPU failed · reported by 1 person");
+        assertEq(abi.decode(out, (string)), unicode"0 of 1 GPU failed · 1 failure report");
 
         // each check is a name one level below its GPU: 1.gpu-….cloud-b.<label>.eth, also unregistered
         string memory cname = string.concat("1.", name);

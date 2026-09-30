@@ -1,7 +1,5 @@
 """Waterline agent: runs on the renter's laptop.
 
-  python -m agent login
-  python -m agent allow --hours 24 --max 20      # let your agents report failures without asking you each time
   python -m agent check --pod ssh://root@1.2.3.4:22 --cloud cloud-b --listing "H100 80GB SXM" \
       --pod-id abc123 --stop-cmd "runpodctl stop pod {pod_id}"
   python -m agent check --local --sim-sms 108 --cloud cloud-b --listing "H100 80GB SXM"   # offline, CPU
@@ -10,14 +8,13 @@
 
 The LLM never decides; the history does. `choose` ranks on MultiBaas history and price only; Jev (or the rules)
 only reads listing text into a claimed GPU class. On a FAIL the agent stops paying: it runs the stop command for
-the rental before asking for your World approval.
+the rental, then publishes the failure with the listing you rented.
 
 Env (all optional): WATERLINE_API (default the live API), MB_URL + MB_API_KEY (history/choose read MultiBaas
 directly; without them they read the same rows through the API), TYPESAFE_API_KEY (Jev; without it, built-in rules
 read listings), WATERLINE_STOP_CMD (default --stop-cmd).
 """
 import argparse
-import base64
 import json
 import random
 import re
@@ -38,65 +35,9 @@ REPO = Path(__file__).resolve().parents[1]
 REMOTE_DIR = "waterline"
 
 
-def home():
-    return Path(os.environ.get("WATERLINE_HOME", Path.home() / ".waterline"))
-
-
-def poll_s():
-    return float(os.environ.get("WATERLINE_POLL_S", "3"))
-
-
-def load_token():
-    """The saved World login, or None when there is none or it has expired (so callers log in again, not fail later)."""
-    f = home() / "agent.json"
-    tok = json.loads(f.read_text()).get("agent_token") if f.exists() else None
-    try:
-        body = tok.split(".")[0]
-        exp = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))["exp"]
-    except (AttributeError, ValueError, KeyError, TypeError):
-        return None
-    if exp <= time.time():
-        fact("world", "your World login has expired: log in again")
-        return None
-    return tok
-
-
 def fact(key, value):
     """Same receipt style as the profiler's (prover.run), on stdout."""
     print(f"  {paint(DIM, key.ljust(9))} {value}")
-
-
-def world_flow(api, start_path, start_body, poll_path, what):
-    """Device grant: show the code and link, poll until the human decides. Returns the last poll answer."""
-    d = post(api, start_path, start_body)
-    link = d["verification_uri_complete"]
-    link = api.rstrip("/") + link if link.startswith("/") else link  # API without API_URL set (local dev)
-    fact("world", f"{what[0].lower()}{what[1:]}: {link}")
-    print(paint(DIM, f"            or enter code {d['user_code']} in World App"))
-    deadline = time.time() + int(d.get("expires_in", 600))
-    while time.time() < deadline:
-        try:
-            r = post(api, poll_path, {"device_id": d["device_id"]})
-        except OSError:  # a dropped connection (URLError, SSL EOF) is not an answer: keep waiting
-            time.sleep(poll_s())
-            continue
-        if r["status"] != "pending":
-            return r
-        time.sleep(poll_s())
-    return {"status": "expired"}
-
-
-def login(api):
-    r = world_flow(api, "/api/world/login/start", {}, "/api/world/login/poll", "Log in with World")
-    if r["status"] != "approved":
-        fact("world", f"login {r['status']}")
-        return None
-    home().mkdir(parents=True, exist_ok=True)
-    f = home() / "agent.json"
-    f.write_text(json.dumps({"agent_token": r["agent_token"]}))
-    f.chmod(0o600)
-    fact("world", "logged in: your agent can now ask you to approve failure reports")
-    return r["agent_token"]
 
 
 def claimed_class(text, forced=None):
@@ -156,7 +97,7 @@ def run_profiler(a, api, cls):
 
 def check_every(a, api):
     """A periodic series: re-check the same rental at jittered intervals. Passes and degraded results keep publishing
-    on their own; the first failure stops paying and asks for your World approval, which ends the series."""
+    on their own; the first failure stops paying and is reported, which ends the series."""
     m = re.fullmatch(r"(\d+(?:\.\d+)?)([smh]?)", a.every.strip().lower())
     if not m:
         raise SystemExit("--every takes a duration like 90s, 30m or 2h")
@@ -195,96 +136,40 @@ def check(a, api, first=True):
     fact("agent", paint(RED, f"listed as {claim}, measures as {measured}: stopping the rental"))
     stop_paying(a.stop_cmd or os.environ.get("WATERLINE_STOP_CMD"), a.pod_id)
     web_link = f"{api.rstrip('/')}/#/check/{rv['report_id']}"
-    token = load_token() or (login(api) if not a.web and (sys.stdin.isatty() or os.environ.get("WATERLINE_LOGIN")) else None)
-    if not token:  # nobody logged in here: the person approves on the web instead
-        fact("world", f"approve it on the web: {web_link}")
-        return 1
     # a failure accuses the provider of misselling this GPU: say what you rented, in the listing's own words
-    text = a.listing or (input("  paste the listing you rented (its URL or text): ").strip() if sys.stdin.isatty() else "")
-    if not text:  # a failure report needs the listing; without one here, the person adds it on the web
-        fact("world", f"approve it on the web, with the listing you rented: {web_link}")
+    text = "" if a.web else a.listing or (input("  paste the listing you rented (its URL or text): ").strip() if sys.stdin.isatty() else "")
+    if not text:  # a failure report needs the listing; without one here, it is added on the web
+        fact("report", f"publish it on the web, with the listing you rented: {web_link}")
         return 1
-    fact("report", f"listed as {claim} · measures as {measured} · tied to your World ID")
     code, _, src = listing.parse(text)
     if code:
         fact(src.lower(), f"your listing reads as {listing.CLASSES[code]}"
              + (": the claim stands" if code == cls else paint(AMBER, f": not {claim}")))
-    body = {"report_id": rv["report_id"], "agent_token": token, "listing": text}
-    # with your permission (agent allow) the agent reports at once, as your one voice; without it (or when Jev reads
-    # the listing as another GPU, which the permission never overrides) it asks for your approval
+    body = {"report_id": rv["report_id"], "listing": text}
     try:
-        r = post(api, "/api/report/auto", body)
-        if r.get("published"):
-            m = r.get("mandate") or {}
-            fact("world", f"reported with your permission · {m.get('used')} of {m.get('max_reports')} reports used · until {clock(m.get('expires_at'))}")
-        return published(r)
-    except ApiError as e:
-        if "already reported" in str(e):
-            fact("world", paint(AMBER, "you have already reported this GPU: one voice per person per GPU"))
-            return 1
-        if "report anyway" not in str(e):  # no permission, or it ended or ran out
-            fact("world", paint(DIM, str(e).split(": ", 1)[-1]))
-    if a.web:  # the person approves this one on the web panel
-        fact("world", f"approve it on the web: {web_link}")
-        return 1
-    try:
-        r = world_flow(api, "/api/report/approve/start", body, "/api/report/approve/poll", "Approve this failure report")
+        return published(post(api, "/api/report/publish", body))
     except ApiError as e:
         if "report anyway" not in str(e):
             raise
         fact("agent", paint(AMBER, str(e).split(": ", 1)[-1]))  # Jev read the listing as another GPU
-        if input("  report anyway? [y/N] ").strip().lower() != "y":
+        if not sys.stdin.isatty() or input("  report anyway? [y/N] ").strip().lower() != "y":
             fact("agent", "not reported: nothing published")
             return 1
-        r = world_flow(api, "/api/report/approve/start", body | {"report_anyway": True}, "/api/report/approve/poll",
-                       "Approve this failure report")
-    return published(r)
-
-
-def clock(t):
-    return time.strftime("%H:%M", time.localtime(t)) if t else "?"
+        return published(post(api, "/api/report/publish", body | {"report_anyway": True}))
 
 
 def published(r):
-    if r["status"] == "approved" and r.get("published"):
+    if r.get("published"):
         tx = r.get("tx") or "dry run, no transaction"
         fact("onchain", paint(GREEN, "published") + f" · {tx}" + (f" via {r['via']}" if r.get("via") not in (None, "dry-run") else "")
              + f" · {r.get('status_text', 'failure recorded')}")
-    elif r["status"] == "approved":
-        fact("onchain", paint(AMBER, f"approved, not published: {r.get('status_text', 'no reason given')}"))
     else:
-        fact("world", paint(AMBER, f"{r['status']}: nothing published"))
+        fact("onchain", paint(AMBER, f"not published: {r.get('status_text', 'no reason given')}"))
     return 1
 
 
-def mandate(a, api):
-    """agent allow: let your agents report failures for a while. One fresh World approval, a report limit, revocable."""
-    token = load_token() or login(api)
-    if not token:
-        return 1
-    if a.revoke or a.status:
-        m = post(api, "/api/world/mandate/revoke" if a.revoke else "/api/world/mandate/status", {"agent_token": token})["mandate"]
-        if not m:
-            fact("agents", "not allowed to report: each failure waits for your approval")
-        else:
-            state = "permission revoked" if m.get("revoked_at") else "allowed to report" if m["active"] else "permission ended"
-            fact("agents", f"{state} · {m['used']} of {m['max_reports']} reports used · until {clock(m['expires_at'])}")
-        return 0
-    r = world_flow(api, "/api/world/mandate/start", {"agent_token": token, "hours": a.hours, "max_reports": a.max},
-                   "/api/world/mandate/poll", f"Let your agents report up to {a.max} failures in the next {a.hours} h")
-    m = r.get("mandate")
-    if r.get("agent_token"):  # the login bound to the person who approved the mandate
-        (home() / "agent.json").write_text(json.dumps({"agent_token": r["agent_token"]}))
-    if not m:
-        fact("agents", paint(AMBER, r.get("status_text") or f"{r['status']}: nothing changed"))
-        return 1
-    fact("agents", paint(GREEN, "allowed to report") + f" · up to {m['max_reports']} failures · until {clock(m['expires_at'])}"
-         + " · each still counts as your one voice per GPU · to stop: agent allow --revoke")
-    return 0
-
-
 def stop_paying(cmd, pod_id):
-    """On a FAIL, end the rental right away (before any approval). Never called on a PASS."""
+    """On a FAIL, end the rental right away (before reporting). Never called on a PASS."""
     if not cmd:
         fact("agent", "FAIL: end this rental now (no stop command configured).")
         return False
@@ -332,8 +217,7 @@ def main(argv=None):
     ap.add_argument("--api", default=os.environ.get("WATERLINE_API", "https://waterline-eth.vercel.app"),
                     help="Waterline API (default: env WATERLINE_API, else the live one)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("login", help="log in with World once; the login is saved in ~/.waterline for a week")
-    c = sub.add_parser("check", help="check a rented GPU; on FAIL stop paying, then ask for your World approval")
+    c = sub.add_parser("check", help="check a rented GPU; on FAIL stop paying, then publish the failure")
     c.add_argument("--pod", help="ssh://user@host:port")
     c.add_argument("--local", action="store_true", help="run the profiler here in CPU mode (offline demo)")
     c.add_argument("--sim-sms", type=int, default=132, help="--local only: SM count to report (108 = A100)")
@@ -347,14 +231,9 @@ def main(argv=None):
     c.add_argument("--pod-id", help="the rental's id at the cloud, fills {pod_id} in the stop command")
     c.add_argument("--stop-cmd", help="on FAIL, run this at once to stop paying, e.g. 'runpodctl stop pod {pod_id}' "
                                       "(default: env WATERLINE_STOP_CMD). Never run on PASS.")
-    c.add_argument("--web", action="store_true", help="on FAIL, leave the approval to the web panel (no World login here)")
+    c.add_argument("--web", action="store_true", help="on FAIL, leave publishing to the web panel")
     c.add_argument("--every", help="a periodic series: re-check at this interval (e.g. 30m), jittered ±20%%, until Ctrl-C")
     c.add_argument("--times", type=int, help="with --every: stop after this many checks")
-    md = sub.add_parser("allow", aliases=["mandate"], help="let your agents report failures for a while, with one World approval")
-    md.add_argument("--hours", type=int, default=24, help="how long it lasts (1-72)")
-    md.add_argument("--max", type=int, default=20, help="most failure reports it covers (1-100)")
-    md.add_argument("--revoke", action="store_true", help="take the permission back now")
-    md.add_argument("--status", action="store_true", help="show whether your agents may report")
     sub.add_parser("history", help="GPU history from MultiBaas: passes, failures, status")
     ch = sub.add_parser("choose", help="pick a listing from MultiBaas history only (no LLM ranking)")
     ch.add_argument("--listings", required=True, help='JSON list of {"gpu": name, "listing": text, "price": n}')
@@ -365,12 +244,8 @@ def main(argv=None):
     if a.cmd == "check" and a.claimed is None and not a.listing:
         ap.error("check needs --listing or --claimed")
     try:
-        if a.cmd == "login":
-            return 0 if login(a.api) else 1
         if a.cmd == "check":
             return check_every(a, a.api) if a.every else check(a, a.api)
-        if a.cmd in ("allow", "mandate"):
-            return mandate(a, a.api)
         return show_history(a) if a.cmd == "history" else choose(a)
     except ApiError as e:
         print(f"Waterline API error: {e}")

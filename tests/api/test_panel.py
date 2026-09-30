@@ -2,7 +2,7 @@
 import httpx
 
 from api import app as appmod, chain
-from test_api import A100, H100, approve, client, login, run_check
+from test_api import A100, H100, client, publish, run_check
 
 STAIR = {str(k): round(5.0 * -(-k // 132), 3) for k in range(64, 161)}
 
@@ -12,7 +12,7 @@ def test_health_dry_run():
     assert h["api"] == "ok" and h["store"] == "memory"
     assert h["chain"] == {"mode": "dry-run", "write_path": "dry-run", "chain_id": 11155111, "marks": None, "reporter": None,
                           "reporter_balance_eth": None}
-    assert h["world"]["mode"] == "mock" and h["multibaas"] == {"configured": False, "url": None, "webhook": False}
+    assert h["multibaas"] == {"configured": False, "url": None, "webhook": False}
     assert h["ens"]["parent"] == "waterline.eth" and h["ens"]["universal_resolver"].startswith("0x")
 
 
@@ -57,11 +57,11 @@ def test_gpus_local_tallies_follow_marks_rules():
     by_node = {g["node"]: g for g in client.get("/api/gpus").json()["gpus"]}
     assert by_node[ok["node"]]["status"] == "pass" and by_node[ok["node"]]["gpu_name"] == ok["gpu_name"]
     assert bad["node"] not in by_node  # a pending failure is not on the record
-    approve(bad["report_id"], login("human-9"), "approve", sub="human-9")
+    publish(bad["report_id"])
     r = client.get("/api/gpus").json()
     g = {g["node"]: g for g in r["gpus"]}[bad["node"]]
     assert r["source"] == "local" and (g["fails"], g["humans"], g["cls"], g["cores"]) == (1, 1, 3, 108)
-    assert g["status"] == "suspect · 1 of 2 humans"
+    assert g["status"] == "suspect · 1 of 2 reports"
     rep = client.get(f"/api/reports/{bad['report_id']}").json()
     assert rep["published"] is True and rep["status_text"] == "Recorded on Marks."
 

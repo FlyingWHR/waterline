@@ -23,28 +23,19 @@
       <a href="#/gpus">GPUs</a>
       <a href="#/checks">Checks</a>
       <a href="#/providers">Providers</a>
-      <a href="#/world">Reporting</a>
+      <a href="#/reporting">Reporting</a>
     </nav>
-    <a id="session" class="session" href="#/world" hidden></a>
   </div>
 </header>
 <main id="view" class="wrap" tabindex="-1"></main>
 
-<dialog id="world" aria-labelledby="world-title">
+<dialog id="report" aria-labelledby="report-title">
   <div class="dlg">
-    <div class="label world-c">World</div>
-    <h2 id="world-title">Approve this report</h2>
-    <p id="world-what" class="sub"></p>
-    <div id="world-code" class="codebox" hidden>
-      <div class="qr" id="world-qr" aria-hidden="true"></div>
-      <div class="codeinfo">
-        <div class="label">Code</div>
-        <div class="usercode" id="world-usercode"></div>
-        <a id="world-link" target="_blank" rel="noopener">Open in World App</a>
-      </div>
-    </div>
-    <p id="world-status" class="status" role="status" aria-live="polite"></p>
-    <div class="row"><button type="button" class="btn" id="world-close">Close</button></div>
+    <div class="label">Failure report</div>
+    <h2 id="report-title">Report this GPU</h2>
+    <p id="report-what" class="sub"></p>
+    <p id="report-status" class="status" role="status" aria-live="polite"></p>
+    <div class="row"><button type="button" class="btn" id="report-close">Close</button></div>
   </div>
 </dialog>
 

@@ -43,27 +43,12 @@ All JSON. Errors: `{ "error": "<plain sentence>" }` with 4xx.
   Reasons are plain sentences with class names, e.g. "Measured as A100 (108 SMs, no FP8), listed as H100 SXM.",
   "Answer locked in after 9.6 s; the deadline was 5.0 s."
   A **pass is published immediately** (Marks.record). A fail is stored as pending, `published: false`.
-`POST /api/world/login/start` -> `{ "device_id", "user_code", "verification_uri_complete", "expires_in" }`
-`POST /api/world/login/poll` in `{ "device_id" }` -> `{ "status": "pending"|"approved"|"denied"|"expired", "agent_token"? }`
-`POST /api/report/approve/start` in `{ "report_id", "agent_token" }` -> same shape as login/start (fresh World request)
-`POST /api/report/approve/poll` in `{ "device_id" }` ->
-  `{ "status": "pending"|"approved"|"denied"|"expired", "published"?: bool, "tx"?: str, "status_text"?: str }`
-  On approve: check `auth_time` is fresh (< 120 s); the approver is the reporter (a different login is rebound: the answer carries
-  a fresh `agent_token`); compute
-  `gpuVoter = HMAC_SHA256(VOTER_SECRET, sub || node)`, `providerVoter = HMAC_SHA256(VOTER_SECRET, sub ||
-  providerNode)`; call Marks.record(fail). Denied/expired: nothing published.
-Mandate (one approval, many agents): `POST /api/world/mandate/start` in `{ "agent_token", "hours" (1-72), "max_reports"
-(1-100) }` -> device grant; `/api/world/mandate/poll` in `{ "device_id" }` -> `{ "status", "mandate": { id, created_at,
-expires_at, max_reports, used, active, revoked_at } | null }` (fresh `auth_time`; stored under the person who approved, who gets a fresh `agent_token`; a new mandate
-replaces the old); `/api/world/mandate/status` and `/revoke` in `{ "agent_token" }`. `POST /api/report/auto` in
-`{ "report_id", "agent_token", "listing" }` publishes a failure under an active mandate with the same checks as approve
-(listing required, Jev contradiction -> 409 with no override, one voice per GPU); the report gets
-`approved_via: "mandate"`, `mandate_id`, `mandate_expires_at`. 403 when there is no active mandate or budget.
-World: World ID for Agents, OIDC device grant against `WORLD_ISSUER` (default `https://sandbox.auth.world.org`),
-endpoints `/api/v1/device_authorization`, `/api/v1/token`, JWKS `/.well-known/jwks.json`, scope `openid`, RS256 id_token.
-Env: `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `VOTER_SECRET`, `AGENT_TOKEN_SECRET`, `REPORTER_KEY`, `SEPOLIA_RPC`,
-`MARKS_ADDRESS`, `REDIS_URL`. `WORLD_MOCK=1` enables a local mock IdP (approve/deny via env or a test hook) for tests.
-
+`POST /api/report/publish` in `{ "report_id", "listing", "report_anyway"?: bool }` ->
+  `{ "published": bool, "tx"?: str, "via"?: str, "status_text": str }`
+  The listing (URL or text, 8+ characters) is required (422 without it) and stored beside the report. Jev reads it: a
+  confident reading as another class than the one reported -> 409 unless `report_anyway`. Each report is its own voter:
+  `gpuVoter = keccak256("gpu:" || report_id || node)`, `providerVoter = keccak256("provider:" || report_id ||
+  providerNode)`; call Marks.record(fail). 409 when already published.
 ## Marks contract (contracts/, Solidity ^0.8.25, Foundry)
 ```
 constructor(address admin, address reporter, bytes32 parent)   parent = namehash(waterline.eth)
@@ -88,7 +73,7 @@ event NoteSet(bytes32 indexed provider, string note)
 text(bytes32 node, string key) view -> string
   GPU keys: waterline.status, .class, .cores, .fingerprint, .passes, .fails, .humans, .recoveries, .degraded, .tops,
             .pct_of_spec, .report (0x hex of the latest reportHash)
-  provider keys (<cloud>.waterline.eth): waterline.status ("1 of 3 GPUs failed · reported by 2 people"), .gpus,
+  provider keys (<cloud>.waterline.eth): waterline.status ("1 of 3 GPUs failed · 2 failure reports"), .gpus,
             .failed_gpus, .humans, .passes, .fails, .degraded, .note
 resolve(bytes dnsName, bytes data) -> bytes   (ENSIP-10; handles text(bytes32,string) and addr(bytes32) -> zero)
 supportsInterface: 0x01ffc9a7, 0x9061b923 (IExtendedResolver), 0x59d1d43c (text), IEnhancedAccessControl
@@ -116,10 +101,10 @@ Probes: SM-count staircase (spin kernel, one block per SM via large dynamic shar
 (sha256 of quantised per-SM cycle ratios, 32 bytes). CPU mode reports fixed test probes.
 
 ## Agent (agent/, renter's laptop)
-`python -m agent login` · `python -m agent check --pod ssh://… --cloud cloud-b --listing "H100 80GB SXM"`
+`python -m agent check --pod ssh://… --cloud cloud-b --listing "H100 80GB SXM"`
 · `python -m agent history` · `python -m agent choose --listings listings.json`
 Jev (optional, `TYPESAFE_API_KEY`): listing text -> class Choice; below 0.9 confidence ask the human. Without a key: rule-based parse.
-Check flow: SSH to the pod, run the profiler there, show verdict; on fail start approval (prints the World code/link), poll, show outcome.
+Check flow: SSH to the pod, run the profiler there, show verdict; on fail stop paying, then publish the failure with the listing (`POST /api/report/publish`), show outcome.
 History: MultiBaas `POST {MB_URL}/api/v0/queries` (groupBy node, last/max aggregators) with `MB_API_KEY`; skip suspect/failed GPUs.
 
 ## Web page (web/index.html, static, deployed with the API on Vercel)
@@ -129,7 +114,7 @@ DApp User key (read-only); staircase chart from a pasted/linked profiler result.
 ## Control panel additions (web app served by the API)
 The web app lives in `web/` and is served by the API at `/` (same origin, no CORS, no keys in the browser).
 New read endpoints (JSON):
-- `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, world: {mode: "live"|"mock", issuer}, multibaas: {configured: bool, url, webhook: bool (MB_WEBHOOK_SECRET set)}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
+- `GET /api/health` -> `{ api: "ok", store: "redis"|"memory", chain: {mode: "live"|"dry-run", chain_id, marks, reporter, reporter_balance_eth}, multibaas: {configured: bool, url, webhook: bool (MB_WEBHOOK_SECRET set)}, ens: {parent: "waterline.eth", universal_resolver, rpc} }`
   (`universal_resolver` from `ENS_UNIVERSAL_RESOLVER`, else `contracts/ens.sepolia.json` when present; `rpc` = `PUBLIC_SEPOLIA_RPC`, default publicnode; `SEPOLIA_RPC` is never shown because it may carry a key.)
 - `GET /api/providers` -> `{ source, error, providers: [{ provider_node, name, gpus, failed_gpus, humans, passes, fails, degraded, status }] }` (MultiBaas `ProviderTally`, else this API's own replay).
 - `GET /api/reports?limit=50` -> `[{ report_id, created_at, gpu_name, node, cloud, claimed_class, measured_class, verdict, published, tx, status_text }]` newest first (API keeps an index of recent report ids in the store).
@@ -140,8 +125,7 @@ New read endpoints (JSON):
   hashing and network time, so this is a lower bound on the chip's real throughput.
 - `GET /api/gpus` -> `{ source: "multibaas"|"local", error: str|null, gpus: [{ node, gpu_name?, cls, cores, passes, fails, humans, status, last_at }] }`. Source: MultiBaas event query when `MB_URL`+`MB_API_KEY` are set (server-side, admin key never leaves the API); otherwise, or if MultiBaas fails (`error` set), built from the API's own published reports. `gpu_name` is filled from the API's reports when known.
 Commit `probes` may include optional `staircase: {"64": ms, ...}` which the API stores with the report. The profiler always sends it (CPU mode: synthetic, step at the simulated SM count).
-Report `status_text`: "Published." / "Publishing failed." / "Waiting for a human approval. Nothing is published yet." / "Recorded on Marks.".
-The approval endpoints stay as they are; the web app uses the agent token from the World login done in the browser (stored in localStorage only as a convenience; the agent CLI keeps its own).
+Report `status_text`: "Published." / "Publishing failed." / "Waiting for the listing you rented. Nothing is published yet." / "Recorded on Marks.".
 
 ## Performance profile (Ookla-style) — shared data model
 Every metric is an object: `{ "value": float|null, "unit": str, "method": str, "trust": "verified"|"measured"|"reported",
@@ -180,12 +164,12 @@ text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries
 - Write paths (`/api/health` → `chain.write_path`): `multibaas` when `MB_URL` + `MB_API_KEY` + `REPORTER_KEY` are set
   (compose `methods/record` via MultiBaas, verify calldata/to/value, sign locally, submit via
   `/chains/ethereum/transactions/submit`), else `rpc` (direct JSON-RPC), else `dry-run`.
-- Reports gain `via` (write path used), `indexed` (bool) and `indexed_at` (unix seconds|null); reveal and approve/poll
+- Reports gain `via` (write path used), `indexed` (bool) and `indexed_at` (unix seconds|null); reveal and report/publish
   outputs gain `via`.
 - `POST /api/webhooks/multibaas`: HMAC-SHA256(`MB_WEBHOOK_SECRET`, raw body + `X-MultiBaas-Timestamp`) in
   `X-MultiBaas-Signature` (hex); stale > 5 min or bad signature → 401. Marks matching `Reported` events indexed → `{ok, indexed}`.
 - Env: `MB_MARKS_ALIAS`, `MB_MARKS_LABEL` (default `marks`), `MB_WEBHOOK_SECRET`, `WATERLINE_STOP_CMD`.
-- Agent: `check --pod-id --stop-cmd` (on FAIL, runs the stop command before asking for World approval; never on PASS).
+- Agent: `check --pod-id --stop-cmd` (on FAIL, runs the stop command before reporting; never on PASS).
   `choose`: history only: skip any GPU with ≥ 1 failure report or suspect/failed status, or over `--max-price`;
   then most passes, then cheapest. Jev only reads listing text.
 - The `Reported` layout is hard-coded in `api/app.py` and `agent/history.py`; `tests/api/test_event_layout.py`
@@ -196,7 +180,7 @@ text records `waterline.tops`, `waterline.pct_of_spec`; `Reported` event carries
   `via`, `indexed`, `indexed_at`, `status_text`, `report_hash`), as JSON with sorted keys, no whitespace
   (`separators=(",",":")`), UTF-8 (`api/app.py: canonical`). `report_hash = keccak256(canonical bytes)`, computed
   once at reveal (the verdict) and stored on the report. It is sent as `reportHash` in `Marks.record` on both the
-  pass path and the approved-fail path; Marks keeps the latest in `waterline.report` and emits it in `Reported`
+  pass path and the published-fail path; Marks keeps the latest in `waterline.report` and emits it in `Reported`
   (index 14; the MultiBaas queries don't select it).
 - `GET /api/reports/{id}/evidence` -> the exact canonical bytes (`application/json`) + header
   `X-Waterline-Report-Hash`. `/api/reports`, `/api/reports/{id}` and the reveal output carry `report_hash`.

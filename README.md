@@ -4,7 +4,7 @@
 
 **Proof of Delivered Compute.** Check that the GPU you rent delivers what you pay for: the right chip, at its rated speed.
 
-ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENSv2 · World ID for Agents · Curvegrid MultiBaas
+ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENSv2 · Curvegrid MultiBaas
 
 | | |
 |---|---|
@@ -17,7 +17,7 @@ ETHGlobal Tokyo 2026 · Ethereum Sepolia · ENSv2 · World ID for Agents · Curv
 
 A renter runs one command inside a rented GPU; Waterline sends a sealed INT8 exam against a deadline, re-grades a
 random slice and counts the cores, then writes the verdict to that GPU's own ENS name, where a pass needs real
-silicon and a failure needs a real person verified with World ID.
+silicon and a failure carries the listing the renter rented.
 
 ## Check a GPU in one line
 
@@ -38,7 +38,7 @@ curl -fsSL waterline-eth.vercel.app/run | python3 - <provider> <gpu>
 - **Options:** `--gpu 3` checks the fourth card of a multi-GPU pod; `--every 30m` re-checks at jittered intervals
   (a periodic series, shown as a timeline); `--times N` stops after N checks.
 - **What you get:** a short receipt (verdict, the GPU's ENS name, the transaction, the report link). A pass or a
-  degraded result is published at once; a failure waits for a person (below).
+  degraded result is published at once; a failure publishes with the listing you rented (below).
 
 The web panel builds the command for you: pick the provider and GPU from the two drop-downs in the hero.
 
@@ -67,7 +67,6 @@ flowchart LR
   P -- seed ⇄ sealed answer --> API[Waterline API<br/>times it, re-grades it]
   API -- records --> M[Marks on Sepolia]
   M -- resolves --> E["gpu-….provider.waterline.eth<br/>provider.waterline.eth"]
-  W[World ID] -. approves failures .-> API
   MB[Curvegrid MultiBaas] -. indexes, webhook .-> M
 ```
 
@@ -80,13 +79,12 @@ flowchart LR
    its numbers and never counted toward failed. On time: **pass**.
 4. **The record.** `Marks` stores the verdict under the GPU's ENS name and rolls it up to the provider's name.
 
-## Four pillars
+## Three pillars
 
 | Pillar | Question | Carried by |
 |---|---|---|
 | **Proof** | Is this GPU what was sold? | The profiler and the API's exam |
 | **Place** | Where is the result kept? | ENSv2 |
-| **People** | Who can report a failure? | World ID for Agents |
 | **Use** | How do agents act on it? | Curvegrid MultiBaas |
 
 ### Proof: the profiler
@@ -105,10 +103,10 @@ flowchart LR
   `<provider>.waterline.eth`, `gpu-<id>.<provider>.waterline.eth` and each check, `<n>.gpu-<id>.<provider>.waterline.eth`,
   resolves with no registration. A check's name answers `waterline.verdict`, `class`, `cores`, `tops`, `pct_of_spec`,
   `at` and its own `report` hash; the GPU answers `waterline.checks` (how many). Text records: `waterline.status`, `class`, `cores`,
-  `pct_of_spec`, `passes`, `degraded`, `fails`, `humans`, `recoveries`, `fingerprint`, `report`; providers add `gpus`,
+  `pct_of_spec`, `passes`, `degraded`, `fails`, `humans` (distinct failure reports), `recoveries`, `fingerprint`, `report`; providers add `gpus`,
   `failed_gpus`, `note`.
 - **The tree is the roll-up.** A GPU's node derives from its provider's, so every report also scores the provider
-  (GPUs checked, failed now, degraded, people who reported, each once). Renaming a chip hides nothing. Two passes
+  (GPUs checked, failed now, degraded, failure reports). Renaming a chip hides nothing. Two passes
   after a failure mark a GPU `recovered`.
 - **Enhanced Access Control.** Only the REPORTER role writes scores (our API today; grantable per GPU or per provider).
   A provider's NOTE role edits only `waterline.note`, never a score. Class names are an admin-set table, so new GPUs
@@ -116,20 +114,14 @@ flowchart LR
 - **Evidence anchored.** `waterline.report` is the keccak256 of the full report: download it, hash it, compare. The
   panel opens any check from that hash (`/#/r/<hash>`).
 
-### People: World ID for Agents
-- **One person, one voice.** Login and approvals use World's device-code flow against `sandbox.auth.world.org`; the
-  id_token is verified in our backend (RS256, issuer, audience, `auth_time` under 120 s). From the pairwise `sub` we
-  derive two private voter ids (HMAC): one per GPU, one per provider. One person counts once per GPU and once per
-  provider; two different people mark a GPU failed.
-- **Failures need a person, passes don't.** A failure is published only after a fresh World approval; the person who
-  approves is the reporter; deny or expiry publishes nothing.
-- **One person, many agents: the mandate.** One fresh approval grants a mandate (1 hour to 3 days, 5 to 100 reports,
-  revocable). The person's agents then report failures at once, each still that person's one voice. The panel's
-  **World ID** page and header show the session and the mandate (used, left, expiry); every report made under it says
-  so. `python -m agent allow --hours 24 --max 20`.
-- **Accusations cost something.** The reporter pastes the listing they rented and accepts that the report is tied to
-  their World ID. **Jev (TypeSafe) reads that listing**: if it reads as another GPU, the report stops unless the person
-  insists, and a mandate never overrides it. The panel shows the listing, Jev's reading and the pseudonymous reporter.
+### Failures carry the listing
+- **Passes carry evidence; failures carry the listing.** A failure accuses the provider of misselling the GPU, so it
+  is published with the listing the renter rented, in its own words. The agent adds it on the spot; on the web,
+  **Publish** on the check.
+- **Jev (TypeSafe) reads that listing.** When it reads as another GPU than the one reported, the report stops until
+  the renter chooses to report anyway, and the check shows it either way.
+- **Two reports mark a GPU failed.** One makes it suspect; each report also counts on the provider. Automatic flags
+  mark a listing that names no GPU, one that contradicts the claim, and a card that passed under another listing.
 
 ### Use: Curvegrid MultiBaas
 - **History decides, not an LLM.** Event queries by GPU and by provider make the agent skip suspect, failed and
@@ -141,22 +133,20 @@ flowchart LR
 
 ```bash
 export WATERLINE_API=https://waterline-eth.vercel.app
-python -m agent login                                   # once, with World App
-python -m agent allow --hours 24 --max 20             # optional: let your agents report failures
 python -m agent check --pod ssh://root@host:port --cloud vastai --listing "1x H100 80GB SXM5"
 python -m agent check ... --every 30m --times 6         # a periodic series
-python -m agent check ... --web                         # leave any approval to the web panel
+python -m agent check ... --web                         # leave publishing a failure to the web panel
 python -m agent choose --listings listings.json         # pick a GPU from MultiBaas history only
 ```
-On a failure it stops the rental (`--stop-cmd`, e.g. `runpodctl stop pod {pod_id}`), then reports under the mandate,
-asks for your World approval, or points you to the web panel.
+On a failure it stops the rental (`--stop-cmd`, e.g. `runpodctl stop pod {pod_id}`), then publishes the failure with
+the listing you rented, or points you to the web panel.
 
 ## The control panel
 
 https://waterline-eth.vercel.app: **Overview** (the one-line check, how it works, recent checks), **GPUs** (the ENS
 name tree, every GPU on record), **Checks** (each check: the exam, the core staircase, performance against the rating
-and other checks, health, the evidence and its onchain hash, approval), **Providers** (roll-up per provider, then by
-model), **World ID** (your session and mandate). Every GPU and provider name has its own page, read live from ENS.
+and other checks, health, the evidence and its onchain hash, publishing a failure), **Providers** (roll-up per provider, then by
+model), **Reporting** (how failures publish and count). Every GPU and provider name has its own page, read live from ENS.
 
 ## Deployed
 
@@ -168,18 +158,18 @@ model), **World ID** (your session and mandate). Every GPU and provider name has
 | MultiBaas | contract alias `marks4`, webhook to `/api/webhooks/multibaas` |
 | API + panel | Vercel (FastAPI) + Redis |
 
-`scripts/check_live.py` checks the whole stack (RPC, roles, ENS resolution, MultiBaas link and webhook, API, World).
+`scripts/check_live.py` checks the whole stack (RPC, roles, ENS resolution, MultiBaas link and webhook, API).
 
 ## Principles and limits
 
-- **Evidence decides.** Passes carry evidence; failures need verified people; the machine's own numbers only inform.
+- **Evidence decides.** Passes carry evidence; failures carry the listing; the machine's own numbers only inform.
 - **Two layers.** The exam guards the measurement (secret seed, sealed answers, API-chosen rows, heat-proof chip
-  check). World, two people and per-provider dedup guard the verdict: gaming can't be amplified, and it's attributable.
+  check). The listing, Jev's reading, two reports and the provider roll-up guard the verdict.
 - **No provider cooperation.** The host never writes a score.
 - **Limits.** A host could answer checks on a real H100 and run your job on an A100 (checks at random moments raise
-  the cost; attestation would close it). A modified profiler could report fewer cores (two people, the roll-up and
-  later passes bound it). The GPU UUID and the provider name are what the host's driver and the renter report. People
-  can be bribed. World runs on its sandbox (proofs mocked by World) and is verified in our backend.
+  the cost; attestation would close it). A modified profiler could report fewer cores (two reports, the roll-up and
+  later passes bound it). The GPU UUID and the provider name are what the host's driver and the renter report. Failure
+  reports carry no identity, so one renter can file both reports that mark a GPU failed.
 
 ## What's next
 
@@ -195,12 +185,12 @@ model), **World ID** (your session and mandate). Every GPU and provider name has
 |---|---|
 | `core/` | Challenge maths (seeded INT8 generator, row fingerprints, Merkle root, frozen vectors), GPU classes, reference specs, known providers, listing reader |
 | `contracts/` | `Marks`: record, ENS wildcard resolver, ENSv2 Enhanced Access Control (Foundry); ENSv2 pinned at `sepolia-deployment-2026-09-15` |
-| `api/` | Waterline API (FastAPI on Vercel + Redis): the exam, grading, World login/approval/mandate, chain writes, MultiBaas reads and webhook, the one-liner |
+| `api/` | Waterline API (FastAPI on Vercel + Redis): the exam, grading, failure publishing, chain writes, MultiBaas reads and webhook, the one-liner |
 | `prover/` | Profiler that runs in the rented pod (CuPy + torch): exam, probes, performance, health |
-| `agent/` | Renter CLI: check a pod over SSH, stop paying, report, mandate, choose GPUs from history |
+| `agent/` | Renter CLI: check a pod over SSH, stop paying, report, choose GPUs from history |
 | `web/` | Control panel served by the API |
-| `scripts/` | Deploy helpers, MultiBaas link, live checks, World probe |
-| `tests/` | API, profiler and agent tests (169) |
+| `scripts/` | Deploy helpers, MultiBaas link, live checks |
+| `tests/` | API, profiler and agent tests (158) |
 | `docs/` | `INTERFACES.md` (the spec), `METRICS.md`, GPU reference, build prompts |
 
 ## Setup and testing
@@ -213,8 +203,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 (cd contracts && forge test --match-contract EnsFork --fork-url $SEPOLIA_RPC)  # real ENSv2 on a Sepolia fork
 .venv/bin/python scripts/check_live.py                  # the deployed stack
 
-# local end to end (simulated World, CPU profiler)
-WORLD_MOCK=1 ALLOW_CLIENT_SIZES=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:app --port 8787
+# local end to end (CPU profiler)
+ALLOW_CLIENT_SIZES=1 .venv/bin/uvicorn api.app:app --port 8787
 .venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud runpod --claimed 1 --cpu
 .venv/bin/python -m prover.run --api http://127.0.0.1:8787 --cloud vastai --claimed 1 --cpu --sms 108   # an A100 sold as H100
 open http://127.0.0.1:8787
@@ -255,39 +245,11 @@ On a real GPU pod: `prover/POD_SETUP.md`. Deploying the contract: `contracts/REA
 - **Feedback:** the MCP server proof of concept can't select `triggered_at` or `contract_address_alias`, which limits
   agent use; the Python SDK lags the current API paths, so we called REST directly.
 
-## World ID integration debrief
-
-[DRAFT from build notes: rewrite in your own words, and fill in the time, before submitting.]
-
-### Time to first success
-[N] hours from first attempt to the first live device-code login through `sandbox.auth.world.org` from our
-production API. Most of it went to finding the right portal; the code itself worked the first time it had a
-valid client.
-
-### Friction encountered
-We first registered an app at developer.world.org. Its id returned `invalid_client` at the World ID for Agents
-IdP with no hint that it belonged to a different product, so we rebuilt the approval on IDKit before the prize page
-pointed us to `sandbox.auth.world.org/portal`. The portal calls OIDC clients "apps", which made the right button
-hard to find. The sandbox app's TestFlight enrollment stayed pending; the note that proofs are mocked lived only on
-the prize page.
-
-### Missing capability or documentation
-docs.world.org doesn't link to the Agents IdP or its portal, and the device-grant guide is only reachable through
-the IdP's MCP resources. It isn't documented whether the World ID Simulator works with the sandbox IdP.
-
-### What worked well
-The pairwise `sub` is stable: two device logins from the same World App gave the same `sub` (checked with
-`scripts/world_sub_probe.py`, which prints only hashes). That made one-person-one-voice and the mandate simple.
-
-### The one improvement with the greatest impact
-Make `invalid_client` say which environment and portal a client id belongs to (or link both portals from each other).
-That one message would have saved us the IDKit detour.
-
 ## How we built it
 
 Architecture, design decisions and product direction by the builder: the provider-independent design, the
-evidence-vs-human rule for passes and failures, per-GPU ENS names with only the contract able to write the verdict,
-World ID Human Continuity for one-person-one-voice, the health report, and the five-piece system. Implementation was
+evidence-vs-listing rule for passes and failures, per-GPU ENS names with only the contract able to write the verdict,
+the health report, and the five-piece system. Implementation was
 assisted by Claude Code, working from our specs (`PLAN.md`, `docs/INTERFACES.md`); the prompts are in `docs/prompts/`.
 All code was written during the event.
 
@@ -299,7 +261,7 @@ All code was written during the event.
 
 Unprivileged Topology Certificates (arXiv 2606.24934) and DrawnApart for GPU fingerprinting; standard GPU tooling
 (NVML, DCGM, gpu-fryer-style burns) for the health report. What's new is combining them into a renter-run check
-whose passes carry evidence and whose failures need verified humans, recorded onchain where no host can write.
+whose passes carry evidence and whose failures carry the listing, recorded onchain where no host can write.
 
-Brand marks: ENS, World and Curvegrid logos in `web/logos/` are their owners' and are shown only to credit the
+Brand marks: ENS and Curvegrid logos in `web/logos/` are their owners' and are shown only to credit the
 technologies this project is built on.

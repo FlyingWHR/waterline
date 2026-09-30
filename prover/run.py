@@ -231,7 +231,7 @@ def main(argv=None):
              + (f" via {rv['via']}" if rv.get("via") not in (None, "dry-run") else ""))
     fact("report", link)
     if rv["verdict"] == "fail":
-        log(paint(AMBER, "  → nothing is published yet: open the report and approve it with World to publish"))
+        log(paint(AMBER, "  → nothing is published yet: open the report and add the listing you rented to publish"))
     if not sys.stdout.isatty():  # machine-readable for the agent; a person on a terminal gets the receipt only
         print(json.dumps(rv))
     return 0

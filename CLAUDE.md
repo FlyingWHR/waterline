@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Waterline: proof of delivered GPU compute for a 36-hour ETHGlobal hackathon. A rented GPU answers a seeded matmul challenge under a deadline, a CPU verifier spot-checks it and signs a mark, and an on-chain escrow releases or refunds the rent based on that mark. Payments go through x402 to a per-job CREATE2 address.
 
-**`PLAN.md` is the source of truth for the event build**: narrative, partner picks (ENS, World, Curvegrid), architecture (five pieces: agent/, prover/, api/ on Vercel + Redis, contracts/ Marks on Ethereum Sepolia which is also the ENS resolver for *.waterline.eth, web/), the hour-by-hour solo build plan, demo rules and trust rules. Read it first.
+**`PLAN.md` is the source of truth for the event build**: narrative, partner picks (ENS, Curvegrid), architecture (five pieces: agent/, prover/, api/ on Vercel + Redis, contracts/ Marks on Ethereum Sepolia which is also the ENS resolver for *.waterline.eth, web/), the hour-by-hour solo build plan, demo rules and trust rules. Read it first.
 
 `files/` is **pre-hackathon reference work**: ETHGlobal's start-fresh rule means event code gets rewritten at the event. What carries over is the design, the measurements, and `vectors.json`. `files/BUILD_ORDER.md` is the hour-by-hour rewrite plan; `files/STUDY.md` records which existing tools (gpu-fryer, Imbue cluster-health, etc.) were studied and what was taken from each.
 

@@ -41,13 +41,13 @@ def namehash(name):
 
 
 def status(row):
-    """Same rule as Marks.status: active humans decide; then a degraded latest check (verdict 3); failures with none
+    """Same rule as Marks.status: active failure reports decide; then a degraded latest check (verdict 3); failures with none
     active means recovered."""
     active, fails, passes = (int(row.get(k) or 0) for k in ("active", "fails", "passes"))
     if active >= 2:
         return "failed"
     if active == 1:
-        return "suspect · 1 of 2 humans"
+        return "suspect · 1 of 2 reports"
     if int(row.get("verdict") or 0) == 3:
         return "degraded"
     if fails:

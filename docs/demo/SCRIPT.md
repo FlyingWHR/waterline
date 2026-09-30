@@ -28,15 +28,14 @@ Do: open the check from the receipt link. Point at the deadline bar, the core st
 "Under the hood: a fresh problem, a clock on our side, answers sealed before we pick which to check. Then we count
 cores. Heat slows a chip; it can't remove cores. Cores name the chip. The clock measures delivery."
 
-## 4 · Fail · Approve · 1:20 (45 s) · [TERMINAL laptop → SITE → World]
+## 4 · Fail · Publish · 1:20 (45 s) · [TERMINAL laptop → SITE]
 
-Do: run the agent on B2 with `--web`, open the printed link, Approve, paste the listing, tick, Deny in World, then
-Approve. Show the Reporting tab (agent permission) at the end.
+Do: run the agent on B2 with `--web`, open the printed link, press Publish with your listing, paste the listing,
+tick, Publish.
 
 "Now a cheat. This pod is listed as an H100; it's an A100 I relabelled myself, playing the dishonest host. A hundred
-and eight cores, no FP8: caught, and my agent stops paying. A failure accuses someone, so a real person must stand
-behind it. Jev confirms the listing says H100. I approve with World ID. Deny, and nothing goes public. Approve, and
-it's onchain. Twenty agents? One approval gives them permission, and it's still one voice."
+and eight cores, no FP8: caught, and my agent stops paying. A failure accuses someone, so it goes public with the
+listing I rented, in its own words. Jev reads it: it says H100, so the claim stands. Publish, and it's onchain."
 
 ## 5 · Record · Compare · 2:05 (45 s) · [SITE GPUs → Providers → B2's check]
 
@@ -64,5 +63,5 @@ needs it next: a renter, a lender, an agent, or even a GPU credit provider."
 
 ---
 
-Before recording: A1 and B2 rented and reachable. Log in once on the site's World ID tab. The laptop has
+Before recording: A1 and B2 rented and reachable. The laptop has
 `WATERLINE_API=https://waterline-eth.vercel.app`. The MultiBaas console and an ENS explorer are open in tabs.

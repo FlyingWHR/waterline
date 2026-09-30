@@ -4,9 +4,8 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 
 | File | Job |
 |---|---|
-| `app.py` | routes: check start/commit/reveal, World login, report approval, control panel reads (health, reports, gpus), MultiBaas webhook; serves `web/` |
+| `app.py` | routes: check start/commit/reveal, failure publishing, control panel reads (health, reports, gpus), MultiBaas webhook; serves `web/` |
 | `check.py` | sampling (secret, after commit), grading via `core/`, class from probes, GPU label |
-| `world.py` | World ID for Agents: OIDC device grant, id_token checks (RS256/JWKS, iss, aud, exp, auth_time), agent token, voter ids, mock |
 | `chain.py` | ENS namehash, `Marks.record` through MultiBaas (compose, sign locally, submit), else raw JSON-RPC, else dry-run |
 | `store.py` | Redis (`REDIS_URL`) or in-memory store with expiry |
 
@@ -19,11 +18,6 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 | `MB_URL`, `MB_API_KEY`, `REPORTER_KEY` | publishing | write path `multibaas` (wins over `rpc`): MultiBaas composes `record` (fills nonce + gas), the API checks the calldata, signs with `REPORTER_KEY`, MultiBaas submits. `MARKS_ADDRESS` optional here; when set, the composed `to` must match |
 | `MB_MARKS_ALIAS`, `MB_MARKS_LABEL` | publishing, webhook | MultiBaas address alias / contract label of Marks, both default `marks` |
 | `MB_WEBHOOK_SECRET` | `/api/webhooks/multibaas` | unset = every webhook call gets 401 |
-| `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET` | World | OIDC client from sandbox.auth.world.org/portal (client_secret_basic) |
-| `WORLD_ISSUER` | World | default `https://sandbox.auth.world.org` |
-| `AGENT_TOKEN_SECRET` | login | HMAC key for our agent token |
-| `VOTER_SECRET` | approval | `voter_id = HMAC_SHA256(VOTER_SECRET, utf8(sub) ‖ node)` |
-| `WORLD_MOCK=1`, `WORLD_MOCK_DECISION`, `WORLD_MOCK_SUB` | offline | decision `approve` (default) / `deny` / `expire` / `pending` |
 | `MB_URL`, `MB_API_KEY` | `/api/gpus` | MultiBaas admin key, server-side only; unset = table from the API's own reports |
 | `ENS_UNIVERSAL_RESOLVER` | `/api/health` | set on Vercel (`contracts/` is not bundled); locally read from `contracts/ens.sepolia.json` |
 | `PUBLIC_SEPOLIA_RPC` | `/api/health` | keyless RPC the browser uses for ENS reads; default publicnode |
@@ -34,7 +28,7 @@ FastAPI app (`api/app.py`), one Vercel Function for every route. Contract: `docs
 
 ```
 .venv/bin/pip install -r requirements.txt uvicorn pytest
-WORLD_MOCK=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:app --port 8000
+.venv/bin/uvicorn api.app:app --port 8000
 .venv/bin/python -m pytest tests/api -q
 ```
 
@@ -46,7 +40,6 @@ WORLD_MOCK=1 AGENT_TOKEN_SECRET=dev VOTER_SECRET=dev .venv/bin/uvicorn api.app:a
 - Redis: `vercel integration add upstash` then check `vercel env ls` for `REDIS_URL` (if the integration only
   sets `KV_URL`, copy it into `REDIS_URL`).
 - Secrets: `vercel env add REPORTER_KEY production` (and the others). Never in git.
-- World: register the client on the final production domain first (the `sub` is tied to it).
 
 ## curl walkthrough
 
@@ -63,12 +56,9 @@ curl -s -XPOST $API/api/check/reveal -H 'content-type: application/json' \
 # -> {report_id, verdict, measured_class, reasons, gpu_name, node, published, tx, via, report_hash}   via: multibaas|rpc|dry-run|null
 curl -s $API/api/reports/<report_id>/evidence   # canonical bytes; keccak256(body) == report_hash == waterline.report
 
-curl -s -XPOST $API/api/world/login/start          # -> {device_id, user_code, verification_uri_complete, expires_in}
-curl -s -XPOST $API/api/world/login/poll -H 'content-type: application/json' -d '{"device_id":"…"}'
-# -> {status:"approved", agent_token}  (the token is returned once)
-curl -s -XPOST $API/api/report/approve/start -H 'content-type: application/json' -d '{"report_id":"…","agent_token":"…"}'
-curl -s -XPOST $API/api/report/approve/poll -H 'content-type: application/json' -d '{"device_id":"…"}'
-# -> {status, published, tx?, via?, status_text?}
+curl -s -XPOST $API/api/report/publish -H 'content-type: application/json' \
+  -d '{"report_id":"…","listing":"1x H100 80GB SXM5 · $2.49/h"}'
+# -> {published, tx?, via?, status_text}; 409 when the listing reads as another GPU (resend with "report_anyway":true)
 ```
 
 ## MultiBaas webhook

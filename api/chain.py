@@ -127,7 +127,7 @@ def balance_eth(address):
 
 def record(cloud: str, gpu_label: str, verdict: int, cls: int, cores: int, fingerprint: bytes, gpu_voter: bytes = ZERO,
            provider_voter: bytes = ZERO, tops_x10: int = 0, pct_bps: int = 0, report_hash: bytes = ZERO):
-    """Marks.record(...) for gpu_label.cloud.waterline.eth. A failure needs both voter ids (one World ID proof -> a
+    """Marks.record(...) for gpu_label.cloud.waterline.eth. A failure needs both voter ids (one report -> a
     per-GPU and a per-provider id); a pass carries none. tops_x10 / pct_bps from encode_perf; report_hash = keccak256
     of the canonical report. Returns the tx hash (0x hex), or None in dry-run.
     The path taken is write_path(). Raises ChainError on failure."""

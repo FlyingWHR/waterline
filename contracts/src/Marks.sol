@@ -12,9 +12,9 @@ import {EnhancedAccessControl} from "@ensdomains/contracts-v2/access-control/Enh
 ///         make a GPU DEGRADED (right chip, correct answers, deadline missed) but never FAIL. Aggregation: trust is
 ///         asymmetric. A pass needs real silicon (the API's timed exam), so any reporter may record one; so may a
 ///         degraded result, which carries its numbers and never counts toward failed.
-///         A failure needs real people: a World ID-backed voter per GPU, two distinct humans to mark it failed.
+///         A failure is published with the listing the renter rented; two failure reports mark a GPU failed.
 ///         Reputation rolls up the ENS tree: the contract derives a GPU's node from its provider's, so a failure
-///         always lands on `<cloud>.waterline.eth` too, where each human counts once however many GPUs they report.
+///         always lands on `<cloud>.waterline.eth` too, where each voter counts once however many GPUs they report.
 ///         Renaming a chip gives it a clean GPU record, not a clean provider.
 ///
 ///         Roles (ENSv2 Enhanced Access Control, resource = a name's node, root grant = every name):
@@ -46,8 +46,8 @@ contract Marks is EnhancedAccessControl {
         bytes32 fingerprint;
         uint32 passes;
         uint32 fails;
-        uint32 humans; // distinct verified humans who ever reported a failure (history)
-        uint32 active; // humans counting toward status since the last recovery
+        uint32 humans; // distinct voters who ever reported a failure (history)
+        uint32 active; // failure reports counting toward status since the last recovery
         uint32 sinceFail; // passes since the last failure
         uint32 recoveries;
         uint32 degraded; // right chip, correct answers, too slow for the deadline (heat, power, sharing)
@@ -76,7 +76,7 @@ contract Marks is EnhancedAccessControl {
     struct Provider {
         uint32 gpus; // distinct GPUs with at least one report
         uint32 failedGpus; // GPUs whose status is failed right now
-        uint32 humans; // distinct humans who reported any of its GPUs (each counts once)
+        uint32 humans; // distinct voters who reported any of its GPUs (each counts once)
         uint32 passes;
         uint32 fails;
         uint32 degraded;
@@ -85,7 +85,7 @@ contract Marks is EnhancedAccessControl {
 
     mapping(bytes32 node => Gpu) public gpus;
     mapping(bytes32 node => Provider) public providers;
-    mapping(bytes32 voteKey => bool) public voted; // keccak(node, gpuVoter): one voice per human per GPU, ever
+    mapping(bytes32 voteKey => bool) public voted; // keccak(node, gpuVoter): one voice per voter per GPU, ever
     mapping(bytes32 voteKey => bool) public providerVoted; // keccak(providerNode, providerVoter)
 
     event Reported(
@@ -132,7 +132,7 @@ contract Marks is EnhancedAccessControl {
     }
 
     /// @notice Record one verified report. A pass carries its own evidence (voters ignored). A failure needs two voter
-    ///         IDs derived by the API from one World ID proof: one per human per GPU, one per human per provider.
+    ///         IDs derived by the API from the report: one for its GPU, one for its provider.
     ///         topsX10 / pctBps: verified INT8 throughput (TOPS x 10) and its percent of spec (x 100).
     ///         reportHash: keccak256 of the full report, so anyone can check the off-chain evidence wasn't edited.
     function record(
@@ -212,7 +212,7 @@ contract Marks is EnhancedAccessControl {
                 g.recoveries += 1;
             }
         } else if (verdict == DEGRADED) {
-            g.degraded += 1; // neither a pass (no recovery credit) nor a failure (no humans, never "failed")
+            g.degraded += 1; // neither a pass (no recovery credit) nor a failure (no votes, never "failed")
             p.degraded += 1;
         } else if (verdict == FAIL) {
             _vote(node, pnode, gpuVoter, providerVoter);
@@ -269,7 +269,7 @@ contract Marks is EnhancedAccessControl {
     function status(bytes32 node) public view returns (string memory) {
         Gpu storage g = gpus[node];
         if (g.active >= HUMANS_TO_FAIL) return "failed";
-        if (g.active == 1) return unicode"suspect · 1 of 2 humans";
+        if (g.active == 1) return unicode"suspect · 1 of 2 reports";
         if (g.lastVerdict == DEGRADED) return "degraded";
         if (g.recoveries > 0) return "recovered";
         if (g.passes > 0) return "pass";
@@ -281,8 +281,8 @@ contract Marks is EnhancedAccessControl {
         Provider storage p = providers[pnode];
         if (p.gpus == 0) return "unknown";
         return string.concat(
-            _uint(p.failedGpus), " of ", _uint(p.gpus), p.gpus == 1 ? " GPU failed" : " GPUs failed", unicode" · reported by ",
-            _uint(p.humans), p.humans == 1 ? " person" : " people"
+            _uint(p.failedGpus), " of ", _uint(p.gpus), p.gpus == 1 ? " GPU failed" : " GPUs failed", unicode" · ",
+            _uint(p.humans), p.humans == 1 ? " failure report" : " failure reports"
         );
     }
 

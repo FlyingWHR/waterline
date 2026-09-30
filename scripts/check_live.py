@@ -149,28 +149,8 @@ def checks():
             need = {"core/challenge.py", "core/listing.py", "core/gpu_specs.json", "core/providers.json", "prover/run.py", "prover/gpu.py"}
             yield need <= names, f"One-liner bundle carries the profiler ({len(names)} files)", \
                 f"Missing from /api/bundle: {sorted(need - names)}. Check .vercelignore and vercel.json excludeFiles."
-            yield h["world"]["mode"] == "live", f"API World mode: {h['world']['mode']}", "Unset WORLD_MOCK on Vercel; set WORLD_CLIENT_ID and WORLD_CLIENT_SECRET there, then redeploy."
         except (httpx.HTTPError, ValueError, KeyError) as e:
             yield False, f"API unreachable at {api} ({type(e).__name__})", "Deploy the API (vercel --prod) and check API_URL."
-
-    iss = (env("WORLD_ISSUER") or "https://sandbox.auth.world.org").rstrip("/")
-    try:
-        keys = httpx.get(iss + "/.well-known/jwks.json", timeout=15).json().get("keys")
-        yield bool(keys), f"World issuer {iss} serves its signing keys", "Check WORLD_ISSUER."
-    except (httpx.HTTPError, ValueError) as e:
-        yield False, f"World issuer {iss} unreachable ({type(e).__name__})", "Check WORLD_ISSUER and the network."
-    cid, sec = env("WORLD_CLIENT_ID"), env("WORLD_CLIENT_SECRET")
-    if not (cid and sec):
-        yield False, "World client id and secret set", \
-            "Register an OIDC client at sandbox.auth.world.org/portal, then set WORLD_CLIENT_ID / WORLD_CLIENT_SECRET."
-    else:
-        try:  # starts (and abandons) one device login: proves the client is real without anyone approving
-            r = httpx.post(iss + "/api/v1/device_authorization", auth=(cid, sec), data={"client_id": cid, "scope": "openid"},
-                           timeout=15)
-            yield r.status_code == 200, f"World accepts client {cid} for device login (HTTP {r.status_code})", \
-                "Check the client id/secret and that the device grant is enabled for it in the portal."
-        except httpx.HTTPError as e:
-            yield False, f"World device login unreachable ({type(e).__name__})", "Check the network."
 
 
 def main():

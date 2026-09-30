@@ -1,14 +1,12 @@
 // Waterline control panel. Plain ES module, no build. Talks only to this origin's /api/*; addresses come from /api/health.
 const VIEM = "https://esm.sh/viem@2.56.9";
-const QRLIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm";
 const SCAN = "https://sepolia.etherscan.io";
 const CLASSES = { 0: "unknown", 1: "H100 SXM", 2: "H100 PCIe", 3: "A100" }; // filled from /api/gpu-classes at boot
 let GPU_TABLE = [];
 const REFS = [[108, "A100"], [114, "H100 PCIe"], [132, "H100 SXM"]];
-const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "humans", "recoveries", "fingerprint", "report", "checks"];
+const ENS_KEYS = ["status", "class", "cores", "pct_of_spec", "passes", "degraded", "fails", "recoveries", "fingerprint", "report", "checks"];
 const CHECK_KEYS = ["verdict", "class", "cores", "tops", "pct_of_spec", "at", "report"];
-const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "humans", "passes", "fails", "note"];
-const TOKEN_KEY = "waterline.agent_token";
+const PROVIDER_KEYS = ["status", "gpus", "failed_gpus", "passes", "fails", "note"];
 const WRITE_PATH = { multibaas: "MultiBaas", rpc: "RPC", "dry-run": "dry run" };
 const view = document.getElementById("view");
 
@@ -43,7 +41,7 @@ const txLink = (tx, published) => scan("tx", tx) || h("span", { className: "sub"
 const pill = (text, kind) => h("span", { className: "pill st-" + (kind || String(text).split(" ")[0]) }, text);
 const verdictPill = (r) =>
   r.verdict === "pass" ? pill("pass") : r.verdict === "degraded" ? pill("degraded · published", "degraded")
-    : r.published ? pill("fail · published", "fail") : pill("fail · awaiting approval", "pending");
+    : r.published ? pill("fail · published", "fail") : pill("fail · awaiting listing", "pending");
 // Why a right chip ran slow, from the machine's own telemetry: it explains a degraded check, it never decides one.
 function slowCause(hr) {
   const seen = hr?.burn?.reasons_seen || [];
@@ -52,11 +50,7 @@ function slowCause(hr) {
   if (hr?.device?.mig === "enabled") return "a MIG slice of a shared card";
   return null;
 }
-const needsApproval = (r) => r.verdict === "fail" && !r.published;
-const token = {
-  get() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } },
-  set(v) { try { v ? localStorage.setItem(TOKEN_KEY, v) : localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ } },
-};
+const needsListing = (r) => r.verdict === "fail" && !r.published;
 
 async function api(path, body) {
   let r;
@@ -84,17 +78,16 @@ const table = (cols, rows) => {
 
 // ---- router ------------------------------------------------------------------------------------------------
 const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
-  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], world: [worldView, "Reporting"], about: [worldView, "Reporting"] };
+  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], reporting: [reportingView, "Reporting"], about: [reportingView, "Reporting"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
   const [, name = "", arg] = location.hash.split("/");
   const [fn, title] = routes[name] || routes[""];
-  const tab = { check: "checks", r: "checks", models: "providers", leaderboard: "providers", about: "world", name: "gpus" }[name] || (name in routes ? name : "");
+  const tab = { check: "checks", r: "checks", models: "providers", leaderboard: "providers", about: "reporting", name: "gpus" }[name] || (name in routes ? name : "");
   for (const a of document.querySelectorAll(".tabs a"))
     a.getAttribute("href") === `#/${tab}` ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
   document.title = `${title} · Waterline`;
-  sessionBadge();
   view.setAttribute("aria-busy", "true");
   let kids;
   try {
@@ -126,7 +119,7 @@ async function overview() {
   const count = (st) => g.gpus.filter((x) => x.status.startsWith(st)).length;
   const c = hl.chain;
   const sum = (k) => g.gpus.reduce((n, x) => n + (x[k] || 0), 0);
-  const checksN = sum("passes") + sum("fails"), humansN = sum("humans");
+  const checksN = sum("passes") + sum("fails");
   const lastGpu = [...g.gpus].sort((a, b) => (b.last_at || 0) - (a.last_at || 0))[0];
   const lastTx = reps.find((r) => r.tx), lastIdx = reps.find((r) => r.indexed_at);
   const tile = (layer, label, big, ...small) =>
@@ -136,7 +129,6 @@ async function overview() {
   const proof = [
     checksN && tile("chain", "On the record", plural(checksN, "check"), lastTx ? h("span", {}, "Latest ", scan("tx", lastTx.tx), " · ", ago(lastTx.created_at)) : null),
     lastGpu?.gpu_name && tile("ens", "Named on ENS", lastGpu.gpu_name, h("span", {}, pill(lastGpu.status), " ", h("a", { href: "#/gpus" }, "look it up →"))),
-    humansN && tile("world", "Approved with World ID", plural(humansN, "failure report"), "Each one approved by a person before it went public."),
     lastIdx && tile("pass", "Indexed by MultiBaas", ago(lastIdx.indexed_at), h("a", { href: `#/check/${lastIdx.report_id}` }, lastIdx.gpu_name || "the latest check")),
   ].filter(Boolean);
   return [
@@ -233,12 +225,12 @@ function flowDiagram() {
   const wire = (label, proof) => h("div", { className: "wire" + (proof ? " proof" : ""), "aria-hidden": "true" }, h("span", {}, label));
   const att = (layer, name, what, mark) => h("div", { className: "att c-" + layer }, h("b", {}, mark, name), h("small", {}, what));
   return h("div", { className: "panel" },
-    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. World approves failures at the API; MultiBaas indexes Marks' history." },
+    h("div", { className: "flow", role: "img", "aria-label": "Agent starts the profiler in the rented pod. The profiler answers the Waterline API's puzzle. The API records the report on Marks on Sepolia, which answers for the GPU's ENS name and rolls it up to its provider's name. MultiBaas indexes Marks' history." },
       h("div", { className: "stage" }, node("people", "Agent", "renter's laptop")),
       wire("starts over SSH"),
       h("div", { className: "stage" }, node("pod", "Profiler", "in the rented pod")),
       wire("seed ⇄ answer", true),
-      h("div", { className: "stage" }, node("api", "Waterline API", "times it, re-checks it"), att("world", "World", "approves failures", logo("world", ""))),
+      h("div", { className: "stage" }, node("api", "Waterline API", "times it, re-checks it")),
       wire("records", true),
       h("div", { className: "stage" }, node("chain", "Marks", "contract on Sepolia"), att("mb", "MultiBaas", "indexes history", logo("curvegrid", ""))),
       wire("resolves", true),
@@ -247,22 +239,20 @@ function flowDiagram() {
     h("div", { className: "cards partners", "aria-label": "Built on" },
       tipCard("ens", logo("ens", "ENS"), "ENSv2", "Every GPU gets a name",
         "Marks resolves gpu-….<provider>.waterline.eth and <provider>.waterline.eth as a wildcard resolver: nothing is registered per GPU. ENSv2 roles decide who writes: the reporter writes records, a provider may write only its own note."),
-      tipCard("world", logo("world", "World"), "World ID for Agents", "A person behind every failure",
-        "No failure goes onchain without a person: a fresh World approval per report, or an agent permission: one approval that lets their agents report for a set time. Either way one person is one voice per GPU and per provider, pseudonymous in public."),
       tipCard("mb", logo("curvegrid", "Curvegrid"), "Curvegrid MultiBaas", "History agents can query",
         "MultiBaas builds and sends each Marks transaction (we sign it), indexes every Reported and ProviderTally event, and calls our webhook when a check is indexed. Agents query it directly to skip bad GPUs and providers."),
       tipCard("chain", isoGlyph(GLYPHS.chain), "Ethereum Sepolia", "Where the record lives",
         "Marks, one contract, holds every verdict, the per-GPU and per-provider tallies and the evidence hash of the latest check, and answers the ENS names.")),
     h("div", { className: "cards rules" },
       tipCard("pass", null, "A pass needs real silicon", "Passes publish at once",
-        "Correct answers, re-graded by us on a random slice, inside the deadline: that takes the work itself on a real GPU, so a pass needs no one's approval."),
+        "Correct answers, re-graded by us on a random slice, inside the deadline: that takes the work itself on a real GPU, so a pass publishes at once."),
       tipCard("degraded", null, "Chip class is heat-proof", "Slow is degraded, not failed",
         "Heat, power caps and sharing slow a chip but can't remove cores or FP8. A wrong chip fails; the right chip running slow is degraded, published with its numbers."),
-      tipCard("fail", null, "A failure needs people, and rolls up", "Two people mark a GPU failed",
-        "One World ID is one voice on the GPU and on its provider. Two different people mark a GPU failed; a person counts once per provider however many GPUs they report, so renaming a chip doesn't clean the provider.")));
+      tipCard("fail", null, "A failure carries its listing, and rolls up", "Two failure reports mark a GPU failed",
+        "Every failure is published with the listing the renter rented, read against the claim. Two failure reports mark a GPU failed, and each one also lands on its provider, so renaming a chip doesn't clean the provider.")));
 }
 
-// The sponsors' own marks (web/logos: from ens.domains/brand, world.org/brand, docs.curvegrid.com), unaltered.
+// The sponsors' own marks (web/logos: from ens.domains/brand, docs.curvegrid.com), unaltered.
 const logo = (file, alt) => h("img", { className: `logo logo-${file}`, src: `logos/${file}.svg`, alt, width: 28, height: 28 });
 
 // A card: icon, name, a short line, and the detail on hover or keyboard focus (tap on touch).
@@ -329,16 +319,16 @@ async function gpus() {
   const rows = g.gpus.map((x) => h("tr", {},
     h("td", { className: "mono", title: x.node }, x.gpu_name || short(x.node)),
     h("td", {}, cls(x.cls)), h("td", {}, String(x.cores ?? "—")), h("td", {}, String(x.passes)), h("td", {}, String(x.degraded ?? "—")), h("td", {}, String(x.fails)),
-    h("td", {}, String(x.humans)), h("td", {}, pill(x.status)), h("td", {}, when(x.last_at)),
+    h("td", {}, pill(x.status)), h("td", {}, when(x.last_at)),
     h("td", {}, x.gpu_name ? h("button", { type: "button", className: "btn sm", onclick: () => look(x.gpu_name) }, "Look up") : null)));
   return [
-    head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two different people mark a GPU failed; two passes after that bring it back as recovered.")),
+    head("GPUs", "GPU health", h("p", { className: "sub" }, "Every GPU on record. Two failure reports mark a GPU failed; two passes after that bring it back as recovered.")),
     ...(g.gpus.length ? [section("The name tree", "every level keeps its own score",
-      h("p", { className: "sub" }, "Each GPU is named under its provider, and one World approval counts on both: two different people mark a GPU failed, and a person counts once per provider however many of its GPUs they report. A renamed chip gets a new GPU name, not a clean provider. Open any name for its record, read live from ENS."),
+      h("p", { className: "sub" }, "Each GPU is named under its provider, and every report counts on both: two failure reports mark a GPU failed, and each also lands on the provider. A renamed chip gets a new GPU name, not a clean provider. Open any name for its record, read live from ENS."),
       nameTree(pv, g.gpus, look))] : []),
     section("On record", g.source === "multibaas" ? "source: MultiBaas (Reported events on Marks)" : "source: this API's own records",
       g.error ? h("p", { className: "err" }, g.error) : null,
-      rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "People", "Status", "Last report", ""], rows)
+      rows.length ? table(["GPU", "Measured as", "Cores", "Passes", "Degraded", "Fails", "Status", "Last report", ""], rows)
         : h("p", { className: "empty" }, "No GPU is on the record yet.")),
     section("Look up on ENS", "read live from Sepolia", h("p", { className: "sub" }, "A GPU or provider name (e.g. cloud-b), read live from Sepolia through the ENS Universal Resolver."), form, out),
   ];
@@ -353,19 +343,18 @@ function nameTree(pv, gpus, look) {
     groups.get(x.provider_node).gpus.push(x);
   }
   const median = (xs) => { xs = xs.filter((v) => v != null).sort((a, b) => a - b); return xs.length ? xs[(xs.length - 1) >> 1] : null; };
-  const people = (n) => `${n} ${n === 1 ? "person" : "people"}`;
   const name = (label, full) => full ? h("a", { className: "tn", href: `#/name/${full}`, title: `${full}: its page, read live from ENS` }, label) : h("span", { className: "tn" }, label);
   const provider = ({ p, gpus: gs }) => {
     const full = p.name || (gs[0]?.gpu_name || "").split(".").slice(1).join(".");
     const pct = median(gs.map((x) => x.pct_of_spec));
     return h("li", {},
       h("div", { className: "tnode" }, name(full || short(p.provider_node), full),
-        h("span", { className: "facts" }, `${p.failed_gpus ?? 0} of ${p.gpus ?? gs.length} failed · ${people(p.humans ?? 0)}`, pct != null ? ` · median ${num(pct)}% of rating` : "")),
+        h("span", { className: "facts" }, `${p.failed_gpus ?? 0} of ${p.gpus ?? gs.length} failed`, pct != null ? ` · median ${num(pct)}% of rating` : "")),
       h("ul", {}, gs.map((x) => h("li", {},
         h("div", { className: "tnode" }, name((x.gpu_name || short(x.node)).split(".")[0], x.gpu_name), pill(x.status),
           h("span", { className: "facts" }, cls(x.cls),
             x.listed_class && x.listed_class !== x.cls ? h("span", { className: "st-fail" }, ` listed as ${cls(x.listed_class)}`) : "",
-            x.pct_of_spec != null ? ` · ${num(x.pct_of_spec)}% of rating` : "", x.humans ? ` · ${people(x.humans)}` : ""))))));
+            x.pct_of_spec != null ? ` · ${num(x.pct_of_spec)}% of rating` : ""))))));
   };
   return h("div", { className: "tree" },
     h("div", { className: "tnode root" }, h("b", { className: "mono" }, "waterline.eth"), h("span", { className: "facts" }, "resolver: Marks · nothing below is registered, all of it resolves onchain")),
@@ -415,8 +404,8 @@ async function namePage(full) {
     statusBox.replaceChildren(isProvider ? h("p", { className: "lede-s" }, v.status) : pill(v.status));
     const tile = (k, val) => h("div", {}, h("b", {}, val || "0"), h("span", {}, k));
     facts.replaceChildren(h("div", { className: "specline" }, ...(isProvider
-      ? [tile("GPUs", v.gpus), tile("failed now", v.failed_gpus), tile("people who reported", v.humans), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails)]
-      : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("people", v.humans), tile("recoveries", v.recoveries), tile("checks", v.checks)])),
+      ? [tile("GPUs", v.gpus), tile("failed now", v.failed_gpus), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails)]
+      : [tile("measured as", v.class), tile("cores", v.cores), tile("% of rating", v.pct_of_spec && `${v.pct_of_spec}%`), tile("passes", v.passes), tile("degraded", v.degraded), tile("fails", v.fails), tile("recoveries", v.recoveries), tile("checks", v.checks)])),
       isProvider && v.note ? h("p", { className: "quote" }, `“${v.note}” `, h("span", { className: "sub" }, "the provider's note: its words, not part of the record")) : null,
       !isProvider && v.fingerprint ? h("p", { className: "sub small" }, "Timing fingerprint ", h("span", { className: "mono" }, short(v.fingerprint)), " · report hash ", v.report ? h("a", { href: `#/r/${v.report}`, className: "mono", title: "Open the check this hash commits to" }, short(v.report)) : "—", mine[0] ? h("span", {}, " · ", h("a", { href: `#/check/${mine[0].report_id}` }, "verify it on the latest check")) : null) : null);
   }).catch((e) => facts.replaceChildren(h("p", { className: "err" }, `Couldn't read ${n} from ENS: ${e.shortMessage || e.message}`)));
@@ -424,7 +413,7 @@ async function namePage(full) {
   return [
     head(isProvider ? "ENS name · provider" : "ENS name · GPU", h("span", { className: "mono namehead" }, n), statusBox,
       !isProvider && mine[0]?.uuid ? h("p", { className: "sub small mono", title: "NVIDIA UUID, as the host's driver reports it" }, `card ${mine[0].uuid}`) : null,
-      h("p", { className: "sub" }, isProvider ? "Every GPU this provider rents out is named under it; its score is the roll-up of theirs, each person counted once."
+      h("p", { className: "sub" }, isProvider ? "Every GPU this provider rents out is named under it; its score is the roll-up of theirs."
         : h("span", {}, "Named under ", h("a", { href: `#/name/${n.split(".").slice(1).join(".")}` }, n.split(".").slice(1).join(".")), ". Resolved by Marks, written only by its reporter role."))),
     section("The record", "read live from ENS on Sepolia", facts),
     ...(isProvider ? [section("Its GPUs", "each with its own record", nameTree({ providers: provNode ? [provNode] : [] }, g.gpus.filter((x) => x.gpu_name?.endsWith("." + n)), () => {}))] : []),
@@ -446,7 +435,7 @@ async function ensReader(name) {
 // "On chain": how it was written, whether MultiBaas saw it, and the evidence behind it (reportHash).
 function onChain(r, kv) {
   const dry = r.via === "dry-run" || (r.published && !r.tx);
-  const written = !r.published ? h("span", { className: "sub" }, needsApproval(r) ? "Not published: waiting for a human approval" : "Not published")
+  const written = !r.published ? h("span", { className: "sub" }, needsListing(r) ? "Not published: waiting for the listing you rented" : "Not published")
     : dry ? h("span", { className: "st-suspect" }, "Not on chain yet (dry run)") : h("span", {}, "Published via ", WRITE_PATH[r.via] || r.via || "—");
   const indexed = r.indexed ? h("span", { className: "st-pass" }, `Indexed by MultiBaas ✓ `, h("span", { className: "sub" }, when(r.indexed_at)))
     : h("span", { className: "sub" }, r.published && !dry ? "Not indexed yet (waiting for the MultiBaas webhook)" : "—");
@@ -503,11 +492,11 @@ function ensLookup(initial = "") {
       const row = (k, v) => [h("dt", {}, k), h("dd", {}, v || "—")];
       out.replaceChildren(isProvider
         ? h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record · provider"), h("div", { className: "nm" }, n), h("p", {}, r.status),
-          h("dl", { className: "kv" }, row("GPUs checked", r.gpus), row("Failed right now", r.failed_gpus || "0"), row("People who reported", r.humans || "0"),
+          h("dl", { className: "kv" }, row("GPUs checked", r.gpus), row("Failed right now", r.failed_gpus || "0"),
             row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"), row("Provider's note", r.note ? `“${r.note}” (written by the provider, not part of the record)` : "")))
         : h("div", { className: "ens" }, h("div", { className: "label" }, "ENS record"), h("div", { className: "nm" }, n), pill(r.status || "unknown"),
           h("dl", { className: "kv" }, row("Measured as", r.class), row("Cores", r.cores), row("Of its rating", r.pct_of_spec ? `${r.pct_of_spec}%` : ""),
-            row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"), row("People who reported it", r.humans || "0"),
+            row("Passed checks", r.passes || "0"), row("Failure reports", r.fails || "0"),
             row("Recoveries", r.recoveries || "0"), row("Timing fingerprint", r.fingerprint),
             row("Latest check", r.report && h("a", { href: `#/r/${r.report}`, className: "mono", title: r.report }, short(r.report))))));
     } catch (e) {
@@ -551,15 +540,15 @@ function checksTable(reps) {
     h("td", {}, cls(r.claimed_class)), h("td", {}, cls(r.measured_class)), h("td", {}, verdictPill(r), seriesTag(r), flagTag(r)),
     h("td", {}, txLink(r.tx, r.published)),
     h("td", {}, r.indexed ? h("span", { className: "st-pass", title: `Indexed by MultiBaas ${when(r.indexed_at)}` }, "✓") : h("span", { className: "sub", title: "Not indexed by MultiBaas yet" }, "—")),
-    h("td", {}, needsApproval(r) ? h("button", { type: "button", className: "btn sm world", title: "Approve with World", onclick: () => approveFlow(r) }, "Approve") : null))));
+    h("td", {}, needsListing(r) ? h("button", { type: "button", className: "btn sm", title: "Add the listing you rented and publish", onclick: () => publishFlow(r) }, "Publish") : null))));
 }
 
 async function checks() {
   const reps = await api("/api/reports?limit=100");
-  const pending = reps.filter(needsApproval).length;
+  const pending = reps.filter(needsListing).length;
   return [
-    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. Failures wait here until a person approves them; deny or ignore, and nothing is published.")),
-    section("All checks", pending ? `${pending} waiting for approval` : `${reps.length} shown`,
+    head("Checks", "Recent checks", h("p", { className: "sub" }, "Passes and degraded results publish at once. A failure publishes with the listing you rented; until then, nothing is public.")),
+    section("All checks", pending ? `${pending} waiting for a listing` : `${reps.length} shown`,
       reps.length ? checksTable(reps) : h("p", { className: "empty" }, "No checks yet."),
       h("div", {}, h("button", { type: "button", className: "btn", onclick: () => route(false) }, "Refresh"))),
   ];
@@ -571,27 +560,6 @@ const num = (x) => (x == null ? "—" : x >= 100 ? Math.round(x).toLocaleString(
 const gauge = (label, value, pct, tone, aria) =>
   h("div", { className: "gauge" }, h("div", { className: "gauge-hd" }, h("span", { className: "label" }, label), h("b", { className: tone || "" }, value)),
     h("div", { className: "bar " + (tone === "st-fail" ? "over" : ""), role: "img", "aria-label": aria }, h("i", { style: `width:${Math.max(0.5, Math.min(100, pct || 0))}%` })));
-
-// A failure accuses the provider, so the page shows who stands behind it: two slots, because two different people
-// mark a GPU failed. Only the pseudonymous per-provider id is shown, never who the person is.
-function peopleStrip(r, gpu) {
-  const active = r.published ? Math.max(1, gpu?.active ?? 1) : 0;
-  const how = r.approved_via === "mandate"
-    ? `reported by their agent, with their permission · ${when(r.approved_at)}`
-    : `approved in World · ${when(r.approved_at)}`;
-  const slot = (on, who, sub) => h("div", { className: "person " + (on ? "on" : "off") },
-    h("b", { className: on ? "mono" : "" }, who), h("span", {}, sub));
-  const first = r.published
-    ? slot(true, "person " + short("0x" + r.provider_voter), how + (r.flags?.length ? " · flagged, see below" : ""))
-    : slot(false, "waiting for approval", "nothing is public until a verified person approves it");
-  const second = active >= 2 ? slot(true, "a second person", "reported it separately")
-    : slot(false, "a second person", r.published ? "needed to mark this GPU failed" : "then needed to mark it failed");
-  const state = gpu?.status && r.published ? gpu.status : r.published ? "suspect · 1 of 2 humans" : "not published";
-  return h("div", { className: "people-strip" },
-    h("div", { className: "people-head" }, h("span", { className: "label" }, "People behind this failure"), pill(state)),
-    h("div", { className: "people" }, first, second),
-    gpu?.active === 0 && r.published ? h("p", { className: "sub small" }, "Since cleared: two passes after the last failure. The report stays in its history.") : null);
-}
 
 async function checkDetail(id) {
   const [r, cmp, recent, gpus] = await Promise.all([api(`/api/reports/${encodeURIComponent(id)}`),
@@ -618,8 +586,8 @@ async function checkDetail(id) {
       h("p", { className: "diagnosis" }, diagnosis),
       r.fingerprint_changed ? h("p", { className: "sub" }, "Its timing fingerprint changed since the last check. Noted, not judged: it can mean a different card behind the name.") : null,
       h("p", {}, verdictPill(r), " ", h("span", { className: "sub" }, r.status_text || "")),
-      needsApproval(r) ? h("div", {}, h("button", { type: "button", className: "btn world", onclick: () => approveFlow(r) }, "Approve")) : null,
-      r.verdict === "fail" ? peopleStrip(r, gpu) : null),
+      needsListing(r) ? h("div", {}, h("button", { type: "button", className: "btn primary", onclick: () => publishFlow(r) }, "Publish with your listing")) : null,
+      r.verdict === "fail" && r.published && gpu?.active === 1 ? h("p", { className: "sub" }, "One more failure report marks this GPU failed.") : null),
     h("section", { className: "test" },
       h("p", { className: "principle" }, "The test: sealed work under a deadline, a random slice re-graded, and a core count."),
       h("div", { className: "specline" },
@@ -645,10 +613,7 @@ async function checkDetail(id) {
           ...(r.listing_reads_as ? [["Listing reads as", h("span", { className: r.listing_reads_as.contradicts ? "st-fail" : r.listing_reads_as.class ? "st-pass" : "st-degraded" },
             `${r.listing_reads_as.class ? cls(r.listing_reads_as.class) : "no GPU found"} (${r.listing_reads_as.source}) · ${r.listing_reads_as.contradicts ? "contradicts the claim; reported anyway" : r.listing_reads_as.class ? "matches the claim" : "nothing to hold the claim to"}`)]] : []),
           ...(r.flags?.length ? [["Flagged", h("ul", { className: "flags" }, r.flags.map((f) => h("li", {}, f.text,
-            f.report_id ? [" ", h("a", { href: `#/check/${f.report_id}` }, "see that check")] : null)))]] : []),
-          ...(r.provider_voter ? [["Reported by", h("span", {}, h("span", { className: "mono", title: "pseudonymous: the same person gets the same id for this provider, never a name" }, "person " + short("0x" + r.provider_voter)),
-            ` · ${r.reporter_reports} report${r.reporter_reports === 1 ? "" : "s"} on ${r.cloud}`, r.approved_via === "mandate" ? h("span", { className: "world-c", title: `agent permission ${r.mandate_id}, valid until ${when(r.mandate_expires_at)}` }, ` · reported by their agent, with their World permission, ${when(r.approved_at)}`)
-              : r.approved_at ? ` · approved with World ${when(r.approved_at)}` : "")]] : []))),
+            f.report_id ? [" ", h("a", { href: `#/check/${f.report_id}` }, "see that check")] : null)))]] : []))),
       h("div", { className: "block" }, h("div", { className: "label" }, "Probes"),
         kv(["Cores (SMs)", String(p.sms ?? "—")], ["FP8 maths", p.fp8 == null ? "—" : p.fp8 ? "yes (Hopper)" : "no"],
           ["Clock", p.clock_ghz ? `${p.clock_ghz} GHz` : "—"], ["Copy bandwidth", p.bw_tbs ? `${p.bw_tbs} TB/s` : "—"],
@@ -1014,7 +979,7 @@ async function providersView(arg) {
     h("td", {}, p.name ? h("a", { href: `#/name/${p.name}`, className: "mono", title: "Its page: the record read live from ENS" }, p.name) : h("span", { className: "mono" }, short(p.provider_node)),
       p.name && p.listed === false ? h("span", { className: "stag", title: "Not on our list of known providers: the name is whatever the renter typed" }, "unlisted") : null),
     h("td", {}, String(p.gpus ?? 0)), h("td", {}, h("span", { className: p.failed_gpus ? "st-fail" : "" }, String(p.failed_gpus ?? 0))),
-    h("td", {}, String(p.humans ?? 0)), h("td", {}, String(p.passes ?? 0)), h("td", {}, String(p.degraded ?? 0)), h("td", {}, String(p.fails ?? 0)),
+    h("td", {}, String(p.passes ?? 0)), h("td", {}, String(p.degraded ?? 0)), h("td", {}, String(p.fails ?? 0)),
     h("td", {}, median(pcts.get(p.provider_node)) == null ? "—" : `${num(median(pcts.get(p.provider_node)))}%`)));
   const model = arg || lb.models[0]?.id, info = lb.models.find((m) => m.id === model);
   const rows = lb.rows.filter((x) => x.model === model), ranked = rows.filter((x) => !x.few), few = rows.filter((x) => x.few);
@@ -1031,9 +996,9 @@ async function providersView(arg) {
   const cols = ["Rank", "Provider", "Checks", "Median verified INT8 (range · n)", "Median % of rating (range)", "Pass rate"];
   return [
     head("Providers", "Every provider on record, and what its GPUs deliver", subtabs("#/providers"),
-      h("p", { className: "sub" }, "Each provider is an ENS name, <cloud>.waterline.eth, and its GPUs are named under it. Its record is the roll-up of theirs: a person counts once however many of its GPUs they report.")),
+      h("p", { className: "sub" }, "Each provider is an ENS name, <cloud>.waterline.eth, and its GPUs are named under it. Its record is the roll-up of theirs.")),
     section("All providers", pv.source === "multibaas" ? "source: MultiBaas (ProviderTally events on Marks)" : "source: this API's own records",
-      rollup.length ? table(["Provider", "GPUs", "Failed now", "People", "Passes", "Degraded", "Fails", "Median % of rating"], rollup)
+      rollup.length ? table(["Provider", "GPUs", "Failed now", "Passes", "Degraded", "Fails", "Median % of rating"], rollup)
         : h("p", { className: "empty" }, "No provider is on the record yet.")),
     section(info ? `By model · ${info.name}` : "By model", info ? `${info.n} checks across ${rows.length} provider${rows.length === 1 ? "" : "s"}` : null,
       lb.models.length ? h("div", { className: "field narrow" }, h("label", { className: "label", htmlFor: "lb-model" }, "Listed model"), pick) : null,
@@ -1064,132 +1029,47 @@ async function modelsView() {
   ];
 }
 
-// ---- World ID: this browser's session, and the agent permission that lets your agents report ------------------------------
-async function mandateNow() {
-  const tok = token.get();
-  if (!tok) return { tok: null, m: null };
-  try {
-    return { tok, m: (await api("/api/world/mandate/status", { agent_token: tok })).mandate };
-  } catch (e) {
-    if (e.status === 401) token.set(null); // the login expired: this browser is logged out
-    return { tok: e.status === 401 ? null : tok, m: null };
-  }
-}
-const left = (t) => { const s = t - Date.now() / 1000; return s <= 0 ? "ended" : s >= 5400 ? `${Math.round(s / 3600)} h left` : `${Math.max(1, Math.round(s / 60))} min left`; };
-const mandateState = (m) => (!m ? "off" : m.revoked_at ? "revoked" : m.active ? "on" : m.used >= m.max_reports ? "used up" : "ended");
-
-// the header badge: who is logged in here, and whether their agents may report
-async function sessionBadge() {
-  const el = document.getElementById("session");
-  const { tok, m } = await mandateNow();
-  el.hidden = false;
-  el.className = "session" + (tok ? " on" : "");
-  el.replaceChildren(h("i", { "aria-hidden": "true" }),
-    !tok ? "Log in" : m?.active ? `Agents may report · ${m.max_reports - m.used} reports · ${left(m.expires_at)}` : "Logged in");
-}
-
-async function worldView() {
-  const [{ tok, m }, hl] = await Promise.all([mandateNow(), getHealth(true).catch(() => null)]);
-  const state = mandateState(m);
-  const sessionBox = h("div", { className: "block" }, h("div", { className: "label world-c" }, "This browser"),
-    tok ? h("p", {}, pill("logged in", "pass"), " Pseudonymous: the record only sees a per-GPU and a per-provider id, never who you are.")
-        : h("p", {}, pill("not logged in", "unknown"), " Log in once to approve failure reports, or to let your agents report them."),
-    h("div", { className: "row" }, tok
-      ? h("button", { type: "button", className: "btn", onclick: () => { token.set(null); route(false); } }, "Log out")
-      : h("button", { type: "button", className: "btn world", onclick: () => loginFlow() }, "Log in with World")));
-  const hours = h("select", { id: "md-hours" }, [[1, "1 hour"], [8, "8 hours"], [24, "24 hours"], [72, "3 days"]].map(([v, t]) => h("option", { value: v, selected: v === 24 }, t)));
-  const max = h("select", { id: "md-max" }, [5, 20, 50, 100].map((v) => h("option", { value: v, selected: v === 20 }, `${v} reports`)));
-  const grant = h("button", { type: "button", className: "btn world", disabled: !tok, onclick: () => mandateFlow(+hours.value, +max.value) },
-    m?.active ? "Replace" : "Allow");
-  const mandateBox = h("div", { className: "block mandate" }, h("div", { className: "label world-c" }, "Agent permission"),
-    h("p", {}, pill(state, { on: "pass", off: "unknown", revoked: "fail" }[state] || "degraded"),
-      m?.active ? ` ${left(m.expires_at)}` : " Your agents ask you before every failure report."),
-    m?.active ? gauge("Failure reports used", `${m.used} of ${m.max_reports}`, (m.used / m.max_reports) * 100, "", `${m.used} of ${m.max_reports} reports used`) : null,
-    m?.active ? h("div", { className: "row" }, h("button", { type: "button", className: "btn", onclick: async () => {
-      await api("/api/world/mandate/revoke", { agent_token: tok }); route(false); } }, "Take it back now")) : null,
-    h("div", { className: "grant" },
-      h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-hours" }, "Lasts"), hours),
-      h("div", { className: "field" }, h("label", { className: "label", htmlFor: "md-max" }, "Covers up to"), max), grant),
-    h("p", { className: "sub small" }, tok ? ["From the terminal: ", h("code", {}, "python -m agent allow --hours 24 --max 20")] : "Log in first."));
+// ---- Reporting: how failures are published and counted ----------------------------------------------------------
+async function reportingView() {
+  const hl = await getHealth(true).catch(() => null);
   return [
-    head("Reporting", "One person, many agents, one voice",
-      h("p", { className: "sub" }, "A failure accuses a provider, so a person verified with World ID has to approve it. Approve each report yourself, or let your agents report for a set time. Either way you count once per GPU and once per provider.")),
-    section("Your session", tok ? (m?.active ? "agents may report" : "reports wait for you") : "not logged in", h("div", { className: "detail" }, sessionBox, mandateBox)),
-    section("How people count", null, h("ol", { className: "how" }, [
-      "One voice per person per GPU, and once per provider however many of its GPUs you report. Twenty agents under one person are still one voice.",
-      "Two different people mark a GPU failed. One report makes it suspect.",
-      "Every report carries the listing in the reporter's words. When Jev reads it as another GPU, only you can report anyway; your agents never can.",
+    head("Reporting", "Every failure carries its listing",
+      h("p", { className: "sub" }, "A failure accuses a provider of misselling a GPU, so it is published with the listing the renter rented, in the listing's own words. Passes and degraded results need nothing: they publish at once.")),
+    section("How failures count", null, h("ol", { className: "how" }, [
+      "A failed check publishes once the renter adds the listing they rented. The agent does it on the spot; on the web, press Publish on the check.",
+      "Jev reads the listing. When it reads as another GPU than the one reported, the report stops until the renter chooses to report anyway, and the check says so.",
+      "Two failure reports mark a GPU failed. One makes it suspect. Each also counts on its provider.",
       "Two passes after the last failure mark a GPU recovered; its history stays public.",
     ].map((x) => h("li", {}, h("span", {}, x))))),
-    section("What the statuses mean", null, kvList(["pass", "At least one check passed and nobody has reported it."],
-      ["suspect · 1 of 2 humans", "One person reported a failure. A second person who checks it and reports makes it failed."], ["failed", "Two different people reported failures."],
+    section("What the statuses mean", null, kvList(["pass", "At least one check passed and no failure is on record."],
+      ["suspect · 1 of 2 reports", "One failure report. A second one marks it failed."], ["failed", "Two failure reports since its last recovery."],
       ["degraded", "Latest check: right chip, correct answers, too slow (heat, a power cap or sharing). Published with its numbers; never counts toward failed."],
       ["recovered", "Failure reports, then two passes after the last one. The reports stay in its history."],
       ["unknown", "No published check yet."],
-      ["provider (cloud-b.waterline.eth)", "GPUs failed now, and people who reported any of them (each once). Descriptive: GPUs are judged one by one."])),
+      ["provider (cloud-b.waterline.eth)", "GPUs failed now, and the failure reports against any of them. Descriptive: GPUs are judged one by one."])),
     section("For providers", "your name, your voice, never your score", h("p", { className: "sub" },
       "Your GPUs are named under yours, e.g. cloud-b.waterline.eth. Only a check can change a score. Two ways back from a failure: renters' passes (two mark a GPU recovered) and your own note (ask us for the note role; it changes no number).")),
     section("For agents and integrations", "read it anywhere", h("p", { className: "sub" },
-      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, humans, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers."),
+      "Read any name on ENS (waterline.status, class, cores, pct_of_spec, passes, degraded, fails, report; providers add gpus, failed_gpus, note), query Reported and ProviderTally on MultiBaas, or GET /api/gpus and /api/providers."),
       hl ? kvList(["Marks contract", scan("address", hl.chain.marks) || "—"], ["ENS parent", hl.ens.parent], ["Indexed by", hl.multibaas.configured ? "Curvegrid MultiBaas" : "—"]) : null),
   ];
 }
 const kvList = (...pairs) => h("dl", { className: "kv" }, pairs.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "—")]));
 
-// ---- World: log in once, then approve a failure report ------------------------------------------------------
-const dlg = document.getElementById("world");
-const $w = (id) => document.getElementById("world-" + id);
+// ---- publish a failure: the listing you rented, then onchain ------------------------------------------------
+const dlg = document.getElementById("report");
+const $w = (id) => document.getElementById("report-" + id);
 let flow = 0;
 const say = (text, tone = "", ...extra) => { const s = $w("status"); s.className = "status " + tone; s.replaceChildren(text, ...extra); };
 $w("close").addEventListener("click", () => dlg.close());
-dlg.addEventListener("close", () => { flow++; route(false); }); // cancels any polling and refreshes the page
+dlg.addEventListener("close", () => { flow++; route(false); }); // refreshes the page
 
-async function showCode(d) {
-  $w("usercode").textContent = d.user_code;
-  $w("link").href = d.verification_uri_complete;
-  $w("code").hidden = false;
-  const box = $w("qr");
-  box.replaceChildren();
-  try {
-    const { default: qrcode } = await import(QRLIB);
-    const q = qrcode(0, "M");
-    q.addData(d.verification_uri_complete);
-    q.make();
-    box.append(h("img", { src: q.createDataURL(4, 0), alt: "" }));
-  } catch {
-    box.hidden = true; // the link and the code still work
-  }
-}
-
-// Device grant: show code + QR, poll until the person decides. Returns the final poll answer, or null if closed.
-async function device(startPath, body, pollPath, my, hint) {
-  const d = await api(startPath, body);
-  await showCode(d);
-  say(hint + " Waiting for World…");
-  const until = Date.now() + d.expires_in * 1000;
-  while (Date.now() < until) {
-    await sleep(2000);
-    if (my !== flow) return null;
-    let r;
-    try {
-      r = await api(pollPath, { device_id: d.device_id });
-    } catch (e) {
-      if (e.status === 503) { say("World is not answering right now. Still waiting…"); continue; }
-      throw e;
-    }
-    if (my !== flow) return null;
-    if (r.status !== "pending") { $w("code").hidden = true; return r; }
-  }
-  $w("code").hidden = true;
-  return { status: "expired" };
-}
-
-// A failure accuses the provider of misselling this GPU. Before World is asked, the reporter sees the accusation,
-// states what they rented in the listing's own words, and accepts that the report is tied to their World ID.
-function confirmReport(rep, my, label = "Continue to World") {
+// A failure accuses the provider of misselling this GPU. Before it is published, the reporter sees the accusation
+// and states what they rented in the listing's own words.
+function confirmReport(rep, my, label = "Publish") {
   return new Promise((done) => {
-    const text = h("textarea", { id: "world-listing", rows: 3, placeholder: "https://… or the listing text, e.g. 1x H100 80GB SXM5 · $2.49/h" });
-    const ack = h("input", { type: "checkbox", id: "world-ack" });
+    const text = h("textarea", { id: "report-listing", rows: 3, placeholder: "https://… or the listing text, e.g. 1x H100 80GB SXM5 · $2.49/h" });
+    const ack = h("input", { type: "checkbox", id: "report-ack" });
     const go = h("button", { type: "button", className: "btn primary", disabled: true }, label);
     const need = h("p", { className: "sub small", role: "status" });
     const ready = () => {
@@ -1200,8 +1080,8 @@ function confirmReport(rep, my, label = "Continue to World") {
     text.addEventListener("input", ready); ack.addEventListener("change", ready);
     const box = h("div", { className: "confirm" },
       h("p", {}, "You are reporting: ", h("b", {}, `listed as ${cls(rep.claimed_class)}`), " · ", h("b", { className: "st-fail" }, `measures as ${cls(rep.measured_class)}`), "."),
-      h("label", { className: "label", htmlFor: "world-listing" }, "The listing you rented (URL or text)"), text,
-      h("label", { className: "check", htmlFor: "world-ack" }, ack, " I rented this GPU from this listing. This report is tied to my World ID and shown with the listing."),
+      h("label", { className: "label", htmlFor: "report-listing" }, "The listing you rented (URL or text)"), text,
+      h("label", { className: "check", htmlFor: "report-ack" }, ack, " I rented this GPU from this listing. The report is published with it."),
       need, go);
     $w("what").after(box);
     const end = (v) => { box.remove(); done(v); };
@@ -1227,95 +1107,31 @@ function reportAnyway(message, my) {
   });
 }
 
-async function login(my) {
-  $w("title").textContent = "Log in";
-  const r = await device("/api/world/login/start", {}, "/api/world/login/poll", my, "Scan the code with World App or open the link.");
-  if (!r) return null;
-  if (r.status !== "approved") { say(`Login ${r.status}.`, "bad"); return null; }
-  token.set(r.agent_token);
-  return r.agent_token;
-}
-
-async function loginFlow() {
+async function publishFlow(rep) {
   const my = ++flow;
-  $w("code").hidden = true;
-  $w("what").textContent = "Log in once in this browser. Nothing is published by logging in.";
+  $w("title").textContent = "Report this GPU";
+  $w("what").textContent = `Report ${rep.gpu_name}? It goes public once you add the listing you rented.`;
   say("");
   dlg.showModal();
   try {
-    if (await login(my)) say("Logged in.", "good");
-  } catch (e) { if (my === flow) say(e.message, "bad"); }
-}
-
-async function mandateFlow(hours, max) {
-  const my = ++flow;
-  $w("code").hidden = true;
-  $w("title").textContent = "Let your agents report";
-  $w("what").textContent = `Your agents may report up to ${max} failures in the next ${hours} h without asking you each time. Each report still counts as your one voice per GPU. You can take it back at any time.`;
-  say("");
-  dlg.showModal();
-  try {
-    const r = await device("/api/world/mandate/start", { agent_token: token.get(), hours, max_reports: max }, "/api/world/mandate/poll", my,
-      "Scan the code with World App or open the link.");
-    if (!r) return;
-    if (!r.mandate) return say(r.status_text || `${r.status}: nothing changed.`, "bad");
-    if (r.agent_token) token.set(r.agent_token); // bound to the person who approved
-    say(`Done: your agents may report up to ${r.mandate.max_reports} failures until ${when(r.mandate.expires_at)}.`, "good");
-  } catch (e) {
-    if (e.status === 401) { token.set(null); return say("Your login has expired. Close this and log in again.", "bad"); }
-    if (my === flow) say(e.message, "bad");
-  }
-}
-
-async function approveFlow(rep) {
-  const my = ++flow;
-  $w("code").hidden = true;
-  $w("what").textContent = `Report ${rep.gpu_name}? It goes public only once you approve it.`;
-  say("");
-  dlg.showModal();
-  try {
-    const tok = token.get() || (await login(my));
-    if (!tok) return;
-    const { m } = await mandateNow();
-    $w("title").textContent = "Report this GPU";
-    const listing = await confirmReport(rep, my, m?.active ? `Report it (agent permission, ${m.max_reports - m.used} left)` : "Continue");
+    const listing = await confirmReport(rep, my);
     if (!listing) return;
-    if (m?.active) {  // one voice, same checks; a listing Jev reads as another GPU still needs the person (below)
-      try {
-        const r = await api("/api/report/auto", { report_id: rep.report_id, agent_token: tok, listing });
-        if (!r.published) return say(r.status_text || "Nothing was published.", "bad");
-        return say("Published with your agent permission. ", "good", r.tx ? h("a", { href: `${SCAN}/tx/${r.tx}`, target: "_blank", rel: "noopener" }, "View the transaction") : "(dry run: no transaction sent)",
-          ` · ${r.mandate.used} of ${r.mandate.max_reports} used`);
-      } catch (e) {
-        if (!(e.status === 409 && /report anyway/.test(e.message)) && e.status !== 403) throw e;
-        say(e.status === 403 ? e.message : "Jev reads your listing as another GPU, so this one needs your own approval.", "bad");
-      }
-    }
-    $w("title").textContent = "Approve this report";
+    const publish = (extra) => api("/api/report/publish", { report_id: rep.report_id, listing, ...extra });
     let r;
-    const start = (extra) => device("/api/report/approve/start", { report_id: rep.report_id, agent_token: tok, listing, ...extra },
-      "/api/report/approve/poll", my, "Approve this failure report: scan the code with World App or open the link.");
     try {
-      r = await start({});
+      r = await publish({});
     } catch (e) {
-      if (e.status === 409 && /report anyway/.test(e.message)) {  // Jev read the listing as another GPU than reported
-        if (!(await reportAnyway(e.message, my))) return say("Not reported. Nothing was published.", "bad");
-        r = await start({ report_anyway: true });
-      } else if (e.status === 401) {
-        token.set(null);
-        return say("Your login has expired. Close this and press Approve again to log in.", "bad");
-      } else throw e;
+      if (!(e.status === 409 && /report anyway/.test(e.message))) throw e;
+      if (!(await reportAnyway(e.message, my))) return say("Not reported. Nothing was published.", "bad");  // Jev read another GPU
+      r = await publish({ report_anyway: true });
     }
-    if (!r) return;
-    if (r.agent_token) token.set(r.agent_token); // this browser's login was someone else's (or stale): now the approver's
-    if (r.status === "denied") return say("Denied. Nothing was published.", "bad");
-    if (r.status === "expired") return say("Expired. Nothing was published.", "bad");
-    if (!r.published) return say(r.status_text || "Approved, but nothing was published.", "bad");
+    if (my !== flow) return;
+    if (!r.published) return say(r.status_text || "Nothing was published.", "bad");
     const g = await api("/api/gpus").catch(() => null);
     const now = g?.gpus.find((x) => x.node === rep.node);
     say("Published. ", "good", r.status_text || "", " ", r.tx ? h("a", { href: `${SCAN}/tx/${r.tx}`, target: "_blank", rel: "noopener" }, "View the transaction") : "(dry run: no transaction sent)",
       now ? h("span", {}, ". GPU status now: ", pill(now.status)) : "");
   } catch (e) {
-    if (my === flow) say(e.message, "bad"); // API messages are plain sentences (409 already reported, 503 World down, ...)
+    if (my === flow) say(e.message, "bad"); // API messages are plain sentences
   }
 }

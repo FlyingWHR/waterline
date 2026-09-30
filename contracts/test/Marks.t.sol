@@ -71,7 +71,7 @@ contract MarksTest is Test {
         marks.record(cloudB, gpu, 1, 1, 132, fp, 0, 0, 14105, 7125, bytes32(0));
     }
 
-    /// one World ID proof -> a per-GPU voter and a per-provider voter for the same human
+    /// one voter -> a per-GPU voter id and a per-provider voter id
     function fail(bytes32 gpu, string memory human) internal {
         vm.prank(api);
         marks.record(cloudB, gpu, 2, 3, 108, fp, keccak256(abi.encode(human, gpu)), keccak256(abi.encode(human, "cloud-b")), 0, 0, 0);
@@ -103,7 +103,7 @@ contract MarksTest is Test {
 
     function test_oneFailureIsSuspectTwoHumansFail() public {
         fail(gpu1, "human-1");
-        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 humans");
+        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 reports");
         fail(gpu1, "human-2");
         assertEq(marks.text(node, "waterline.status"), "failed");
         assertEq(marks.text(node, "waterline.class"), "A100");
@@ -142,13 +142,13 @@ contract MarksTest is Test {
         assertEq(marks.text(provider, "waterline.humans"), "2");
         assertEq(marks.text(provider, "waterline.passes"), "1");
         assertEq(marks.text(provider, "waterline.fails"), "2");
-        assertEq(marks.text(provider, "waterline.status"), unicode"1 of 2 GPUs failed · reported by 2 people");
+        assertEq(marks.text(provider, "waterline.status"), unicode"1 of 2 GPUs failed · 2 failure reports");
     }
 
     function test_oneHumanCountsOncePerProvider() public {
         fail(gpu1, "human-1");
         fail(gpu2, "human-1"); // a heavy renter flags a second bad pod: allowed per GPU...
-        assertEq(marks.text(node2, "waterline.status"), unicode"suspect · 1 of 2 humans");
+        assertEq(marks.text(node2, "waterline.status"), unicode"suspect · 1 of 2 reports");
         assertEq(marks.text(provider, "waterline.humans"), "1"); // ...but counts once for the provider
         assertEq(marks.text(provider, "waterline.fails"), "2");
     }
@@ -192,7 +192,7 @@ contract MarksTest is Test {
         vm.expectRevert(Marks.AlreadyVoted.selector);
         fail(gpu1, "human-1");
         fail(gpu1, "human-3");
-        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 humans");
+        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 reports");
     }
 
     function test_aFailureResetsThePassCount() public {
@@ -228,7 +228,7 @@ contract MarksTest is Test {
         fail(gpu1, "human-1");
         pass(gpu1);
         degraded(gpu1);
-        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 humans");
+        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 reports");
         pass(gpu1); // two passes since the failure: the degraded check in between doesn't count, doesn't reset
         assertEq(marks.text(node, "waterline.status"), "recovered");
     }
@@ -247,7 +247,7 @@ contract MarksTest is Test {
         vm.prank(host);
         marks.setNote(provider, "We replaced the card.");
         assertEq(marks.text(provider, "waterline.note"), "We replaced the card.");
-        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 humans"); // the note changes nothing
+        assertEq(marks.text(node, "waterline.status"), unicode"suspect · 1 of 2 reports"); // the note changes nothing
         (bytes32 otherProvider,) = marks.nodes(cloudA, gpu1);
         vm.prank(host);
         vm.expectRevert();

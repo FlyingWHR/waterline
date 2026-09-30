@@ -11,9 +11,6 @@ from fake_api import FakeApi  # noqa: E402
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("WATERLINE_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("WATERLINE_POLL_S", "0.01")
-    monkeypatch.setenv("WATERLINE_LOGIN", "1")  # log in on demand, as at a terminal
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     return tmp_path
 
