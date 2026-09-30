@@ -20,7 +20,7 @@ import urllib.request
 
 from core.challenge import Params, fingerprint_rows, leaf_hash, merkle_root, product
 from core.specs import MODELS
-from prover import health
+from prover import health, host
 from prover.metrics import sim_staircase, simulate
 
 
@@ -79,11 +79,12 @@ class Cpu:
     """core/ maths on the CPU. Probes and metrics are simulated from the model's specs; the staircase is synthetic
     (seconds, like the GPU's)."""
 
-    def __init__(self, sms=132, uuid=None, model=None):
+    def __init__(self, sms=132, uuid=None, model=None, starved=False):
         self.model = model or MODEL_BY_SMS.get(sms) or next((k for k, m in MODELS.items() if m["sms"] == sms), None)
         self.sms = MODELS[model]["sms"] if model else sms
         self.uuid = uuid or "GPU-00000000-0000-4000-8000-00000000c0de"
         self.sim_seed = uuid or secrets.token_hex(4)
+        self.starved = starved
 
     def probes(self):
         m = MODELS.get(self.model, {})
@@ -92,7 +93,7 @@ class Cpu:
                 "fingerprint": "0x" + hashlib.sha256(f"cpu-{self.sms}".encode()).hexdigest()}, sim_staircase(self.sms)
 
     def health(self, burn_seconds):
-        return health.simulated(self.sms, burn_seconds)
+        return health.simulated(self.sms, burn_seconds) | {"host": host.simulated(self.starved)}
 
     def metrics(self, budget_s, per_second=None):
         # each simulated run is a different card: vary the per-GPU offset like real silicon does
@@ -170,6 +171,15 @@ def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, p
     return rv, local
 
 
+def duration(v):
+    """'90s', '30m', '1h' or plain seconds -> seconds."""
+    unit = {"s": 1, "m": 60, "h": 3600}.get(v[-1:].lower())
+    try:
+        return int(float(v[:-1] if unit else v) * (unit or 1))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a duration: {v!r} (e.g. 30m, 1h)") from None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="prover.run")
     ap.add_argument("--api", required=True)
@@ -182,6 +192,10 @@ def main(argv=None):
     ap.add_argument("--n", type=int)
     ap.add_argument("--steps", type=int)
     ap.add_argument("--burn-seconds", type=int, default=10, help="health report: sustained burn length (0 skips it)")
+    ap.add_argument("--sustain", type=duration, help="a long burn instead, e.g. 30m or 1h: shows throttling a short check misses")
+    ap.add_argument("--disk-dir", default=".", help="host report: where to time the disk (your data or checkpoint volume)")
+    ap.add_argument("--no-net", action="store_true", help="host report: skip the download-speed test")
+    ap.add_argument("--sim-starved", action="store_true", help=argparse.SUPPRESS)  # CPU mode: a cheap marketplace host
     ap.add_argument("--perf-seconds", type=int, default=60,
                     help="performance profile time budget, run after commit (0 skips it)")
     ap.add_argument("--no-mark", action="store_true", help=argparse.SUPPRESS)  # the agent prints it first
@@ -191,10 +205,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     if a.cpu:
-        backend, n, steps = Cpu(a.sms, a.uuid, a.model), a.n or 64, a.steps or 4
+        backend, n, steps = Cpu(a.sms, a.uuid, a.model, a.sim_starved), a.n or 64, a.steps or 4
     else:
         from prover.gpu import Gpu  # lazy: CuPy/torch only exist on the pod
-        backend, n, steps = Gpu(), a.n, a.steps
+        backend, n, steps = Gpu(a.disk_dir, not a.no_net), a.n, a.steps
     if not a.no_mark:
         mark()
         from core import providers
@@ -203,7 +217,8 @@ def main(argv=None):
             log(paint(AMBER, f"  · {a.cloud} isn't a known provider name; it is recorded as typed"
                              + (f" (did you mean {hint}?)" if hint and hint != a.cloud else "")))
     try:
-        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.burn_seconds, a.perf_seconds, a.series, a.seq)
+        rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.sustain or a.burn_seconds, a.perf_seconds,
+                            a.series, a.seq)
     except ApiError as e:
         log(paint(RED, f"  error: {e}"))
         return 2
@@ -219,6 +234,8 @@ def main(argv=None):
     log(f"  {paint(colour, word.ljust(9))} {line}")
     for reason in rv.get("reasons") or []:
         log(paint(DIM, f"            {reason}"))
+    for f in rv.get("delivery") or []:  # what the machine around the GPU holds back (advisory)
+        fact(f["kind"], paint(AMBER, f["text"]))
     fact("gpu", rv["gpu_name"])
     fact("provider", rv["gpu_name"].split(".", 1)[1])
     if a.series:

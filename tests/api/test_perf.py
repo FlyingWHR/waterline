@@ -85,3 +85,16 @@ def test_chain_selector_and_perf_encoding():
     chain.record("cloud-b", "gpu-1", 1, 1, 132, b"\2" * 32, tops_x10=14105, pct_bps=7125, report_hash=b"\4" * 32)
     assert chain.DRY_RUN_CALLS[-1][:2] == (chain.keccak(text="cloud-b"), chain.keccak(text="gpu-1"))
     assert chain.DRY_RUN_CALLS[-1][8:] == (14105, 7125, b"\4" * 32)
+
+
+def test_delivery_findings_from_the_machines_report():
+    from prover import health, host
+    assert perf.delivery(None) == [] and perf.delivery(health.simulated(132, 10) | {"host": host.simulated()}) == []
+    hr = health.simulated(108, 600) | {"host": host.simulated(starved=True)}
+    kinds = [f["kind"] for f in perf.delivery(hr)]
+    assert kinds == ["cpu", "disk", "network", "sustained"]
+    text = {f["kind"]: f["text"] for f in perf.delivery(hr)}
+    assert text["cpu"].startswith("5 CPU cores for 1 GPU (a 5-core quota on a 64-core host)")
+    assert "held back by power cap" in text["sustained"]
+    hr["burn"]["sustained"] = None  # a short burn has no drop figure
+    assert [f["kind"] for f in perf.delivery(hr)] == ["cpu", "disk", "network"]

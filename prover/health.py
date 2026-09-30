@@ -114,13 +114,24 @@ def live(nv, h):
             "pcie_width": q("nvmlDeviceGetCurrPcieLinkWidth")}
 
 
+def sustained(per_second):
+    """How much delivery fell under sustained load: mean TFLOPS of the first vs the last window of a burn of a
+    minute or more (a tenth of the burn, 10 to 60 s). None for shorter burns."""
+    if len(per_second) < 60:
+        return None
+    w = min(60, max(10, len(per_second) // 10))
+    first, last = sum(per_second[:w]) / w, sum(per_second[-w:]) / w
+    return {"window_s": w, "first_tflops": round(first, 1), "last_tflops": round(last, 1),
+            "drop_pct": round(100 * (first - last) / first, 1) if first else None}
+
+
 def summarize(seconds, n, per_second, samples):
     """Burn summary from per-second TFLOPS and the NVML samples taken each second."""
     col = lambda k: [s[k] for s in samples if s.get(k) is not None]  # noqa: E731
     seen = {r for s in samples for r in (s.get("reasons") or [])}
     last = samples[-1] if samples else {}
     return {"seconds": seconds, "n": n, "dtype": "bf16", "tflops": stats(per_second),
-            "per_second": [round(x, 1) for x in per_second],
+            "per_second": [round(x, 1) for x in per_second], "sustained": sustained(per_second),
             "reasons_seen": [name for _, name in REASONS if name in seen],
             "max_temp_c": max(col("temp_c"), default=None), "max_power_w": max(col("power_w"), default=None),
             "min_sm_mhz": min(col("sm_mhz"), default=None),
@@ -203,7 +214,9 @@ def simulated(sms=132, burn_seconds=10, seed=7):
     rnd = random.Random(seed + sms)
     h100 = sms != 108
     base, mem = (720.0, 80.0) if h100 else (265.0, 40.0)
-    per = [base * (1 - 0.004 * i) + rnd.uniform(-6, 6) for i in range(max(1, burn_seconds))]
+    # heats up and settles: about 3 % lost over the first minutes (15 % on the power-capped A100)
+    sag = 0.03 if h100 else 0.15
+    per = [base * (1 - sag * (1 - math.exp(-i / 90))) + rnd.uniform(-6, 6) for i in range(max(1, burn_seconds))]
     samples = [{"temp_c": 58 + 2 * i, "power_w": (690 if h100 else 395) + rnd.uniform(-8, 4),
                 "sm_mhz": (1980 if h100 else 1410) - 15 * (i > 6), "reasons": ["power cap"] if not h100 and i > 5 else [],
                 "power_limit_w": 700.0 if h100 else 400.0, "max_sm_mhz": 1980 if h100 else 1410,

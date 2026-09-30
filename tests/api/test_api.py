@@ -114,6 +114,14 @@ def test_health_is_stored_but_never_decides():
     assert client.get(f"/api/reports/{run_check(uuid='GPU-H0')['report_id']}").json()["health"] is None
 
 
+def test_a_starved_host_is_reported_but_still_passes():
+    from prover import health, host
+    r = run_check(uuid="GPU-HOST", health=health.simulated(132, 10) | {"host": host.simulated(starved=True)})
+    assert r["verdict"] == "pass" and [f["kind"] for f in r["delivery"]] == ["cpu", "memory", "disk", "network"]
+    assert client.get(f"/api/reports/{r['report_id']}").json()["delivery"] == r["delivery"]
+    assert run_check(uuid="GPU-HOST2")["delivery"] == []
+
+
 def test_oversized_health_rejected():
     r = run_check(uuid="GPU-HB", health={"blob": "x" * 300_000}, raw=True)
     assert r.status_code == 413 and "KB" in r.json()["error"]

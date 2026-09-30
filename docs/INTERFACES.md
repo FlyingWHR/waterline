@@ -91,7 +91,10 @@ Class shown on the name is the last measured class.
 Reads the GPU UUID (nvidia-smi / torch), calls start, computes all steps (GPU: CuPy + torch._int_mm; `--cpu`: core/),
 sends commit with probes, then reveal with the requested rows; prints the API's JSON result.
 `--burn-seconds S` (default 10, 0 skips the burn). After commit it builds the health report (prover/health.py)
-and sends it with the reveal; CPU mode sends a report marked `"source": "simulated"`.
+and sends it with the reveal; CPU mode sends a report marked `"source": "simulated"`. `--sustain 30m` sets a long
+burn; `--disk-dir` and `--no-net` shape the host report (`health.host`: `{gpus, cpu: {visible, quota, usable, model},
+memory_gib, disk: {path, write_mbs, read_mbs, free_gib}, download_mbs, notes?}`). The reveal answer and the stored
+report carry `delivery: [{kind, text}]` from `api/perf.delivery` (docs/METRICS.md).
 Health report: `{ grade, source: "nvml"|"torch"|"simulated"|"error", device: {name, uuid, driver, cuda, vbios,
 memory_gib, mig, pcie: {gen, width, max_gen, max_width}, nvlink: {up, down}|null, ecc: {enabled, pending (mode after next reboot)}},
 memory: {ecc_errors: {volatile|aggregate: {corrected, uncorrected}}, retired_pages: {single_bit, double_bit, pending},

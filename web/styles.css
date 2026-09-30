@@ -428,3 +428,4 @@ ol.how li::before{content:counter(how,decimal-leading-zero); font-family:var(--m
 .stag.flag{color:var(--warn);}
 .flags{margin:0; padding-left:18px; color:var(--warn);} .flags li{margin:2px 0;}
 
+.held{margin:10px 0 4px; max-width:760px;} .held .label{display:block; margin-bottom:4px;}

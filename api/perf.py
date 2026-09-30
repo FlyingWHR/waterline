@@ -179,3 +179,49 @@ def leaderboard(reports: list[dict], model: str | None = None) -> list[dict]:
                     "median_pct_of_spec": _sig(statistics.median(pct)) if pct else None,
                     "pass_rate": round(sum(r.get("verdict") == "pass" for r in rs) / len(rs), 3)})
     return sorted(out, key=lambda x: -(x["median_tops_verified"] or 0))
+
+
+# ---- delivery: what the machine around the GPU holds back ----------------------------------------------------------
+# Thresholds are ours, applied API-side so the pod can't grade itself. Findings are advisory: they come from the
+# machine's own report and never change the verdict (the exam decides that).
+CPUS_PER_GPU = 8          # below this, data loading and preprocessing commonly starve a GPU
+DISK_MIN_MBS = 200        # checkpoint and dataset loads crawl below this
+NET_MIN_MBS = 25          # ~200 Mbit/s: a 70 GB model download takes over 45 minutes
+SUSTAIN_DROP_PCT = 10     # first vs last window of a long burn
+SLOWING = ("power cap", "HW slowdown", "SW thermal", "HW thermal", "HW power brake")
+
+
+def delivery(health: dict | None) -> list[dict]:
+    """What the machine around the GPU holds back (CPU, RAM, disk, network) and how much a long burn sagged:
+    [{kind, text}]. GPU-side health (PCIe, ECC, MIG, throttle reasons) is flagged by the panel from the same report."""
+    hr = health or {}
+    host, burn, dev = hr.get("host") or {}, hr.get("burn") or {}, hr.get("device") or {}
+    out = []
+    fmt = lambda x: "?" if x is None else f"{x:g}"  # noqa: E731
+
+    def add(kind, text):
+        out.append({"kind": kind, "text": text})
+
+    cpu, gpus = host.get("cpu") or {}, max(1, _num(host.get("gpus")) or 1)
+    usable = _num(cpu.get("usable"))
+    if usable is not None and usable / gpus < CPUS_PER_GPU:
+        cap = f" (a {cpu['quota']:g}-core quota on a {cpu.get('visible')}-core host)" if cpu.get("quota") else ""
+        add("cpu", f"{usable:g} CPU cores for {gpus:g} GPU{'s' if gpus > 1 else ''}{cap}: data loading can starve it.")
+    ram, vram = _num(host.get("memory_gib")), _num(dev.get("memory_gib"))
+    if ram is not None and vram and ram < vram * gpus:
+        add("memory", f"{ram:g} GiB of RAM for {vram * gpus:g} GiB of GPU memory: large checkpoints won't fit in host memory.")
+    d = host.get("disk") or {}
+    w, r = _num(d.get("write_mbs")), _num(d.get("read_mbs"))
+    if (w is not None and w < DISK_MIN_MBS) or (r is not None and r < DISK_MIN_MBS):
+        add("disk", f"Disk at {fmt(w)} MB/s write, {fmt(r)} MB/s read in {d.get('path', 'the work directory')}: loading data and checkpoints will be slow.")
+    net = _num(host.get("download_mbs"))
+    if net is not None and net < NET_MIN_MBS:
+        add("network", f"Downloads at {net:g} MB/s: pulling a 70 GB model takes {70e3 / net / 60:.0f} minutes.")
+    slowed = [x for x in burn.get("reasons_seen") or [] if x in SLOWING]
+    s = burn.get("sustained") or {}
+    drop = _num(s.get("drop_pct"))
+    if drop is not None and drop >= SUSTAIN_DROP_PCT:
+        why = f", held back by {' and '.join(slowed)}" if slowed else ""
+        add("sustained", f"Throughput fell {drop:g}% over a {burn.get('seconds', 0) / 60:.0f}-minute burn "
+                         f"({s['first_tflops']:g} → {s['last_tflops']:g} TFLOPS){why}.")
+    return out

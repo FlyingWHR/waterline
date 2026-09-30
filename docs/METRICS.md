@@ -145,6 +145,23 @@ is wider. **Calibrate every range on real pods** and edit `EXPECTED` in `api/per
   Welford mean/stddev. Value = stddev / mean × 100 over the per-second series.
 - **Use.** A GPU that starts fast and sags (thermal or power throttling, a co-tenant arriving) shows a high CV
   even when its median looks fine. Flag `unstable` above 3 %.
+- **Sustained drop.** On a burn of a minute or more (`--sustain 30m`), `burn.sustained` compares the mean TFLOPS of
+  the first and last window (a tenth of the burn, 10 to 60 s). A short check misses heat soak; this shows it.
+
+## Delivery findings (`api/perf.delivery`)
+What the machine around the GPU holds back, from `health.host` (`prover/host.py`) and the burn. Thresholds are
+applied API-side; findings are advisory and never change the verdict.
+
+| Finding | From | Threshold |
+|---|---|---|
+| `cpu` | usable cores: affinity mask capped by the cgroup CPU quota | under 8 per GPU |
+| `memory` | cgroup memory limit, else MemTotal | less RAM than the GPUs' memory |
+| `disk` | 1 GiB of random data, written with fsync, read back after dropping it from the page cache, in `--disk-dir` | write or read under 200 MB/s |
+| `network` | repeated 25 MB fetches from speed.cloudflare.com for ~8 s (`--no-net` skips it) | under 25 MB/s |
+| `sustained` | `burn.sustained.drop_pct`, with the throttle reasons seen | 10 % or more |
+
+GPU-side conditions (PCIe below its maximum, MIG, ECC, throttle reasons) are flagged by the panel from the same
+health report.
 
 ## Classification (`api/classify.py`)
 

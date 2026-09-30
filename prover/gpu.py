@@ -172,7 +172,8 @@ def sm_fingerprint(sms, hops=20000, reps=5, words=1 << 20):
 
 
 class Gpu:
-    def __init__(self):
+    def __init__(self, disk_dir=".", net=True):
+        self.disk_dir, self.net = disk_dir, net
         self.uuid = gpu_uuid()
         self.name = torch.cuda.get_device_name(0)
 
@@ -186,8 +187,9 @@ class Gpu:
                 "bw_tbs": round(copy_bw_tbs(), 3), "fingerprint": fp}, stair
 
     def health(self, burn_seconds):
+        from prover import host
         from prover.health import collect
-        return collect(burn_seconds)
+        return collect(burn_seconds) | {"host": host.collect(torch.cuda.device_count(), self.disk_dir, self.net)}
 
     def metrics(self, budget_s, per_second=None):
         """Measured profile (prover/perf.py) plus sm_count from the staircase and stability_cv from the burn."""

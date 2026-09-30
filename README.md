@@ -36,7 +36,12 @@ curl -fsSL waterline-eth.vercel.app/run | python3 - <provider> <gpu>
 - **63 known providers** (`core/providers.json`, from the hyperscalers to RunPod and Vast.ai) keep names
   consistent; any other name is recorded as typed and marked "unlisted".
 - **Options:** `--gpu 3` checks the fourth card of a multi-GPU pod; `--every 30m` re-checks at jittered intervals
-  (a periodic series, shown as a timeline); `--times N` stops after N checks.
+  (a periodic series, shown as a timeline); `--times N` stops after N checks; `--sustain 1h` burns for an hour to
+  catch throttling a short check misses; `--disk-dir /workspace` times the volume your data lives on.
+- **What held it back:** the check reads the machine around the GPU (usable CPU cores after the container's quota,
+  RAM, disk and download speed) and how far a long burn sagged, and lists what will slow real work: "5 CPU cores
+  for 1 GPU", "Disk at 140 MB/s", "Throughput fell 12% over a 10-minute burn". Reported by the machine; the verdict
+  still comes from the exam.
 - **What you get:** a short receipt (verdict, the GPU's ENS name, the transaction, the report link). A pass or a
   degraded result is published at once; a failure publishes with the listing you rented (below).
 

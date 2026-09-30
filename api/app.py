@@ -190,6 +190,7 @@ def check_reveal(body: RevealIn):
            "health": body.health and body.health | {"grade": "reported by the machine"}, "work_ok": work_ok,
            "via": None, "indexed": False, "indexed_at": None}
     rep |= perf_profile(rep, body.metrics, classification)
+    rep["delivery"] = perf.delivery(body.health)  # advisory, from the machine's own report
     rep["report_hash"] = report_hash(rep)  # frozen with the verdict; GET /api/reports/{id}/evidence serves the bytes
     if verdict != "fail":
         try:
@@ -206,7 +207,7 @@ def check_reveal(body: RevealIn):
     # ponytail: read-modify-write index; two reveals in the same instant can drop an id. Redis LPUSH if it bites.
     store.put(INDEX, [rid, *(store.get(INDEX) or [])][:INDEX_MAX], REPORT_TTL)
     return {k: rep[k] for k in ("report_id", "verdict", "measured_class", "reasons", "gpu_name", "node",
-                                "published", "tx", "via", "report_hash")}
+                                "published", "tx", "via", "report_hash", "delivery")}
 
 
 # ---- failure reports: published with the listing the reporter rented -----------------------------------------------
