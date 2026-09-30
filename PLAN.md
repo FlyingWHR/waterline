@@ -59,22 +59,6 @@ core/       challenge maths, frozen vectors, gpu_specs.json (37 models)
 ```
 Details: `docs/INTERFACES.md` (spec), `docs/METRICS.md` (measurement method), `docs/GPU_REFERENCE.md` (specs + sources).
 
-## Demo (3:30) — one proof moment carries it
-Pod B shows 108 cores and a missed deadline, then FAIL, then the agent stops paying. Pod A and Pod B side by side.
-| Time | Beat | Key line |
-|---|---|---|
-| 0:00 | Problem | "Compute is becoming a financial asset. Its delivery is still self-reported." |
-| 0:20 | Setup | 4 pods, 2 clouds. "B2 is an A100 I relabelled myself." |
-| 0:30 | Overview | "Proof of delivered compute. Any renter can run the check." |
-| 0:45 | Check | The one-liner on A1: PASS, its ENS name, published via MultiBaas. |
-| 1:10 | The exam | "The cores decide the chip; the clock decides the speed." |
-| 1:35 | Fail · Publish | Agent on B2: fail, stops paying, listing pasted, Jev agrees, published. |
-| 2:15 | Record · Compare | The ENS name tree: B2 suspect, one failure report on cloud-b, % of rating per cloud; Verify the hash. |
-| 3:00 | Use | MultiBaas indexed; `agent choose` skips B2. |
-| 3:20 | Close | "Proof of Delivered Compute." |
-Full script: the showcase's Demo tab. Video rules: 2–4 min (auto-reject outside), ≥720p, own voice, no speed-up,
-no phone recording.
-
 ## Status (Sat 14:30 JST; superseded by the README's "Deployed")
 Built and tested locally: all five pieces, 122 Python tests + 14 contract tests + the ENS test on a Sepolia fork.
 Not yet live: nothing deployed, no real GPU run, MultiBaas only simulated.
@@ -119,12 +103,6 @@ The API decides the exam size in production (a prover can't ask for a tiny exam)
   every report up to `<cloud>.waterline.eth`. Two passes after a GPU's last failure = `recovered`. Providers may
   write `waterline.note` (NOTE role) on their own name, never a score.
 - `core/vectors.json` is frozen; `python -m core.verify_vectors` must pass.
-
-## Demo rules
-- Solo: no teammates. The failed GPU ends as `suspect · 1 of 2 reports`.
-- Neutral names (Cloud A / Cloud B); say on stage the A100 was relabelled by us.
-- Pods rented before the demo; every number on screen comes from the live run.
-- No overclaims: "the renter can't check", "backed by evidence", "the host can't see who reported".
 
 ## Gotchas (from research)
 - ENSv2: addresses from tag `sepolia-deployment-2026-09-15`, kept in one config file (no hard-coded values is a
