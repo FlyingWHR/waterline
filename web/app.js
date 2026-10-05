@@ -994,6 +994,8 @@ async function dataView() {
       rows.length ? table(["Provider", "Listed as", "Checks · GPUs", "% of BF16 rating", "Sustained throttle", "CPU-starved",
         "Disk slow", "Not the listed chip", "$ per delivered PFLOPS-h", "Latest"], rows)
         : h("p", { className: "empty" }, "No checks on real GPUs yet.")),
+    section("Reliability over time", "not collected yet", h("p", { className: "sub" },
+      "Interruptions and hardware errors per GPU-hour watched, and time from rental to first kernel. A check is a few minutes; these need a small collector running beside the renter's real work. The fields are reserved in the dictionary and the summary, so they fill in without changing shape.")),
   ];
 }
 

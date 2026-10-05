@@ -31,13 +31,15 @@ def test_summary_per_provider_and_model():
     assert g["pct_rating_bf16"]["p50"] == 60.0 and g["cpu_starved"] == {"rate": 0.333, "n": 3}
     assert g["card_variation_cv_pct"] == {"median": 4.76, "cards": 1}  # GPU-a ran twice: 600 and 660
     assert g["first"] < g["last"] and g["verdicts"]["pass"] == 3
+    assert g["reliability"] == {"status": "not collected yet", "observed_gpu_hours": 0, "interruptions_per_gpu_hour": None,
+                                "xid_errors_per_gpu_hour": None, "time_to_ready_s": None}
 
 
 def test_csv_and_dictionary_cover_every_column():
     text = data.to_csv([data.row(rep(1))])
     assert next(csv.reader(io.StringIO(text))) == data.COLUMNS
     d = client.get("/api/data/dictionary").json()
-    assert [f["name"] for f in d] == data.COLUMNS and all(f["trust"] in ("verified", "measured", "reported", "stated") for f in d)
+    assert [f["name"] for f in d] == data.COLUMNS and all(f["trust"] in ("verified", "measured", "reported", "stated", "planned") for f in d)
 
 
 def test_data_endpoints_serve_rows_and_leave_test_runs_out():

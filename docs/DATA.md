@@ -38,6 +38,7 @@ name.
 - **measured**: timed on the machine by our profiler; a modified profiler could change it.
 - **reported**: the machine's own counters (NVML, cgroups); a rigged driver or container could skew it.
 - **stated**: what the renter told us (provider, listing, price).
+- **planned**: reserved for the reliability collector; empty until it ships.
 
 ## Statistics (`/api/data/summary`)
 
@@ -55,6 +56,20 @@ Grouped by provider × listed model. Simulated runs (CPU tests) are left out.
   same price that deliver differently cost differently here.
 
 Read a group with its n: a rate over 3 checks is an anecdote, over 300 a measurement.
+
+## Reliability over time (planned)
+
+A check lasts minutes; reliability needs hours. The summary carries a `reliability` block per group now, with
+`status: "not collected yet"`, and the rows carry `time_to_ready_s`, `observed_gpu_hours`, `interruptions` and
+`xid_errors` as empty fields, so consumers keep the same shape when collection starts.
+
+- **interruptions_per_gpu_hour**: unplanned losses (reboot, GPU off the bus, preemption) ÷ GPU-hours watched.
+- **xid_errors_per_gpu_hour**: NVIDIA Xid events ÷ GPU-hours watched.
+- **time_to_ready_s**: rental start to the first CUDA kernel, p10/p50/p90.
+
+Collection: a small process beside the renter's own workload (the Watermark collector) that heartbeats NVML state
+and Xid events every minute; a missed heartbeat followed by a new boot id counts as an interruption. Rental start
+comes from the agent that rented the machine.
 
 ## Dictionary
 
@@ -99,6 +114,10 @@ Read a group with its n: a rate over 3 checks is an anecdote, over 300 a measure
 | `findings` | list | measured | Delivery findings (cpu, memory, disk, network, sustained), ';'-separated |
 | `price_usd_per_gpu_hour` | USD | stated | What the renter pays per GPU-hour |
 | `usd_per_bf16_pflops_hour` | USD | measured | price / delivered BF16 PFLOPS: what an hour of delivered compute costs |
+| `time_to_ready_s` | s | planned | Seconds from the rental starting to the first CUDA kernel on it |
+| `observed_gpu_hours` | GPU-h | planned | GPU-hours the collector watched this rental |
+| `interruptions` | count | planned | Unplanned losses of the machine or GPU while watched (reboot, GPU off the bus, preemption) |
+| `xid_errors` | count | planned | NVIDIA Xid errors logged while watched |
 | `series` | — | verified | Periodic series id when the renter re-checks one rental (--every) |
 | `seq` | — | verified | Place in the series |
 | `published` | bool | verified | Recorded on Marks (Ethereum Sepolia) |
@@ -121,6 +140,8 @@ change later (published, tx, indexed) are outside the hash. Reports are kept for
 - Price is as the renter states it.
 
 ## Change log
+
+- 2026-10-06: reliability fields reserved (`planned`), with a `reliability` block in the summary.
 
 - 2026-10-06: dataset endpoints, dictionary and statistics; stated price and price per delivered PFLOPS-hour;
   reports kept for good (they expired after 7 days before).

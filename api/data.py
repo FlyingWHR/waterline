@@ -3,7 +3,7 @@
 FIELDS is the data dictionary (served at /api/data/dictionary and written out in docs/DATA.md): every column with
 its unit, its source and how far to trust it. "verified" = graded by the API against secret, timed work;
 "measured" = timed on the pod by our profiler; "reported" = what the machine's own counters say; "stated" = what
-the renter told us. Rows are point-in-time: a check's numbers never change after its verdict.
+the renter told us; "planned" = reserved for the reliability collector, empty until it ships. Rows are point-in-time: a check's numbers never change after its verdict.
 """
 import csv
 import io
@@ -53,6 +53,11 @@ FIELDS = [
     ("findings", "list", "measured", "Delivery findings (cpu, memory, disk, network, sustained), ';'-separated"),
     ("price_usd_per_gpu_hour", "USD", "stated", "What the renter pays per GPU-hour"),
     ("usd_per_bf16_pflops_hour", "USD", "measured", "price / delivered BF16 PFLOPS: what an hour of delivered compute costs"),
+    # reliability over time: reserved, empty until the collector beside real workloads ships (docs/DATA.md)
+    ("time_to_ready_s", "s", "planned", "Seconds from the rental starting to the first CUDA kernel on it"),
+    ("observed_gpu_hours", "GPU-h", "planned", "GPU-hours the collector watched this rental"),
+    ("interruptions", "count", "planned", "Unplanned losses of the machine or GPU while watched (reboot, GPU off the bus, preemption)"),
+    ("xid_errors", "count", "planned", "NVIDIA Xid errors logged while watched"),
     ("series", "", "verified", "Periodic series id when the renter re-checks one rental (--every)"),
     ("seq", "", "verified", "Place in the series"),
     ("published", "bool", "verified", "Recorded on Marks (Ethereum Sepolia)"),
@@ -145,6 +150,16 @@ def _found(kind):
     return lambda r: kind in (r["findings"] or "").split(";")
 
 
+def reliability(rows: list[dict]) -> dict:
+    """Interruptions and Xid errors per GPU-hour watched, and time until usable. Empty until the collector ships;
+    the shape is fixed now so consumers don't change when it fills."""
+    hours = sum(r["observed_gpu_hours"] or 0 for r in rows)
+    per_hour = lambda k: round(sum(r[k] or 0 for r in rows) / hours, 4) if hours else None  # noqa: E731
+    return {"status": "collecting" if hours else "not collected yet", "observed_gpu_hours": round(hours, 1),
+            "interruptions_per_gpu_hour": per_hour("interruptions"), "xid_errors_per_gpu_hour": per_hour("xid_errors"),
+            "time_to_ready_s": quantiles(r["time_to_ready_s"] for r in rows)}
+
+
 def summary(rows: list[dict]) -> list[dict]:
     """Per provider x listed model: sample size, freshness, delivered-performance distributions, and the rates
     renters care about. Simulated (CPU test) rows are left out. Rates carry their own n: an input missing from
@@ -178,5 +193,6 @@ def summary(rows: list[dict]) -> list[dict]:
             "card_variation_cv_pct": {"median": round(statistics.median(cvs), 2) if cvs else None, "cards": len(cvs)},
             "price_usd_per_gpu_hour": quantiles(r["price_usd_per_gpu_hour"] for r in rs),
             "usd_per_bf16_pflops_hour": quantiles(r["usd_per_bf16_pflops_hour"] for r in rs),
+            "reliability": reliability(rs),
         })
     return out
