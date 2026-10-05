@@ -3,7 +3,7 @@
 FIELDS is the data dictionary (served at /api/data/dictionary and written out in docs/DATA.md): every column with
 its unit, its source and how far to trust it. "verified" = graded by the API against secret, timed work;
 "measured" = timed on the pod by our profiler; "reported" = what the machine's own counters say; "stated" = what
-the renter told us; "planned" = reserved for the reliability collector, empty until it ships. Rows are point-in-time: a check's numbers never change after its verdict.
+the renter told us; "estimated" = derived from measured numbers by a stated formula; "planned" = reserved for the reliability collector, empty until it ships. Rows are point-in-time: a check's numbers never change after its verdict.
 """
 import csv
 import io
@@ -11,6 +11,7 @@ import statistics
 import time
 
 from core import providers
+from core.specs import MODELS
 
 FIELDS = [
     # name, unit, trust, description
@@ -53,6 +54,11 @@ FIELDS = [
     ("findings", "list", "measured", "Delivery findings (cpu, memory, disk, network, sustained), ';'-separated"),
     ("price_usd_per_gpu_hour", "USD", "stated", "What the renter pays per GPU-hour"),
     ("usd_per_bf16_pflops_hour", "USD", "measured", "price / delivered BF16 PFLOPS: what an hour of delivered compute costs"),
+    # inference for an 8B-class model (Llama 3 8B, BF16), estimated from the measured numbers above (docs/DATA.md)
+    ("llm8b_decode_tps_est", "tokens/s", "estimated", "Batch-1 generation ceiling: measured memory read bandwidth / 16.06 GB of weights"),
+    ("llm8b_prefill_tps_est", "tokens/s", "estimated", "Prompt-processing ceiling: measured BF16 FLOPS / (2 x 8.03B parameters)"),
+    ("llm8b_ttft_ms_est", "ms", "estimated", "Time to first token for a 1,024-token prompt at the prefill ceiling"),
+    ("usd_per_mtok_est", "USD", "estimated", "price / (batch-1 generation ceiling x 3600) per million tokens"),
     # reliability over time: reserved, empty until the collector beside real workloads ships (docs/DATA.md)
     ("time_to_ready_s", "s", "planned", "Seconds from the rental starting to the first CUDA kernel on it"),
     ("observed_gpu_hours", "GPU-h", "planned", "GPU-hours the collector watched this rental"),
@@ -75,6 +81,27 @@ def _num(x):
 
 def _metric(rep, key, field="value"):
     return _num(((rep.get("metrics") or {}).get(key) or {}).get(field))
+
+
+# Llama 3 8B in BF16: the most rented-for inference model size; weights must fit with room for the KV cache.
+LLM_PARAMS, LLM_BYTES, LLM_PROMPT, LLM_MIN_GIB = 8.03e9, 16.06e9, 1024, 20
+
+
+def llm_estimates(rep: dict, price) -> dict:
+    """Roofline estimates for an 8B model from what the check measured: generation is bound by memory bandwidth,
+    prompt processing by matmul throughput. Ceilings, not serving-stack numbers; empty if the model doesn't fit."""
+    mem = (((rep.get("health") or {}).get("device") or {}).get("memory_gib")
+           or (MODELS.get(rep.get("claimed_model")) or {}).get("mem_gb"))
+    bw = _metric(rep, "hbm_read_tbs") or _metric(rep, "hbm_copy_tbs")
+    bf16 = _metric(rep, "bf16_tflops")
+    if mem is not None and mem < LLM_MIN_GIB:
+        bw = bf16 = None
+    decode = bw * 1e12 / LLM_BYTES if bw else None
+    prefill = bf16 * 1e12 / (2 * LLM_PARAMS) if bf16 else None
+    return {"llm8b_decode_tps_est": round(decode, 1) if decode else None,
+            "llm8b_prefill_tps_est": round(prefill) if prefill else None,
+            "llm8b_ttft_ms_est": round(1000 * LLM_PROMPT / prefill, 1) if prefill else None,
+            "usd_per_mtok_est": round(price / (decode * 3600) * 1e6, 2) if price and decode else None}
 
 
 def row(rep: dict) -> dict:
@@ -114,6 +141,7 @@ def row(rep: dict) -> dict:
         "findings": ";".join(f["kind"] for f in rep.get("delivery") or []),
         "price_usd_per_gpu_hour": price,
         "usd_per_bf16_pflops_hour": round(price / (bf16 / 1000), 2) if price and bf16 else None,
+        **llm_estimates(rep, price),
         "series": rep.get("series"), "seq": rep.get("seq"),
         "published": bool(rep.get("published")), "tx": rep.get("tx"), "report_hash": rep.get("report_hash"),
         "simulated": hr.get("source") == "simulated",
@@ -193,6 +221,9 @@ def summary(rows: list[dict]) -> list[dict]:
             "card_variation_cv_pct": {"median": round(statistics.median(cvs), 2) if cvs else None, "cards": len(cvs)},
             "price_usd_per_gpu_hour": quantiles(r["price_usd_per_gpu_hour"] for r in rs),
             "usd_per_bf16_pflops_hour": quantiles(r["usd_per_bf16_pflops_hour"] for r in rs),
+            "llm8b_decode_tps_est": quantiles(r["llm8b_decode_tps_est"] for r in rs),
+            "llm8b_prefill_tps_est": quantiles(r["llm8b_prefill_tps_est"] for r in rs),
+            "usd_per_mtok_est": quantiles(r["usd_per_mtok_est"] for r in rs),
             "reliability": reliability(rs),
         })
     return out

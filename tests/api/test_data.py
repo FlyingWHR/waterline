@@ -23,6 +23,15 @@ def test_row_flattens_a_report_and_joins_price_to_delivery():
     assert r["host_cpu_usable"] == 64 and r["sustained_drop_pct"] is not None and r["simulated"] is False
 
 
+def test_llm_estimates_from_measured_bandwidth_and_flops():
+    x = rep(1, bf16=600.0) | {"metrics": {"bf16_tflops": {"value": 600.0}, "hbm_read_tbs": {"value": 3.0}}}
+    r = data.row(x)
+    assert r["llm8b_decode_tps_est"] == 186.8 and r["llm8b_prefill_tps_est"] == 37360  # 3 TB/s / 16.06 GB; 600 TF / 16.06 GF
+    assert r["llm8b_ttft_ms_est"] == 27.4 and r["usd_per_mtok_est"] == 3.72  # $2.50 / (186.8 x 3600) x 1e6
+    small = x | {"health": x["health"] | {"device": x["health"]["device"] | {"memory_gib": 16.0}}}
+    assert data.row(small)["llm8b_decode_tps_est"] is None  # 16 GB of weights doesn't fit
+
+
 def test_summary_per_provider_and_model():
     rows = [data.row(x) for x in (rep(1, bf16=600), rep(2, bf16=660, pct=66), rep(3, "GPU-b", starved=True, pct=50),
                                   rep(4, source="simulated"))]
@@ -39,7 +48,7 @@ def test_csv_and_dictionary_cover_every_column():
     text = data.to_csv([data.row(rep(1))])
     assert next(csv.reader(io.StringIO(text))) == data.COLUMNS
     d = client.get("/api/data/dictionary").json()
-    assert [f["name"] for f in d] == data.COLUMNS and all(f["trust"] in ("verified", "measured", "reported", "stated", "planned") for f in d)
+    assert [f["name"] for f in d] == data.COLUMNS and all(f["trust"] in ("verified", "measured", "reported", "stated", "estimated", "planned") for f in d)
 
 
 def test_data_endpoints_serve_rows_and_leave_test_runs_out():

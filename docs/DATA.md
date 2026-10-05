@@ -38,6 +38,7 @@ name.
 - **measured**: timed on the machine by our profiler; a modified profiler could change it.
 - **reported**: the machine's own counters (NVML, cgroups); a rigged driver or container could skew it.
 - **stated**: what the renter told us (provider, listing, price).
+- **estimated**: derived from measured numbers by the formula stated with the field.
 - **planned**: reserved for the reliability collector; empty until it ships.
 
 ## Statistics (`/api/data/summary`)
@@ -56,6 +57,21 @@ Grouped by provider × listed model. Simulated runs (CPU tests) are left out.
   same price that deliver differently cost differently here.
 
 Read a group with its n: a rate over 3 checks is an anecdote, over 300 a measurement.
+
+## Inference estimates (estimated)
+
+For an 8B-class model (Llama 3 8B in BF16: 8.03B parameters, 16.06 GB of weights), from what the check measured:
+batch-1 generation is bound by memory bandwidth (every token reads every weight), prompt processing by matmul
+throughput (2 FLOPs per parameter per token).
+
+- `llm8b_decode_tps_est` = memory read bandwidth ÷ 16.06 GB
+- `llm8b_prefill_tps_est` = BF16 FLOPS ÷ (2 × 8.03B)
+- `llm8b_ttft_ms_est` = 1,024 tokens ÷ prefill rate
+- `usd_per_mtok_est` = stated price ÷ (generation rate × 3,600) × 10⁶
+
+These are ceilings from the hardware actually delivered, not serving-stack throughput: vLLM-class stacks typically
+reach a large share of the generation ceiling and batch many requests at once. Empty on GPUs with under 20 GiB,
+where the weights and a KV cache don't fit. A measured, model-shaped benchmark is planned to replace them.
 
 ## Reliability over time (planned)
 
@@ -114,6 +130,10 @@ comes from the agent that rented the machine.
 | `findings` | list | measured | Delivery findings (cpu, memory, disk, network, sustained), ';'-separated |
 | `price_usd_per_gpu_hour` | USD | stated | What the renter pays per GPU-hour |
 | `usd_per_bf16_pflops_hour` | USD | measured | price / delivered BF16 PFLOPS: what an hour of delivered compute costs |
+| `llm8b_decode_tps_est` | tokens/s | estimated | Batch-1 generation ceiling: measured memory read bandwidth / 16.06 GB of weights |
+| `llm8b_prefill_tps_est` | tokens/s | estimated | Prompt-processing ceiling: measured BF16 FLOPS / (2 x 8.03B parameters) |
+| `llm8b_ttft_ms_est` | ms | estimated | Time to first token for a 1,024-token prompt at the prefill ceiling |
+| `usd_per_mtok_est` | USD | estimated | price / (batch-1 generation ceiling x 3600) per million tokens |
 | `time_to_ready_s` | s | planned | Seconds from the rental starting to the first CUDA kernel on it |
 | `observed_gpu_hours` | GPU-h | planned | GPU-hours the collector watched this rental |
 | `interruptions` | count | planned | Unplanned losses of the machine or GPU while watched (reboot, GPU off the bus, preemption) |
@@ -141,8 +161,9 @@ change later (published, tx, indexed) are outside the hash. Reports are kept for
 
 ## Change log
 
+- 2026-10-06: inference estimates for an 8B model (generation and prompt-processing ceilings, time to first token,
+  price per million tokens), from measured bandwidth and BF16 throughput.
 - 2026-10-06: reliability fields reserved (`planned`), with a `reliability` block in the summary.
-
 - 2026-10-06: dataset endpoints, dictionary and statistics; stated price and price per delivered PFLOPS-hour;
   reports kept for good (they expired after 7 days before).
 - 2026-10-04: host report (CPU quota, RAM, disk, download), sustained drop, delivery findings.

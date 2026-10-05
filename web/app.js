@@ -984,7 +984,9 @@ async function dataView() {
     h("td", {}, g.provider), h("td", {}, g.listed_model || "—"), h("td", {}, `${g.checks} · ${g.gpus}`),
     h("td", {}, q(g.pct_rating_bf16)), h("td", {}, rate(g.sustained_throttle)), h("td", {}, rate(g.cpu_starved)),
     h("td", {}, rate(g.disk_slow)), h("td", {}, rate(g.spec_mismatch)),
-    h("td", {}, g.usd_per_bf16_pflops_hour ? `$${num(g.usd_per_bf16_pflops_hour.p50)}` : "—"), h("td", {}, g.last.slice(0, 10))));
+    h("td", {}, g.usd_per_bf16_pflops_hour ? `$${num(g.usd_per_bf16_pflops_hour.p50)}` : "—"),
+    h("td", {}, g.llm8b_decode_tps_est ? h("span", {}, num(g.llm8b_decode_tps_est.p50), g.usd_per_mtok_est ? h("span", { className: "sub" }, ` · $${num(g.usd_per_mtok_est.p50)}/M`) : null) : "—"),
+    h("td", {}, g.last.slice(0, 10))));
   return [
     head("Data", "Delivered compute by provider",
       h("p", { className: "sub" }, "Every check renters ran on real GPUs, grouped by provider and the model the listing promised. Percent of rating as p50 with p10–p90; rates show how many checks measured them."),
@@ -992,7 +994,7 @@ async function dataView() {
         h("a", { href: "/api/data/dictionary" }, "Field dictionary"), " · ", h("a", { href: "/api/data/summary" }, "Summary (JSON)"))),
     section("By provider and model", `${groups.length} group${groups.length === 1 ? "" : "s"}`,
       rows.length ? table(["Provider", "Listed as", "Checks · GPUs", "% of BF16 rating", "Sustained throttle", "CPU-starved",
-        "Disk slow", "Not the listed chip", "$ per delivered PFLOPS-h", "Latest"], rows)
+        "Disk slow", "Not the listed chip", "$ per delivered PFLOPS-h", "8B tokens/s, est.", "Latest"], rows)
         : h("p", { className: "empty" }, "No checks on real GPUs yet.")),
     section("Reliability over time", "not collected yet", h("p", { className: "sub" },
       "Interruptions and hardware errors per GPU-hour watched, and time from rental to first kernel. A check is a few minutes; these need a small collector running beside the renter's real work. The fields are reserved in the dictionary and the summary, so they fill in without changing shape.")),
