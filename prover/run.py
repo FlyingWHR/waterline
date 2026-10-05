@@ -110,7 +110,8 @@ class Cpu:
         return out
 
 
-def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60, series=None, seq=None):
+def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, perf_seconds=60, series=None, seq=None,
+            price=None):
     """Full check against the API. Returns (api_result, local_result)."""
     step("probing the hardware")
     probes, stair = backend.probes()
@@ -120,7 +121,7 @@ def profile(api, cloud, claimed, backend, n=None, steps=None, burn_seconds=10, p
                                        probes.get("bw_tbs") and f"{probes['bw_tbs']} TB/s") if x))
 
     body = {"cloud": cloud, "uuid": backend.uuid, "claimed_class": claimed,
-            **({"series": series, "seq": seq} if series else {})}
+            **({"series": series, "seq": seq} if series else {}), **({"price_usd_per_gpu_hour": price} if price else {})}
     if n:
         body["n"] = n
     if steps:
@@ -199,6 +200,7 @@ def main(argv=None):
     ap.add_argument("--perf-seconds", type=int, default=60,
                     help="performance profile time budget, run after commit (0 skips it)")
     ap.add_argument("--no-mark", action="store_true", help=argparse.SUPPRESS)  # the agent prints it first
+    ap.add_argument("--price", type=float, help="what you pay per GPU-hour in USD, e.g. 2.49 (joins price to delivered speed)")
     ap.add_argument("--series", help=argparse.SUPPRESS)  # a periodic series (--every), set by the one-liner or agent
     ap.add_argument("--seq", type=int, help=argparse.SUPPRESS)
     ap.add_argument("--out", help="also write the probes and timings to this file (nothing is written without it)")
@@ -218,7 +220,7 @@ def main(argv=None):
                              + (f" (did you mean {hint}?)" if hint and hint != a.cloud else "")))
     try:
         rv, local = profile(a.api, a.cloud, a.claimed, backend, n, steps, a.sustain or a.burn_seconds, a.perf_seconds,
-                            a.series, a.seq)
+                            a.series, a.seq, a.price)
     except ApiError as e:
         log(paint(RED, f"  error: {e}"))
         return 2

@@ -24,7 +24,7 @@ from core import listing as listings
 from core import classes as gpu_classes
 from core import providers as providers_known
 
-from . import chain
+from . import chain, data
 from . import perf
 from .check import (claimed_models, class_check, classify, deadline_s, draw_samples, gpu_label, grade,
                     throughput)
@@ -34,7 +34,7 @@ log = logging.getLogger("waterline.api")
 SESSION_TTL = 3600
 REPORT_TTL = None  # kept for good: a report is the evidence behind an onchain hash
 PASS, FAIL, DEGRADED = 1, 2, 3
-INDEX, INDEX_MAX = "reports:index", 500
+INDEX, INDEX_MAX = "reports:list", 500  # every report id, newest first; panel views scan the latest INDEX_MAX
 CHECK_N = 16384
 HEALTH_MAX = 256 * 1024  # bytes of JSON; the health report is advisory, so it is kept small
 
@@ -91,6 +91,8 @@ class StartIn(BaseModel):
     # a periodic series (--every): the same renter re-checking one rental at jittered intervals
     series: str | None = Field(default=None, pattern=r"^[a-z0-9]{6,24}$")
     seq: int | None = Field(default=None, ge=1, le=100000)
+    # what the renter pays, per GPU-hour, as they state it: joins price to delivered performance in the dataset
+    price_usd_per_gpu_hour: float | None = Field(default=None, gt=0, le=1000)
 
 
 class Probes(BaseModel):
@@ -177,6 +179,7 @@ def check_reveal(body: RevealIn):
     rep = {"report_id": rid, "verdict": verdict, "measured_class": measured,
            # periodic checks carry their series and place in it; both sit inside the evidence hash
            **({"series": s["series"], "seq": s.get("seq")} if s.get("series") else {}),
+           **({"price_usd_per_gpu_hour": s["price_usd_per_gpu_hour"]} if s.get("price_usd_per_gpu_hour") else {}),
            "reasons": reasons, "gpu_name": name, "node": "0x" + node.hex(), "published": False, "tx": None,
            "gpu_label": label, "uuid": s["uuid"], "provider": provider, "provider_node": "0x" + chain.namehash(provider).hex(),
            # an observation, never a verdict: the fingerprint is quantised timing, not yet proven stable across runs
@@ -204,8 +207,7 @@ def check_reveal(body: RevealIn):
             rep["status_text"] = "Publishing failed."
             log.error("publishing pass %s failed: %s", rid, e)
     store.put(f"report:{rid}", rep, REPORT_TTL)
-    # ponytail: read-modify-write index; two reveals in the same instant can drop an id. Redis LPUSH if it bites.
-    store.put(INDEX, [rid, *(store.get(INDEX) or [])][:INDEX_MAX], REPORT_TTL)
+    store.push(INDEX, rid)
     return {k: rep[k] for k in ("report_id", "verdict", "measured_class", "reasons", "gpu_name", "node",
                                 "published", "tx", "via", "report_hash", "delivery")}
 
@@ -342,9 +344,9 @@ def provider_status(p: dict) -> str:
     return f"{p['failed_gpus']} of {g} GPU{'' if g == 1 else 's'} failed · {h} failure report{'' if h == 1 else 's'}"
 
 
-def _reports(limit: int) -> list[dict]:
-    reps = (store.get(f"report:{rid}") for rid in (store.get(INDEX) or [])[:limit])
-    return [r for r in reps if r]
+def _reports(limit: int | None) -> list[dict]:
+    """The latest `limit` reports (all of them with None), newest first."""
+    return [r for r in store.many([f"report:{rid}" for rid in store.recent(INDEX, limit)]) if r]
 
 
 def _universal_resolver():
@@ -545,6 +547,34 @@ def providers():
         name = names.get(x["provider_node"])
         x |= {"name": name, "status": provider_status(x), "listed": bool(name) and providers_known.listed(name.split(".")[0])}
     return {"source": source, "error": error, "providers": rows}
+
+
+# ---- the dataset: rows, statistics, dictionary (docs/DATA.md) ------------------------------------------------------
+def _rows(since: str | None, include_simulated: bool) -> list[dict]:
+    rows = [data.row(r if r.get("metrics") is not None else r | perf_profile(r, None)) for r in _reports(None)]
+    return [r for r in rows if (include_simulated or not r["simulated"]) and (not since or r["checked_at"] >= since)]
+
+
+@app.get("/api/data/checks")
+def data_checks(format: str = Query("json", pattern="^(json|csv)$"), since: str | None = None,
+                include_simulated: bool = False):
+    """One row per check, newest first. since: an ISO date or timestamp (UTC), e.g. 2026-10-01."""
+    rows = _rows(since, include_simulated)
+    if format == "csv":
+        return Response(data.to_csv(rows), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="waterline-checks.csv"'})
+    return {"generated_at": int(now()), "columns": data.COLUMNS, "rows": rows}
+
+
+@app.get("/api/data/summary")
+def data_summary(since: str | None = None):
+    """Per provider x listed model: sample size, freshness, delivered-performance distributions and rates."""
+    return {"generated_at": int(now()), "since": since, "groups": data.summary(_rows(since, False))}
+
+
+@app.get("/api/data/dictionary")
+def data_dictionary():
+    return [{"name": n, "unit": u, "trust": t, "description": d} for n, u, t, d in data.FIELDS]
 
 
 # ---- MultiBaas webhook: Reported events mark our reports as indexed ------------------------------------------------

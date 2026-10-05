@@ -12,7 +12,7 @@ def _until(ttl):
 class MemoryStore:
     # ponytail: per-process only; on Vercel every instance has its own, so set REDIS_URL there.
     def __init__(self):
-        self._d, self._lock = {}, threading.Lock()
+        self._d, self._lists, self._lock = {}, {}, threading.Lock()
 
     def get(self, key):
         with self._lock:
@@ -39,6 +39,19 @@ class MemoryStore:
         with self._lock:
             self._d.pop(key, None)
 
+    def push(self, key, item):
+        """Prepend to a list that never expires (newest first)."""
+        with self._lock:
+            self._lists.setdefault(key, []).insert(0, item)
+
+    def recent(self, key, n=None):
+        with self._lock:
+            xs = self._lists.get(key, [])
+            return list(xs if n is None else xs[:n])
+
+    def many(self, keys):
+        return [self.get(k) for k in keys]
+
 
 class RedisStore:
     def __init__(self, url):
@@ -57,6 +70,16 @@ class RedisStore:
 
     def delete(self, key):
         self._r.delete(key)
+
+    def push(self, key, item):
+        self._r.lpush(key, json.dumps(item))
+
+    def recent(self, key, n=None):
+        return [json.loads(x) for x in self._r.lrange(key, 0, -1 if n is None else n - 1)]
+
+    def many(self, keys):
+        # ponytail: one MGET per call; page it if the record grows past ~10k reports
+        return [None if v is None else json.loads(v) for v in (self._r.mget(keys) if keys else [])]
 
 
 def redis_url() -> str | None:

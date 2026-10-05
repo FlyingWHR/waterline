@@ -78,7 +78,7 @@ const table = (cols, rows) => {
 
 // ---- router ------------------------------------------------------------------------------------------------
 const routes = { "": [overview, "Overview"], gpus: [gpus, "GPUs"], checks: [checks, "Checks"], check: [checkDetail, "Check"], r: [byHash, "Check"], name: [namePage, "Name"],
-  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], reporting: [reportingView, "Reporting"], about: [reportingView, "Reporting"] };
+  providers: [providersView, "Providers"], leaderboard: [providersView, "Providers"], models: [modelsView, "Models"], data: [dataView, "Data"], reporting: [reportingView, "Reporting"], about: [reportingView, "Reporting"] };
 let nav = 0;
 async function route(focus) {
   const my = ++nav;
@@ -975,6 +975,28 @@ const subtabs = (cur) => h("nav", { className: "subtabs", "aria-label": "Provide
   ...[["#/providers", "Providers"], ["#/models", "Reference models"]].map(([href, t]) => h("a", { href, "aria-current": href === cur ? "page" : null }, t)));
 
 // Providers: the roll-up of every <cloud>.waterline.eth, then how each one's GPUs of one model performed.
+// The dataset: per provider x listed model, delivered share of rating and the rates renters care about (docs/DATA.md).
+async function dataView() {
+  const { groups } = await api("/api/data/summary");
+  const q = (x) => (x ? h("span", {}, `${num(x.p50)}%`, h("span", { className: "sub" }, ` ${num(x.p10)}–${num(x.p90)}`)) : "—");
+  const rate = (x) => (x?.n ? h("span", { className: x.rate > 0.25 ? "st-suspect" : "" }, `${Math.round(100 * x.rate)}%`, h("span", { className: "sub" }, ` of ${x.n}`)) : "—");
+  const rows = groups.map((g) => h("tr", {},
+    h("td", {}, g.provider), h("td", {}, g.listed_model || "—"), h("td", {}, `${g.checks} · ${g.gpus}`),
+    h("td", {}, q(g.pct_rating_bf16)), h("td", {}, rate(g.sustained_throttle)), h("td", {}, rate(g.cpu_starved)),
+    h("td", {}, rate(g.disk_slow)), h("td", {}, rate(g.spec_mismatch)),
+    h("td", {}, g.usd_per_bf16_pflops_hour ? `$${num(g.usd_per_bf16_pflops_hour.p50)}` : "—"), h("td", {}, g.last.slice(0, 10))));
+  return [
+    head("Data", "Delivered compute by provider",
+      h("p", { className: "sub" }, "Every check renters ran on real GPUs, grouped by provider and the model the listing promised. Percent of rating as p50 with p10–p90; rates show how many checks measured them."),
+      h("p", { className: "sub" }, h("a", { href: "/api/data/checks?format=csv" }, "Download every check (CSV)"), " · ",
+        h("a", { href: "/api/data/dictionary" }, "Field dictionary"), " · ", h("a", { href: "/api/data/summary" }, "Summary (JSON)"))),
+    section("By provider and model", `${groups.length} group${groups.length === 1 ? "" : "s"}`,
+      rows.length ? table(["Provider", "Listed as", "Checks · GPUs", "% of BF16 rating", "Sustained throttle", "CPU-starved",
+        "Disk slow", "Not the listed chip", "$ per delivered PFLOPS-h", "Latest"], rows)
+        : h("p", { className: "empty" }, "No checks on real GPUs yet.")),
+  ];
+}
+
 async function providersView(arg) {
   const [lb, pv, g] = await Promise.all([api("/api/leaderboard"), api("/api/providers").catch(() => ({ providers: [] })), api("/api/gpus").catch(() => ({ gpus: [] }))]);
   const pcts = new Map();

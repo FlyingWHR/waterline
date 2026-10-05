@@ -65,6 +65,8 @@ def gpu_code(v):
 def run_profiler(a, api, cls):
     """Returns the API's final JSON (the profiler's last stdout line). result.json lands in a.out."""
     args = ["--api", api, "--cloud", a.cloud, "--claimed", str(cls), "--no-mark"]  # the agent already printed it
+    if a.price:
+        args += ["--price", str(a.price)]
     if getattr(a, "series", None):
         args += ["--series", a.series, "--seq", str(a.seq)]
     if a.n:
@@ -223,6 +225,7 @@ def main(argv=None):
     c.add_argument("--sim-sms", type=int, default=132, help="--local only: SM count to report (108 = A100)")
     c.add_argument("--cloud", required=True, help="the provider you rent from, e.g. runpod, vastai, lambda")
     c.add_argument("--listing", default="", help='the listing you rented, in its own words, e.g. "1x H100 80GB SXM5"')
+    c.add_argument("--price", type=float, help="what you pay per GPU-hour in USD, e.g. 2.49")
     c.add_argument("--claimed", type=gpu_code, help="skip listing parsing: the GPU, e.g. h100, h100-pcie, h200, a100, l40s")
     c.add_argument("--push", action="store_true", help="re-copy core/ and prover/ to the pod")
     c.add_argument("--n", type=int, help="matrix size (default: sized for the claimed GPU)")

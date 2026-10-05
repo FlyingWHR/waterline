@@ -145,6 +145,14 @@ python -m agent choose --listings listings.json         # pick a GPU from MultiB
 On a failure it stops the rental (`--stop-cmd`, e.g. `runpodctl stop pod {pod_id}`), then publishes the failure with
 the listing you rented, or points you to the web panel.
 
+## The data
+
+Every check on a real GPU becomes a point-in-time row: chip and model, verified and measured share of rating,
+sustained drop and throttle reasons, host cores, RAM, disk and download, findings, stated price and price per
+delivered PFLOPS-hour, and the report hash. `GET /api/data/checks` (JSON or `?format=csv`), `GET /api/data/summary`
+(per provider × listed model: p10/p50/p90 and rates, each with its sample size), `GET /api/data/dictionary`.
+Methodology, trust levels and the change log: `docs/DATA.md`. Pass `--price 2.49` with a check to join what you pay.
+
 ## The control panel
 
 https://waterline-eth.vercel.app: **Overview** (the one-line check, how it works, recent checks), **GPUs** (the ENS
