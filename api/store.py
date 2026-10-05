@@ -1,8 +1,12 @@
-"""JSON key-value store with expiry: Redis when REDIS_URL is set, else process memory (local runs and tests)."""
+"""JSON key-value store with optional expiry (ttl=None keeps a key for good): Redis when REDIS_URL is set, else process memory (local runs and tests)."""
 import json
 import os
 import threading
 import time
+
+
+def _until(ttl):
+    return float("inf") if ttl is None else time.time() + ttl
 
 
 class MemoryStore:
@@ -20,7 +24,7 @@ class MemoryStore:
 
     def put(self, key, value, ttl):
         with self._lock:
-            self._d[key] = (json.dumps(value), time.time() + ttl)
+            self._d[key] = (json.dumps(value), _until(ttl))
 
     def add(self, key, value, ttl):
         """Set only if absent. True if this call created it (the atomic once-only guard)."""
@@ -28,7 +32,7 @@ class MemoryStore:
             v = self._d.get(key)
             if v is not None and v[1] >= time.time():
                 return False
-            self._d[key] = (json.dumps(value), time.time() + ttl)
+            self._d[key] = (json.dumps(value), _until(ttl))
             return True
 
     def delete(self, key):
@@ -46,10 +50,10 @@ class RedisStore:
         return None if v is None else json.loads(v)
 
     def put(self, key, value, ttl):
-        self._r.set(key, json.dumps(value), ex=max(1, int(ttl)))
+        self._r.set(key, json.dumps(value), ex=None if ttl is None else max(1, int(ttl)))
 
     def add(self, key, value, ttl):
-        return bool(self._r.set(key, json.dumps(value), ex=max(1, int(ttl)), nx=True))
+        return bool(self._r.set(key, json.dumps(value), ex=None if ttl is None else max(1, int(ttl)), nx=True))
 
     def delete(self, key):
         self._r.delete(key)

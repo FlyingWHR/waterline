@@ -32,7 +32,7 @@ from .store import redis_url, store
 
 log = logging.getLogger("waterline.api")
 SESSION_TTL = 3600
-REPORT_TTL = 7 * 24 * 3600
+REPORT_TTL = None  # kept for good: a report is the evidence behind an onchain hash
 PASS, FAIL, DEGRADED = 1, 2, 3
 INDEX, INDEX_MAX = "reports:index", 500
 CHECK_N = 16384

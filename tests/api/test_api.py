@@ -254,3 +254,11 @@ def test_each_published_check_is_named_under_its_gpu(monkeypatch):
     assert client.get(f"/api/reports/{a['report_id']}/evidence").status_code == 200  # the name isn't part of the evidence
     q = appmod._only_marks(appmod.MB_QUERY)["events"][0]["filter"]["children"][0]
     assert q == {"operator": "Equal", "value": "0x" + "ab" * 20, "fieldType": "contract_address"}
+
+
+def test_reports_never_expire(monkeypatch):
+    from api import store as storemod
+    s = storemod.MemoryStore()
+    s.put("report:x", {"a": 1}, appmod.REPORT_TTL)
+    monkeypatch.setattr(storemod.time, "time", lambda: 1e12)  # far in the future
+    assert appmod.REPORT_TTL is None and s.get("report:x") == {"a": 1}
